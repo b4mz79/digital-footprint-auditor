@@ -4,7 +4,7 @@
 
 # Python Cache
 __pycache__/
-scanner/__pycache__/
+services/__pycache__/
 *.py[cod]
 *$py.class
 .venv/
@@ -17,6 +17,6 @@ main.py
 run.bat
 run.sh
 privacy-auditor.zip
-scanner/phone_scanner.py
-scanner/scanner.py
+services/phone_scanner.py
+services/scanner.py
 *.json
