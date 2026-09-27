@@ -1,0 +1,22 @@
+# Environment Variables & Keys
+.env
+*.pem
+
+# Python Cache
+__pycache__/
+scanner/__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+
+# Project Specific Caches (Data Hasil Scan Privasi)
+cache/
+ignored_domains.txt
+main.py
+run.bat
+run.sh
+privacy-auditor.zip
+scanner/phone_scanner.py
+scanner/scanner.py
+*.json
