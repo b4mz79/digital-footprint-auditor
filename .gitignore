@@ -14,8 +14,6 @@ venv/
 cache/
 ignored_domains.txt
 main.py
-run.bat
-run.sh
 privacy-auditor.zip
 services/phone_scanner.py
 services/scanner.py
