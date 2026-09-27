@@ -1,8 +1,8 @@
-streamlit==1.32.0
-httpx==0.27.0
-pydantic==2.6.4
-holehe==2.1.0
-trio==0.25.0
+streamlit
+httpx
+pydantic
+holehe
+trio
 python-dotenv
 google-genai
 groq
