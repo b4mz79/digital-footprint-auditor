@@ -38,8 +38,8 @@
 
 ```bash
 # Clone repository
-git clone [https://github.com/USERNAME-ANDA/NAMA-REPO-ANDA.git](https://github.com/USERNAME-ANDA/NAMA-REPO-ANDA.git)
-cd NAMA-REPO-ANDA
+git clone https://github.com/b4mz79/digital-footprint-auditor
+cd digital-footprint-auditor
 
 # Buat virtual environment (opsional tapi disarankan)
 python -m venv venv
