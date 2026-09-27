@@ -21,7 +21,7 @@
 
 
 * 📱 **Dynamic Phone Number Normalization**: Memecah dan mencari variasi format nomor HP nasional (`08xx`) hingga internasional (`+62xx`, `62xx`) secara presisi.
-* 🤖 **AI Risk Assessment**: Menganalisis tingkat risiko kebocoran data secara otomatis menggunakan LLM (Google Gemini / Groq / OpenAI).
+* 🤖 **Multi-Model AI Risk Assessment**: Analisis tingkat risiko kebocoran data secara otomatis yang mendukung fleksibilitas berbagai provider LLM (Google Gemini, Groq, OpenAI) hingga **Local Ollama** untuk analisis *privacy-first* secara *offline*.
 * 📜 **DSR Generator (UU PDP)**: Menggenerasi draf surat resmi *Data Subject Request* untuk penghapusan/pemusnahan data pribadi dari pengendali data.
 * ⚡ **Caching & Noise Filter**: Dilengkapi sistem *caching* lokal TTL 12 jam dan *ignoring domain filter* untuk mencegah *false positive*.
 
