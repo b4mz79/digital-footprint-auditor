@@ -55,7 +55,7 @@ with st.sidebar:
         options=options_list,
         index=default_index
     )
-    
+
     # Simpan kode bahasa terpilih
     lang = LANG_OPTIONS[selected_lang_label]
     st.session_state["lang"] = lang
@@ -152,18 +152,18 @@ if run_scan:
                 except Exception as e:
                     st.error(f"Error OSINT: {e}")
 
-            # Step 3: Multi-Layer Breach Scan
+            # Step 3: Multi-Layer Breach Scan (Async Execution)
             breach_findings = []
             is_breach_cached = False
             if enable_breach:
                 st.info(t("info_breach_scanning", lang=lang))
                 try:
-                    breach_output = scan_data_breaches(
+                    breach_output = asyncio.run(scan_data_breaches(
                         email=target_email,
                         phone=target_phone,
                         force_refresh=force_refresh_breach,
                         lang=lang
-                    )
+                    ))
                     breach_findings = breach_output.get("results", [])
                     engine_used = breach_output.get("engine", "None")
                     is_breach_cached = breach_output.get("is_from_cache", False)

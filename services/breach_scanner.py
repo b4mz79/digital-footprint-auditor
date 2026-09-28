@@ -3,6 +3,7 @@ import json
 import re
 import time
 import html
+import asyncio
 from pathlib import Path
 import httpx
 from dotenv import load_dotenv
@@ -142,7 +143,9 @@ def clean_snippet(text: str, max_len: int = 220, lang: str = "id") -> str:
         return cleaned[:max_len] + "..."
     return cleaned
 
-def scan_breachdirectory(target: str, rapidapi_key: str) -> list[dict]:
+# --- ASYNC & PARALLEL SCANNER ENGINE ---
+
+async def scan_breachdirectory_async(client: httpx.AsyncClient, target: str, rapidapi_key: str) -> list[dict]:
     url = "https://breachdirectory.p.rapidapi.com/"
     headers = {
         "X-RapidAPI-Key": rapidapi_key,
@@ -150,46 +153,53 @@ def scan_breachdirectory(target: str, rapidapi_key: str) -> list[dict]:
     }
     params = {"func": "auto", "term": target}
 
-    response = httpx.get(url, headers=headers, params=params, timeout=12.0)
-    response.raise_for_status()
-    data = response.json()
+    try:
+        response = await client.get(url, headers=headers, params=params, timeout=12.0)
+        response.raise_for_status()
+        data = response.json()
 
-    findings = []
-    if data.get("success") and data.get("result"):
-        for item in data.get("result", []):
-            findings.append({
-                "source": "BreachDirectory DB API",
-                "title": f"Leak Detected [{target}]: {item.get('line', 'Database Dump')}",
-                "url": "https://breachdirectory.org",
-                "snippet": f"Credentials exposed. Hash Status: {item.get('has_password', 'Available')}"
-            })
-    return findings
+        findings = []
+        if data.get("success") and data.get("result"):
+            for item in data.get("result", []):
+                findings.append({
+                    "source": "BreachDirectory DB API",
+                    "title": f"Leak Detected [{target}]: {item.get('line', 'Database Dump')}",
+                    "url": "https://breachdirectory.org",
+                    "snippet": f"Credentials exposed. Hash Status: {item.get('has_password', 'Available')}"
+                })
+        return findings
+    except Exception:
+        return []
 
-def scan_google_custom_search(target: str, api_key: str, cx_id: str, lang: str = "id") -> list[dict]:
+async def scan_google_custom_search_async(client: httpx.AsyncClient, target: str, api_key: str, cx_id: str, lang: str = "id") -> list[dict]:
     url = "https://www.googleapis.com/customsearch/v1"
     query = f'"{target}" (breach OR leak OR "database dump" OR "combolist" OR "site:pastebin.com")'
     params = {"key": api_key, "cx": cx_id, "q": query, "num": 5}
 
-    response = httpx.get(url, params=params, timeout=12.0)
-    response.raise_for_status()
-    data = response.json()
+    try:
+        response = await client.get(url, params=params, timeout=12.0)
+        response.raise_for_status()
+        data = response.json()
 
-    findings = []
-    for item in data.get("items", []):
-        item_url = item.get("link", "")
-        title = item.get("title", "")
-        snippet = item.get("snippet", "")
+        findings = []
+        for item in data.get("items", []):
+            item_url = item.get("link", "")
+            title = item.get("title", "")
+            snippet = item.get("snippet", "")
 
-        if is_valid_finding(item_url, target=target, title=title, snippet=snippet):
-            findings.append({
-                "source": "Google Custom Search API",
-                "title": title or "Google Exposure Finding",
-                "url": item_url,
-                "snippet": clean_snippet(snippet, lang=lang)
-            })
-    return findings
+            if is_valid_finding(item_url, target=target, title=title, snippet=snippet):
+                findings.append({
+                    "source": "Google Custom Search API",
+                    "title": title or "Google Exposure Finding",
+                    "url": item_url,
+                    "snippet": clean_snippet(snippet, lang=lang)
+                })
+        return findings
+    except Exception:
+        return []
 
 def scan_googlesearch_python(target: str, lang: str = "id") -> list[dict]:
+    """Blocking library Google Search scraper (dijalankan via thread)."""
     try:
         from googlesearch import search
         query = f'"{target}" (breach OR leak OR "database dump" OR "combolist")'
@@ -212,14 +222,14 @@ def scan_googlesearch_python(target: str, lang: str = "id") -> list[dict]:
     except Exception:
         return []
 
-def scan_bing_scrape(target: str, lang: str = "id") -> list[dict]:
+async def scan_bing_scrape_async(client: httpx.AsyncClient, target: str, lang: str = "id") -> list[dict]:
     try:
         from bs4 import BeautifulSoup
         query = f'"{target}" (breach OR leak OR "database dump" OR "combolist")'
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "Accept-Language": "en-US,en;q=0.9"}
         url = "https://www.bing.com/search"
 
-        response = httpx.get(url, headers=headers, params={"q": query}, timeout=10.0, follow_redirects=True)
+        response = await client.get(url, headers=headers, params={"q": query}, timeout=10.0, follow_redirects=True)
         if response.status_code != 200:
             return []
 
@@ -247,13 +257,13 @@ def scan_bing_scrape(target: str, lang: str = "id") -> list[dict]:
     except Exception:
         return []
 
-def scan_searxng(target: str, lang: str = "id") -> list[dict]:
+async def scan_searxng_async(client: httpx.AsyncClient, target: str, lang: str = "id") -> list[dict]:
     instances = ["https://searx.be/search", "https://searx.priv.at/search", "https://searxng.site/search"]
     query = f'"{target}" (breach OR leak OR "database dump" OR "combolist")'
 
     for instance_url in instances:
         try:
-            response = httpx.get(instance_url, params={"q": query, "format": "json"}, headers={"User-Agent": "Mozilla/5.0"}, timeout=8.0)
+            response = await client.get(instance_url, params={"q": query, "format": "json"}, headers={"User-Agent": "Mozilla/5.0"}, timeout=8.0)
             if response.status_code == 200:
                 data = response.json()
                 findings = []
@@ -275,31 +285,35 @@ def scan_searxng(target: str, lang: str = "id") -> list[dict]:
             continue
     return []
 
-def scan_breaches_tavily(target: str, api_key: str, lang: str = "id") -> list[dict]:
+async def scan_breaches_tavily_async(client: httpx.AsyncClient, target: str, api_key: str, lang: str = "id") -> list[dict]:
     url = "https://api.tavily.com/search"
     query = f'"{target}" "breach" OR "leak" OR "combolist"'
     payload = {"api_key": api_key, "query": query, "search_depth": "basic", "max_results": 7}
 
-    response = httpx.post(url, json=payload, timeout=12.0)
-    response.raise_for_status()
-    data = response.json()
+    try:
+        response = await client.post(url, json=payload, timeout=12.0)
+        response.raise_for_status()
+        data = response.json()
 
-    findings = []
-    for result in data.get("results", []):
-        item_url = result.get("url", "")
-        raw_content = result.get("content", "")
-        title = result.get("title", "")
+        findings = []
+        for result in data.get("results", []):
+            item_url = result.get("url", "")
+            raw_content = result.get("content", "")
+            title = result.get("title", "")
 
-        if is_valid_finding(item_url, target=target, title=title, snippet=raw_content):
-            findings.append({
-                "source": "Tavily AI Search",
-                "title": title or "Exposure Finding",
-                "url": item_url,
-                "snippet": clean_snippet(raw_content, lang=lang)
-            })
-    return findings
+            if is_valid_finding(item_url, target=target, title=title, snippet=raw_content):
+                findings.append({
+                    "source": "Tavily AI Search",
+                    "title": title or "Exposure Finding",
+                    "url": item_url,
+                    "snippet": clean_snippet(raw_content, lang=lang)
+                })
+        return findings
+    except Exception:
+        return []
 
 def scan_breaches_ddg(target: str, lang: str = "id") -> list[dict]:
+    """Blocking library DuckDuckGo search (dijalankan via thread)."""
     try:
         from ddgs import DDGS
         query = f'"{target}" (breach OR leak OR "database dump" OR "combolist")'
@@ -321,7 +335,8 @@ def scan_breaches_ddg(target: str, lang: str = "id") -> list[dict]:
     except Exception:
         return []
 
-def scan_data_breaches(email: str, phone: str = "", force_refresh: bool = False, lang: str = "id") -> dict:
+async def scan_data_breaches(email: str, phone: str = "", force_refresh: bool = False, lang: str = "id") -> dict:
+    """Orkestrator utama pemindaian kebocoran data secara Async & Paralel."""
     if not force_refresh:
         cached_result = load_breach_cache(email, phone, max_age_hours=12.0)
         if cached_result:
@@ -339,57 +354,48 @@ def scan_data_breaches(email: str, phone: str = "", force_refresh: bool = False,
     all_findings = []
     active_engines = set()
 
-    for idx, target in enumerate(search_targets, start=1):
-        if idx > 1:
-            time.sleep(DELAY_SECONDS)
+    async with httpx.AsyncClient() as client:
+        for idx, target in enumerate(search_targets, start=1):
+            if idx > 1:
+                await asyncio.sleep(DELAY_SECONDS)
 
-        if rapidapi_key:
-            try:
-                bd_results = scan_breachdirectory(target, rapidapi_key)
-                if bd_results:
-                    all_findings.extend(bd_results)
-                    active_engines.add("BreachDirectory DB")
-            except Exception:
-                pass
+            tasks = []
 
-        if google_search_key and google_cx_id:
-            try:
-                gsearch_results = scan_google_custom_search(target, google_search_key, google_cx_id, lang=lang)
-                if gsearch_results:
-                    all_findings.extend(gsearch_results)
-                    active_engines.add("Google Search API")
-            except Exception:
-                pass
+            # 1. RapidAPI BreachDirectory
+            if rapidapi_key:
+                tasks.append(scan_breachdirectory_async(client, target, rapidapi_key))
 
-        gscrape_results = scan_googlesearch_python(target, lang=lang)
-        if gscrape_results:
-            all_findings.extend(gscrape_results)
-            active_engines.add("Google Scraper")
+            # 2. Google Custom Search API
+            if google_search_key and google_cx_id:
+                tasks.append(scan_google_custom_search_async(client, target, google_search_key, google_cx_id, lang=lang))
 
-        bing_results = scan_bing_scrape(target, lang=lang)
-        if bing_results:
-            all_findings.extend(bing_results)
-            active_engines.add("Bing Scraper")
+            # 3. Google Scraper (Sync -> Thread)
+            tasks.append(asyncio.to_thread(scan_googlesearch_python, target, lang=lang))
 
-        if tavily_key:
-            try:
-                tavily_results = scan_breaches_tavily(target, tavily_key, lang=lang)
-                if tavily_results:
-                    all_findings.extend(tavily_results)
-                    active_engines.add("Tavily AI")
-            except Exception:
-                pass
+            # 4. Bing Scraper
+            tasks.append(scan_bing_scrape_async(client, target, lang=lang))
 
-        searx_results = scan_searxng(target, lang=lang)
-        if searx_results:
-            all_findings.extend(searx_results)
-            active_engines.add("SearXNG")
+            # 5. Tavily AI
+            if tavily_key:
+                tasks.append(scan_breaches_tavily_async(client, target, tavily_key, lang=lang))
 
-        ddg_results = scan_breaches_ddg(target, lang=lang)
-        if ddg_results:
-            all_findings.extend(ddg_results)
-            active_engines.add("DuckDuckGo")
+            # 6. SearXNG
+            tasks.append(scan_searxng_async(client, target, lang=lang))
 
+            # 7. DuckDuckGo Search (Sync -> Thread)
+            tasks.append(asyncio.to_thread(scan_breaches_ddg, target, lang=lang))
+
+            # Jalankan SEMUA scanner secara paralel & serentak
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            for res in results:
+                if isinstance(res, list) and res:
+                    all_findings.extend(res)
+                    for item in res:
+                        if item.get("source"):
+                            active_engines.add(item.get("source"))
+
+    # De-duplikasi berdasarkan URL
     unique_findings = []
     seen_urls = set()
     for item in all_findings:
