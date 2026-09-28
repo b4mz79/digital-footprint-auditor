@@ -1,0 +1,27 @@
+Kepada Yth.
+Tim Perlindungan Data Pribadi / Data Protection Officer (DPO)
+[Nama Perusahaan / Pengelola Layanan]
+
+Perihal: Permohonan Penghapusan Data Pribadi (Data Subject Request / DSR)
+Rujukan: UU No. 27 Tahun 2022 tentang Perlindungan Data Pribadi (UU PDP)
+
+Dengan hormat,
+
+Saya yang bertanda tangan di bawah ini:
+- Email Terdaftar : {email}{phone_str}
+
+Berdasarkan hak subjek data sebagaimana diatur dalam Pasal 8 Undang-Undang Nomor 27 Tahun 2022 tentang Perlindungan Data Pribadi (UU PDP), bersama surat ini saya mengajukan permohonan untuk:
+
+1. Menghapus dan/atau memusnahkan seluruh data pribadi saya yang tersimpan di sistem, database, maupun server pengelola layanan.
+2. Menghentikan pemrosesan dan pemanfaatan data pribadi saya untuk keperluan operasional, pemasaran, maupun penyerahan ke pihak ketiga.
+3. Memberikan konfirmasi tertulis melalui email setelah proses pemusnahan/penghapusan data selesai dilakukan.
+
+Daftar Layanan Terdeteksi:
+{services_str}
+
+Demikian permohonan ini saya sampaikan. Atas perhatian dan pemenuhannya sesuai ketentuan perundang-undangan yang berlaku, saya ucapkan terima kasih.
+
+Hormat saya,
+
+
+[{email}]
