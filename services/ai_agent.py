@@ -500,6 +500,8 @@ async def analyze_smart_cache(email: str, found_services: list, phone: str = "",
             if not cached_result.get("dsr_template"):
                 cached_result["dsr_template"] = load_local_dsr_template(email, found_services, phone, lang=lang)
             return cached_result
+    else:
+        logger.info("[AICache] 'Paksa Refresh' AKTIF. Mengabaikan cache lama & meminta analisis baru dari LLM...")
 
     sys_prompt = SYSTEM_PROMPTS.get(lang, SYSTEM_PROMPTS["id"])
     user_prompt = build_user_prompt(email, found_services, phone, lang=lang)

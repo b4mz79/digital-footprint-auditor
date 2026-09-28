@@ -218,6 +218,7 @@ if run_scan:
                     email=target_email,
                     found_services=all_detected_services,
                     phone=target_phone,
+                    force_refresh=force_refresh_breach,
                     lang=lang
                 ))
 
