@@ -4,11 +4,19 @@ import re
 import time
 import html
 import asyncio
+import logging
 from pathlib import Path
 import httpx
 from dotenv import load_dotenv
 from utils.translations import t
 
+# --- Setup Logging untuk Terminal ---
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%H:%M:%S"
+)
+logger = logging.getLogger("BreachScanner")
 
 load_dotenv()
 
@@ -143,9 +151,10 @@ def clean_snippet(text: str, max_len: int = 220, lang: str = "id") -> str:
         return cleaned[:max_len] + "..."
     return cleaned
 
-# --- ASYNC & PARALLEL SCANNER ENGINE ---
+# --- ASYNC & PARALLEL SCANNER ENGINE DENGAN LOGGING ---
 
 async def scan_breachdirectory_async(client: httpx.AsyncClient, target: str, rapidapi_key: str) -> list[dict]:
+    logger.info(f"[BreachDirectory] Memulai scan untuk target: {target}")
     url = "https://breachdirectory.p.rapidapi.com/"
     headers = {
         "X-RapidAPI-Key": rapidapi_key,
@@ -167,11 +176,14 @@ async def scan_breachdirectory_async(client: httpx.AsyncClient, target: str, rap
                     "url": "https://breachdirectory.org",
                     "snippet": f"Credentials exposed. Hash Status: {item.get('has_password', 'Available')}"
                 })
+        logger.info(f"[BreachDirectory] Selesai. Ditemukan: {len(findings)} temuan.")
         return findings
-    except Exception:
+    except Exception as e:
+        logger.warning(f"[BreachDirectory] Gagal/Error: {e}")
         return []
 
 async def scan_google_custom_search_async(client: httpx.AsyncClient, target: str, api_key: str, cx_id: str, lang: str = "id") -> list[dict]:
+    logger.info(f"[Google Custom Search] Memulai scan untuk target: {target}")
     url = "https://www.googleapis.com/customsearch/v1"
     query = f'"{target}" (breach OR leak OR "database dump" OR "combolist" OR "site:pastebin.com")'
     params = {"key": api_key, "cx": cx_id, "q": query, "num": 5}
@@ -194,12 +206,15 @@ async def scan_google_custom_search_async(client: httpx.AsyncClient, target: str
                     "url": item_url,
                     "snippet": clean_snippet(snippet, lang=lang)
                 })
+        logger.info(f"[Google Custom Search] Selesai. Ditemukan: {len(findings)} temuan.")
         return findings
-    except Exception:
+    except Exception as e:
+        logger.warning(f"[Google Custom Search] Gagal/Error: {e}")
         return []
 
 def scan_googlesearch_python(target: str, lang: str = "id") -> list[dict]:
     """Blocking library Google Search scraper (dijalankan via thread)."""
+    logger.info(f"[Google Scraper] Memulai scan via thread untuk target: {target}")
     try:
         from googlesearch import search
         query = f'"{target}" (breach OR leak OR "database dump" OR "combolist")'
@@ -218,11 +233,14 @@ def scan_googlesearch_python(target: str, lang: str = "id") -> list[dict]:
                     "url": item_url,
                     "snippet": clean_snippet(snippet, lang=lang)
                 })
+        logger.info(f"[Google Scraper] Selesai. Ditemukan: {len(findings)} temuan.")
         return findings
-    except Exception:
+    except Exception as e:
+        logger.warning(f"[Google Scraper] Gagal/Error: {e}")
         return []
 
 async def scan_bing_scrape_async(client: httpx.AsyncClient, target: str, lang: str = "id") -> list[dict]:
+    logger.info(f"[Bing Scraper] Memulai scan untuk target: {target}")
     try:
         from bs4 import BeautifulSoup
         query = f'"{target}" (breach OR leak OR "database dump" OR "combolist")'
@@ -253,11 +271,14 @@ async def scan_bing_scrape_async(client: httpx.AsyncClient, target: str, lang: s
                     "url": item_url,
                     "snippet": clean_snippet(snippet, lang=lang)
                 })
+        logger.info(f"[Bing Scraper] Selesai. Ditemukan: {len(findings)} temuan.")
         return findings
-    except Exception:
+    except Exception as e:
+        logger.warning(f"[Bing Scraper] Gagal/Error: {e}")
         return []
 
 async def scan_searxng_async(client: httpx.AsyncClient, target: str, lang: str = "id") -> list[dict]:
+    logger.info(f"[SearXNG] Memulai scan untuk target: {target}")
     instances = ["https://searx.be/search", "https://searx.priv.at/search", "https://searxng.site/search"]
     query = f'"{target}" (breach OR leak OR "database dump" OR "combolist")'
 
@@ -280,12 +301,15 @@ async def scan_searxng_async(client: httpx.AsyncClient, target: str, lang: str =
                             "snippet": clean_snippet(snippet, lang=lang)
                         })
                 if findings:
+                    logger.info(f"[SearXNG] Selesai via {instance_url}. Ditemukan: {len(findings)} temuan.")
                     return findings
         except Exception:
             continue
+    logger.info("[SearXNG] Selesai (Tidak ada temuan / instance unreachable).")
     return []
 
 async def scan_breaches_tavily_async(client: httpx.AsyncClient, target: str, api_key: str, lang: str = "id") -> list[dict]:
+    logger.info(f"[Tavily AI] Memulai scan untuk target: {target}")
     url = "https://api.tavily.com/search"
     query = f'"{target}" "breach" OR "leak" OR "combolist"'
     payload = {"api_key": api_key, "query": query, "search_depth": "basic", "max_results": 7}
@@ -308,12 +332,15 @@ async def scan_breaches_tavily_async(client: httpx.AsyncClient, target: str, api
                     "url": item_url,
                     "snippet": clean_snippet(raw_content, lang=lang)
                 })
+        logger.info(f"[Tavily AI] Selesai. Ditemukan: {len(findings)} temuan.")
         return findings
-    except Exception:
+    except Exception as e:
+        logger.warning(f"[Tavily AI] Gagal/Error: {e}")
         return []
 
 def scan_breaches_ddg(target: str, lang: str = "id") -> list[dict]:
     """Blocking library DuckDuckGo search (dijalankan via thread)."""
+    logger.info(f"[DuckDuckGo] Memulai scan via thread untuk target: {target}")
     try:
         from ddgs import DDGS
         query = f'"{target}" (breach OR leak OR "database dump" OR "combolist")'
@@ -331,8 +358,10 @@ def scan_breaches_ddg(target: str, lang: str = "id") -> list[dict]:
                     "url": item_url,
                     "snippet": clean_snippet(snippet, lang=lang)
                 })
+        logger.info(f"[DuckDuckGo] Selesai. Ditemukan: {len(findings)} temuan.")
         return findings
-    except Exception:
+    except Exception as e:
+        logger.warning(f"[DuckDuckGo] Gagal/Error: {e}")
         return []
 
 async def scan_data_breaches(email: str, phone: str = "", force_refresh: bool = False, lang: str = "id") -> dict:
@@ -340,6 +369,7 @@ async def scan_data_breaches(email: str, phone: str = "", force_refresh: bool = 
     if not force_refresh:
         cached_result = load_breach_cache(email, phone, max_age_hours=12.0)
         if cached_result:
+            logger.info("[BreachScan] Memuat hasil dari Local Cache.")
             return cached_result
 
     search_targets = [email.strip().lower()]
@@ -354,9 +384,13 @@ async def scan_data_breaches(email: str, phone: str = "", force_refresh: bool = 
     all_findings = []
     active_engines = set()
 
+    start_time = time.time()
+    logger.info(f"=== MEMULAI PARALLEL DATA BREACH SCAN ({len(search_targets)} target) ===")
+
     async with httpx.AsyncClient() as client:
         for idx, target in enumerate(search_targets, start=1):
             if idx > 1:
+                logger.info(f"Jeda {DELAY_SECONDS}s sebelum scan target berikutnya...")
                 await asyncio.sleep(DELAY_SECONDS)
 
             tasks = []
@@ -389,13 +423,18 @@ async def scan_data_breaches(email: str, phone: str = "", force_refresh: bool = 
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
             for res in results:
-                if isinstance(res, list) and res:
+                if isinstance(res, Exception):
+                    logger.error(f"[Task Exec Error]: {res}")
+                elif isinstance(res, list) and res:
                     all_findings.extend(res)
                     for item in res:
                         if item.get("source"):
                             active_engines.add(item.get("source"))
 
-    # De-duplikasi berdasarkan URL
+    elapsed = time.time() - start_time
+    logger.info(f"=== PARALLEL SCAN SELESAI Dalam {elapsed:.2f} detik ===")
+
+    # De-duplikasi URL
     unique_findings = []
     seen_urls = set()
     for item in all_findings:
