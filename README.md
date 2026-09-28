@@ -86,8 +86,6 @@ streamlit run app.py
 
 ```
 
-or by `run.bat` (Windows) / `run.sh` (Linux/macOS)
-
 The application will open automatically in your local browser at `http://localhost:8501`.
 
 ---

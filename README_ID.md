@@ -76,14 +76,12 @@ DELAY_SECONDS=2
 
 ### 4. Jalankan Aplikasi
 
-Jalankan dashboard aplikasi melalui Streamlit:
+Jalankan dashboard aplikasi melalui Streamlit (atau eksekusi `./run.sh` / `run.bat`):
 
 ```bash
 streamlit run app.py
 
 ```
-
-atau via `run.bat` (Windows) / `run.sh` (Linux/macOS)
 
 Aplikasi akan otomatis terbuka di browser lokal Anda di `http://localhost:8501`.
 
