@@ -2,8 +2,17 @@ import imaplib
 import email
 from email.header import decode_header
 import re
+import logging
 from utils.translations import t
 
+# Setup Logger untuk IMAP Scanner
+logger = logging.getLogger("IMAPScanner")
+if not logger.handlers:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        datefmt="%H:%M:%S"
+    )
 
 IMAP_SERVER = "imap.gmail.com"
 
@@ -22,19 +31,26 @@ def scan_gmail_inbox(email_address: str, app_password: str, max_emails: int = 20
     found_services = set()
     results = []
 
+    logger.info(f"[IMAP] Memulai pemindaian inbox untuk: {email_address} (Maksimal: {max_emails} email)")
+
     try:
+        logger.info(f"[IMAP] Menghubungkan ke server {IMAP_SERVER}...")
         mail = imaplib.IMAP4_SSL(IMAP_SERVER)
         mail.login(email_address, app_password)
         mail.select("inbox")
+        logger.info("[IMAP] Berhasil otentikasi dan membuka INBOX.")
 
         search_query = '(OR OR OR OR SUBJECT "welcome" SUBJECT "verifikasi" SUBJECT "konfirmasi" SUBJECT "registration" SUBJECT "terima kasih")'
+        logger.info("[IMAP] Mencari email konfirmasi/registrasi...")
         status, messages = mail.search(None, search_query)
 
         if status != "OK" or not messages[0]:
+            logger.warning("[IMAP] Tidak ditemukan email yang sesuai dengan kriteria pencarian.")
             mail.logout()
             return []
 
         email_ids = messages[0].split()[-max_emails:]
+        logger.info(f"[IMAP] Menemukan {len(email_ids)} email potensial. Memproses header...")
 
         for e_id in reversed(email_ids):
             _, msg_data = mail.fetch(e_id, "(BODY[HEADER.FIELDS (FROM SUBJECT DATE)])")
@@ -53,15 +69,20 @@ def scan_gmail_inbox(email_address: str, app_password: str, max_emails: int = 20
                     domain = parse_sender_domain(from_header)
                     if domain and domain not in found_services:
                         found_services.add(domain)
+                        service_name = domain.split(".")[0].capitalize()
+                        logger.info(f"[IMAP] Layanan terdeteksi: {service_name} ({domain})")
+
                         results.append({
-                            "name": domain.split(".")[0].capitalize(),
+                            "name": service_name,
                             "domain": domain,
                             "source": t("source_imap", lang=lang),
                             "sample_subject": subject[:60]
                         })
 
         mail.logout()
+        logger.info(f"[IMAP] Pemindaian selesai. Total layanan ditemukan: {len(results)}")
         return results
 
     except Exception as e:
+        logger.error(f"[IMAP Error] Gagal melakukan pemindaian Gmail: {str(e)}")
         raise Exception(f"Failed to scan Gmail: {str(e)}")

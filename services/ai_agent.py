@@ -2,12 +2,21 @@ import os
 import json
 import time
 import asyncio
+import logging
 import subprocess
 from pathlib import Path
 import httpx
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
+
+# Setup Logging Real-Time
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%H:%M:%S"
+)
+logger = logging.getLogger("AIAgent")
 
 load_dotenv()
 
@@ -34,6 +43,7 @@ def load_analysis_cache(email: str, phone: str = "", max_age_hours: float = 24.0
 
     file_age_hours = (time.time() - cache_file.stat().st_mtime) / 3600.0
     if file_age_hours > max_age_hours:
+        logger.info(f"[AICache] Cache kadaluarsa ({file_age_hours:.1f} jam > {max_age_hours} jam). Memulai analisis baru.")
         return None
 
     try:
@@ -41,9 +51,10 @@ def load_analysis_cache(email: str, phone: str = "", max_age_hours: float = 24.0
             cached_data = json.load(f)
             cached_data["is_from_cache"] = True
             cached_data["cache_filepath"] = str(cache_file)
+            logger.info(f"[AICache] Berhasil memuat analisis dari Local Cache: {cache_file.name}")
             return cached_data
     except Exception as e:
-        print(f"[Cache Log] Error reading cache {cache_file}: {e}")
+        logger.warning(f"[AICache] Error membaca cache {cache_file}: {e}")
         return None
 
 def save_analysis_cache(email: str, data: dict, phone: str = "", lang: str = "id") -> None:
@@ -51,8 +62,9 @@ def save_analysis_cache(email: str, data: dict, phone: str = "", lang: str = "id
     try:
         with open(cache_file, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
+        logger.info(f"[AICache] Hasil analisis disimpan ke cache: {cache_file.name}")
     except Exception as e:
-        print(f"[Cache Log] Error saving cache: {e}")
+        logger.error(f"[AICache] Error menyimpan cache: {e}")
 
 # ==========================================
 # 2. SYSTEM PROMPTS & PROMPT BUILDERS
@@ -368,7 +380,7 @@ def load_local_dsr_template(email: str, found_services: list, phone: str = "", l
                 services_str=services_str
             )
         except Exception as e:
-            print(f"[DSR Template Log] Error reading template file {template_file}: {e}")
+            logger.error(f"[DSR Template Log] Error reading template file {template_file}: {e}")
 
     return f"To DPO / Privacy Team,\n\nPlease delete all personal data for {email}.\n\nThank you."
 
@@ -479,6 +491,9 @@ async def call_ollama_async(prompt: str, sys_prompt: str) -> str:
 
 async def analyze_smart_cache(email: str, found_services: list, phone: str = "", force_refresh: bool = False, lang: str = "id") -> dict:
     """Orkestrator utama analisis risiko privasi (Full Async & Non-blocking)."""
+    start_time = time.time()
+    logger.info(f"Memulai AI Privacy Audit ({len(found_services)} layanan) [Bahasa: {lang}]")
+
     if not force_refresh:
         cached_result = load_analysis_cache(email, phone, max_age_hours=24.0, lang=lang)
         if cached_result:
@@ -499,46 +514,57 @@ async def analyze_smart_cache(email: str, found_services: list, phone: str = "",
 
     # Filter unique non-empty keys
     valid_gemini_keys = list(dict.fromkeys([k for k in gemini_keys if k]))
+    if valid_gemini_keys:
+        logger.info(f"[Gemini] Terdeteksi {len(valid_gemini_keys)} API Key aktif.")
 
     for idx, key in enumerate(valid_gemini_keys, 1):
         try:
+            logger.info(f"[Gemini] Mencoba eksekusi dengan Key #{idx}...")
             raw_response = await call_gemini_async(user_prompt, key, sys_prompt)
             provider_used = f"Google Gemini (Key #{idx})"
+            logger.info(f"[Gemini] Berhasil mendapatkan respons dari Key #{idx}.")
             await asyncio.sleep(DELAY_SECONDS)
             break
         except Exception as e:
-            print(f"[Fallback Log] Gemini Key #{idx} error: {e}")
+            logger.warning(f"[Gemini] Key #{idx} error: {e}")
 
     # 2. Groq
     if not raw_response:
         groq_key = os.getenv("GROQ_API_KEY", "").strip()
         if groq_key:
             try:
+                logger.info("[Groq Cloud] Memulai eksekusi via Groq API...")
                 await asyncio.sleep(DELAY_SECONDS)
                 raw_response = await call_groq_async(user_prompt, groq_key, sys_prompt)
                 provider_used = "Groq Cloud"
+                logger.info("[Groq Cloud] Berhasil mendapatkan respons.")
             except Exception as e:
-                print(f"[Fallback Log] Groq error: {e}")
+                logger.warning(f"[Groq Cloud] Error: {e}")
 
     # 3. OpenAI
     if not raw_response:
         openai_key = os.getenv("OPENAI_API_KEY", "").strip()
         if openai_key:
             try:
+                logger.info("[OpenAI] Memulai eksekusi via OpenAI API...")
                 await asyncio.sleep(DELAY_SECONDS)
                 raw_response = await call_openai_async(user_prompt, openai_key, sys_prompt)
                 provider_used = "OpenAI"
+                logger.info("[OpenAI] Berhasil mendapatkan respons.")
             except Exception as e:
-                print(f"[Fallback Log] OpenAI error: {e}")
+                logger.warning(f"[OpenAI] Error: {e}")
 
     # 4. Ollama Local (Native Async)
     if not raw_response:
         try:
+            model_name = os.getenv("OLLAMA_MODEL", "qwen2.5:3b")
+            logger.info(f"[Ollama Local] Memulai eksekusi lokal dengan model '{model_name}'...")
             await asyncio.sleep(DELAY_SECONDS)
             raw_response = await call_ollama_async(user_prompt, sys_prompt)
             provider_used = "Ollama Local"
+            logger.info("[Ollama Local] Berhasil mendapatkan respons.")
         except Exception as e:
-            print(f"[Fallback Log] Ollama error: {e}")
+            logger.warning(f"[Ollama Local] Error: {e}")
 
     # Parse and Return Response
     try:
@@ -551,10 +577,12 @@ async def analyze_smart_cache(email: str, found_services: list, phone: str = "",
             parsed_data["dsr_template"] = load_local_dsr_template(email, found_services, phone, lang=lang)
 
         save_analysis_cache(email, parsed_data, phone, lang=lang)
+        elapsed = time.time() - start_time
+        logger.info(f"AI Audit Selesai ({provider_used}) dalam {elapsed:.2f} detik.")
         return parsed_data
 
     except Exception as e:
-        print(f"[AI Agent Error] All AI providers failed or returned invalid JSON. Using rule-based fallback. Error: {e}")
+        logger.error(f"[AI Agent Error] Seluruh AI Provider gagal atau format JSON tidak valid: {e}")
 
         fallback_analysis = []
         for s in found_services:
@@ -572,6 +600,8 @@ async def analyze_smart_cache(email: str, found_services: list, phone: str = "",
             "analysis": fallback_analysis,
             "dsr_template": load_local_dsr_template(email, found_services, phone, lang=lang)
         }
+        elapsed = time.time() - start_time
+        logger.info(f"AI Audit Fallback Selesai dalam {elapsed:.2f} detik.")
         return fallback_result
 
 # Alias untuk kompatibilitas nama fungsi lama
