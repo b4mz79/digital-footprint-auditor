@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Streamlit](https://img.shields.io/badge/UI-Streamlit-FF4B4B.svg)](https://streamlit.io/)
 
-**Language / Bahasa:** [English](https://github.com/b4mz79/digital-footprint-auditor/blob/main/README.md)  |  [Bahasa Indonesia](https://github.com/b4mz79/digital-footprint-auditor/blob/main/README_ID.md)
+**Language / Bahasa:** [English](README.md)  |  [Bahasa Indonesia](README_ID.md)
 
 **Digital Footprint & OSINT Data Breach Auditor** adalah alat analisis jejak digital personal dan pemeriksa kebocoran data (*data breach*) berbasis Python dan Streamlit. Tool ini dirancang untuk memindai exposure akun email, variasi nomor telepon, serta jejak layanan terdaftar (via IMAP & OSINT) secara multi-layer, lalu memberikan analisis risiko privasi serta draf **Surat Permintaan Penghapusan Data (DSR)** otomatis berdasarkan **UU No. 27 Tahun 2022 tentang Pelindungan Data Pribadi (UU PDP Indonesia)**.
 
@@ -122,7 +122,7 @@ Kontribusi terbuka lebar untuk siapa saja! Jika Anda ingin menambahkan fitur bar
 
 ## ⚖️ Lisensi
 
-Proyek ini dilisensikan di bawah **MIT License** - lihat file [LICENSE](https://github.com/b4mz79/digital-footprint-auditor/blob/main/LICENSE) untuk detail selengkapnya.
+Proyek ini dilisensikan di bawah **MIT License** - lihat file [LICENSE](LICENSE) untuk detail selengkapnya.
 
 > **Disclaimer**: Tool ini dibuat hanya untuk tujuan edukasi, analisis privasi pribadi, dan riset keamanan informasi (*defensive OSINT*). Penggunaan tool ini terhadap target tanpa izin merupakan tanggung jawab penuh masing-masing pengguna.
 

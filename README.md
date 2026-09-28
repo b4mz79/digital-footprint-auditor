@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Streamlit](https://img.shields.io/badge/UI-Streamlit-FF4B4B.svg)](https://streamlit.io/)
 
-**Language / Bahasa:** [English](https://github.com/b4mz79/digital-footprint-auditor/blob/main/README.md)  |  [Bahasa Indonesia](https://github.com/b4mz79/digital-footprint-auditor/blob/main/README_ID.md)
+**Language / Bahasa:** [English](README.md)  |  [Bahasa Indonesia](README_ID.md)
 
 **Digital Footprint & OSINT Data Breach Auditor** is a personal digital footprint analysis and data breach auditing tool built with Python and Streamlit. This tool is designed to scan exposure across email accounts, phone number variations, and registered service footprints (via IMAP & OSINT) in a multi-layered approach. It then provides automated privacy risk analysis and generates a formal **Data Subject Request (DSR)** erasure draft based on **Indonesia's Personal Data Protection Act (UU PDP No. 27/2022)** as well as global standards.
 
@@ -125,7 +125,7 @@ Contributions are warmly welcomed! If you'd like to add new OSINT modules, optim
 
 ## ⚖️ License & Disclaimer
 
-This project is licensed under the **MIT License** - see the [LICENSE](https://github.com/b4mz79/digital-footprint-auditor/blob/main/LICENSE) file for details.
+This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
 
 > **Disclaimer**: This tool was created strictly for educational purposes, personal privacy audits, and defensive OSINT research. Any unauthorized use against targets without prior consent is the sole responsibility of the end user.
 
