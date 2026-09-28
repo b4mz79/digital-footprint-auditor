@@ -40,7 +40,7 @@
 
 ```bash
 # Clone repository
-git clone [https://github.com/b4mz79/digital-footprint-auditor.git](https://github.com/b4mz79/digital-footprint-auditor.git)
+git clone https://github.com/b4mz79/digital-footprint-auditor.git
 cd digital-footprint-auditor
 
 # Create a virtual environment (recommended)
