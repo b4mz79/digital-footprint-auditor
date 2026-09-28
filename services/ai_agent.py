@@ -2,6 +2,7 @@ import os
 import json
 import time
 import asyncio
+import subprocess
 from pathlib import Path
 import httpx
 from dotenv import load_dotenv
@@ -295,9 +296,27 @@ def call_openai(prompt: str, api_key: str, sys_prompt: str) -> str:
     )
     return completion.choices[0].message.content
 
+def get_wsl_host_ip() -> str:
+    """Mendeteksi IP Windows Host secara otomatis dari WSL2."""
+    try:
+        res = subprocess.run(["ip", "route"], capture_output=True, text=True)
+        for line in res.stdout.splitlines():
+            if "default" in line:
+                return f"http://{line.split()[2]}:11434"
+    except Exception:
+        pass
+    return "http://localhost:11434"
+
 async def call_ollama_async(prompt: str, sys_prompt: str) -> str:
     model_name = os.getenv("OLLAMA_MODEL", "qwen2.5:3b")
-    url = "http://localhost:11434/api/generate"
+    
+    # Prioritas: .env -> Auto-detect IP WSL Host -> Fallback localhost
+    base_url = os.getenv("OLLAMA_HOST", "").strip()
+    if not base_url:
+        base_url = get_wsl_host_ip()
+    
+    url = f"{base_url.rstrip('/')}/api/generate"
+    
     payload = {
         "model": model_name,
         "prompt": f"{sys_prompt}\n\n{prompt}",
