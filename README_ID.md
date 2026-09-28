@@ -123,4 +123,3 @@ Kontribusi terbuka lebar untuk siapa saja! Jika Anda ingin menambahkan fitur bar
 Proyek ini dilisensikan di bawah **MIT License** - lihat file [LICENSE](LICENSE) untuk detail selengkapnya.
 
 > **Disclaimer**: Tool ini dibuat hanya untuk tujuan edukasi, analisis privasi pribadi, dan riset keamanan informasi (*defensive OSINT*). Penggunaan tool ini terhadap target tanpa izin merupakan tanggung jawab penuh masing-masing pengguna.
-
