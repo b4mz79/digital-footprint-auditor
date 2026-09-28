@@ -3,13 +3,17 @@ import email
 from email.header import decode_header
 import re
 import logging
+from dotenv import load_dotenv
 from utils.translations import t
+
+load_dotenv()
 
 # Setup Logger untuk IMAP Scanner
 logger = logging.getLogger("IMAPScanner")
 if not logger.handlers:
+    LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
     logging.basicConfig(
-        level=logging.INFO,
+        level=getattr(logging, LOG_LEVEL, logging.INFO),
         format="%(asctime)s [%(levelname)s] %(message)s",
         datefmt="%H:%M:%S"
     )

@@ -10,15 +10,16 @@ import httpx
 from dotenv import load_dotenv
 from utils.translations import t
 
+load_dotenv()
+
 # --- Setup Logging untuk Terminal ---
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(
-    level=logging.INFO,
+    level=getattr(logging, LOG_LEVEL, logging.INFO),
     format="%(asctime)s [%(levelname)s] %(message)s",
     datefmt="%H:%M:%S"
 )
 logger = logging.getLogger("BreachScanner")
-
-load_dotenv()
 
 BREACH_CACHE_DIR = Path("cache/breach")
 BREACH_CACHE_DIR.mkdir(parents=True, exist_ok=True)

@@ -10,15 +10,21 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
+load_dotenv()
+
 # Setup Logging Real-Time
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(
-    level=logging.INFO,
+    level=getattr(logging, LOG_LEVEL, logging.INFO),
     format="%(asctime)s [%(levelname)s] %(message)s",
     datefmt="%H:%M:%S"
 )
+#logging.basicConfig(
+#    level=logging.INFO,
+#    format="%(asctime)s [%(levelname)s] %(message)s",
+#    datefmt="%H:%M:%S"
+#)
 logger = logging.getLogger("AIAgent")
-
-load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 CACHE_DIR = Path("cache")
