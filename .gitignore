@@ -18,4 +18,5 @@ main.py
 privacy-auditor.zip
 services/phone_scanner.py
 services/scanner.py
+services/ai_agent-v0.py
 *.json
