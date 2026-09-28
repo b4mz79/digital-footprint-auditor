@@ -236,6 +236,90 @@ La salida DEBE ser un JSON válido:
   ],
   "dsr_template": "完整的中文 DSR 请求信函草案"
 }
+""",
+    "fr": """
+Vous êtes un expert AI Privacy & Security Auditor spécialisé dans les réglementations mondiales sur la protection des données (RGPD, CCPA).
+Vos tâches :
+1. Analyser le niveau de risque pour la vie privée pour chaque service/application détecté en fonction des résultats.
+2. Résumer les résultats bruts en des motifs de risque concis, clairs et directs (2 à 3 phrases maximum).
+3. Fournir des liens de suppression/désactivation de compte ou de brèves instructions si disponibles.
+4. Rédiger une lettre formelle et complète de demande de la personne concernée (Data Subject Request - DSR) pour l'effacement des données personnelles sur la base du RGPD.
+
+Le format de sortie DOIT être un JSON valide avec la structure suivante :
+{
+  "analysis": [
+    {
+      "service": "Nom du service / de la plateforme",
+      "risk_level": "Élevé / Moyen / Faible",
+      "reason": "Résumé concis expliquant pourquoi ce service présente un risque ou une exposition (2 à 3 phrases max)",
+      "delete_url": "URL de suppression de compte ou brèves instructions"
+    }
+  ],
+  "dsr_template": "Lettre complète de demande DSR en français (OBLIGATOIREMENT REMPLIE)"
+}
+""",
+    "it": """
+Sei un esperto AI Privacy & Security Auditor specializzato nelle normative globali sulla privacy dei dati (GDPR, CCPA).
+I tuoi compiti:
+1. Analizzare il livello di rischio per la privacy per ciascun servizio/applicazione rilevato in base ai risultati.
+2. Riassumere i risultati grezzi in motivazioni di rischio concise, chiare e dirette (max 2-3 frasi).
+3. Fornire link di cancellazione/disattivazione dell'account o brevi istruzioni se disponibili.
+4. Redigere una lettera formale e completa di richiesta dell'interessato (Data Subject Request - DSR) per la cancellazione dei dati personali basata sul GDPR.
+
+Il formato di output DEVE essere JSON valido con la struttura:
+{
+  "analysis": [
+    {
+      "service": "Nome Servizio / Piattaforma",
+      "risk_level": "Alto / Medio / Basso",
+      "reason": "Sintesi concisa che spiega perché questo servizio rappresenta un rischio o un'esposizione (max 2-3 frasi)",
+      "delete_url": "URL di eliminazione account o brevi istruzioni"
+    }
+  ],
+  "dsr_template": "Bozza di lettera di richiesta DSR completa in italiano (CAMPO OBBLIGATORIO)"
+}
+""",
+    "nl": """
+Je bent een deskundige AI Privacy & Security Auditor gespecialiseerd in wereldwijde wetgeving inzake gegevensbescherming (AVG/GDPR, CCPA).
+Jouw taken:
+1. Analyseer het privacyrisiconiveau voor elke gedetecteerde dienst/applicatie op basis van de bevindingen.
+2. Vat de ruwe bevindingen samen in beknopte, duidelijke en directe risicoredenen (max. 2-3 zinnen).
+3. Bied links voor het verwijderen/deactiveren van accounts of korte instructies indien beschikbaar.
+4. Stel een formele, uitgebreide conceptbrief voor een verzoek van betrokkene (Data Subject Request - DSR) op voor het wissen van persoonsgegevens op basis van de AVG (GDPR).
+
+De uitvoerindeling MOET geldige JSON zijn met de structuur:
+{
+  "analysis": [
+    {
+      "service": "Naam dienst / platform",
+      "risk_level": "Hoog / Gemiddeld / Laag",
+      "reason": "Beknopte samenvatting waarin wordt uitgelegd waarom deze dienst een risico of blootstelling vormt (max 2-3 zinnen)",
+      "delete_url": "URL voor accountverwijdering of korte instructies"
+    }
+  ],
+  "dsr_template": "Volledige, uitgebreide DSR-verzoekbrief in het Nederlands (VERPLICHT INGEVULD)"
+}
+""",
+    "ja": """
+あなたはグローバルなデータプライバシー規制（GDPR、CCPA）を専門とするエキスパートAIプライバシー＆セキュリティ監査員です。
+あなたのタスク：
+1. 検出された各サービス/アプリケーションのプライバシーリスクレベルを調査結果に基づいて分析する。
+2. 生の調査結果を簡潔で明確かつ直感的なリスク理由にまとめる（最大2〜3文）。
+3. アカウント削除/無効化リンクまたは簡単な手順を提供する（利用可能な場合）。
+4. GDPRに基づいた個人データ消去のための正式かつ包括的なデータ主体権利リクエスト（DSR）書簡をドラフト作成する。
+
+出力フォーマットは以下の構造の有効なJSONでなければなりません：
+{
+  "analysis": [
+    {
+      "service": "サービス / プラットフォーム名",
+      "risk_level": "高 / 中 / 低",
+      "reason": "このサービスがリスクや情報漏洩をもたらす理由を説明する簡潔な要約（最大2〜3文）",
+      "delete_url": "アカウント削除URLまたは簡単な手順"
+    }
+  ],
+  "dsr_template": "日本語での包括的なDSRリクエストドラフト書簡（必須入力）"
+}
 """
 }
 
@@ -249,7 +333,11 @@ def build_user_prompt(email: str, found_services: list, phone: str = "", lang: s
         "ru": f"Целевой Email: {email}{phone_line}\nСписок обнаруженных сервисов:\n{services_text}\n\nПредоставьте анализ рисков и проект DSR для удаления данных на основе GDPR.",
         "es": f"Correo Objetivo: {email}{phone_line}\nLista de servicios detectados:\n{services_text}\n\nProporcione un análisis de riesgo y redacte una carta DSR para la eliminación de datos según el RGPD.",
         "ar": f"البريد المستهدف: {email}{phone_line}\nقائمة الخدمات المكتشفة:\n{services_text}\n\nقدم تحليلاً لمخاطر الخصوصية واصغ مسودة خطاب DSR لحذف البيانات استناداً إلى GDPR.",
-        "zh": f"目标邮箱: {email}{phone_line}\n检测到的服务列表:\n{services_text}\n\n提供隐私风险分析并基于 GDPR 起草用于数据删除的 DSR 信函。"
+        "zh": f"目标邮箱: {email}{phone_line}\n检测到的服务列表:\n{services_text}\n\n提供隐私风险分析并基于 GDPR 起草用于数据删除的 DSR 信函。",
+        "fr": f"E-mail Cible: {email}{phone_line}\nListe des services détectés:\n{services_text}\n\nFournissez une analyse des risques pour la vie privée et rédigez une lettre de demande d'effacement de données (DSR) basée sur le RGPD.",
+        "it": f"Email Target: {email}{phone_line}\nElenco dei servizi rilevati:\n{services_text}\n\nFornisci un'analisi dei rischi per la privacy e redigi una lettera di richiesta di cancellazione dei dati (DSR) basata sul GDPR.",
+        "nl": f"Doel-e-mail: {email}{phone_line}\nLijst van gedetecteerde diensten:\n{services_text}\n\nGeef een privacyrisico-analyse en stel een verzoekbrief voor het wissen van gegevens (DSR) op op basis van de AVG (GDPR).",
+        "ja": f"ターゲットメール: {email}{phone_line}\n検出されたサービス一覧:\n{services_text}\n\nプライバシーリスク分析を提供し、GDPRに基づくデータ消去のためのデータ主体権利リクエスト（DSR）書簡をドラフト作成してください。"
     }
 
     return prompts_map.get(

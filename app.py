@@ -34,9 +34,12 @@ with st.sidebar:
         "Русский (Rusia)": "ru",
         "Español (Spanyol)": "es",
         "العربية (Arab)": "ar",
-        "中文 (Cina)": "zh"
+        "中文 (Cina)": "zh",
+        "Français (Prancis)": "fr",
+        "Italiano (Italia)": "it",
+        "Nederlands (Belanda)": "nl",
+        "日本語 (Jepang)": "ja",
     }
-
     # Cari index bahasa aktif di session state
     current_lang_code = st.session_state.get("lang", "en")
     options_list = list(LANG_OPTIONS.keys())

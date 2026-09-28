@@ -1,0 +1,30 @@
+Aan:
+Functionaris voor Gegevensbescherming (FG/DPO) / Privacyteam
+[Naam bedrijf / dienstverlener]
+
+Onderwerp: Verzoek tot verwijdering van persoonsgegevens / Verzoek van betrokkene (DSR)
+Referentie: Indonesische PDP-wet Nr. 27/2022 & Algemene Verordening Gegevensbescherming (AVG / GDPR)
+
+
+Beste Functionaris voor Gegevensbescherming,
+
+Hierbij dien ik formeel een verzoek van betrokkene (DSR) in met betrekking tot mijn persoonsgegevens.
+
+Geregistreerde accountgegevens:
+- Geregistreerd e-mailadres : {email}{phone_str}
+
+Onder de rechten van betrokkenen zoals gewaarborgd door de toepasselijke privacywetgeving, verzoek ik u hierbij om het volgende:
+
+1. Al mijn persoonsgegevens die zijn opgeslagen in uw systemen, databases en subverwerkers definitief te wissen en/of te verwijderen.
+2. Elke verdere verwerking, profilering of commercieel gebruik van mijn persoonsgegevens onmiddellijk te stopzetten.
+3. Een schriftelijke bevestiging per e-mail te sturen zodra het proces voor het wissen van de gegevens is voltooid.
+
+Lijst van gedetecteerde diensten:
+{services_str}
+
+Hartelijk dank voor uw snelle behandeling van dit wettelijke verzoek.
+
+Met vriendelijke groet,
+
+
+[{email}]

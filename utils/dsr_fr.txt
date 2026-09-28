@@ -1,0 +1,30 @@
+À l'attention de :
+Délégué à la Protection des Données (DPO) / Équipe Protection de la Vie Privée
+[Nom de l'entreprise / du fournisseur de services]
+
+Objet : Demande d'effacement de données personnelles / Data Subject Request (DSR)
+Référence : Loi PDP Indonésie n° 27/2022 & Règlement Général sur la Protection des Données (RGPD)
+
+
+Madame, Monsieur le Délégué à la Protection des Données,
+
+Je vous adresse la présente afin de soumettre formellement une demande au titre des droits de la personne concernée (DSR) concernant mes données personnelles.
+
+Détails du compte enregistré :
+- Adresse e-mail enregistrée : {email}{phone_str}
+
+Conformément aux droits garantis par les lois applicables sur la protection des données, je demande par la présente :
+
+1. De supprimer et/ou d'effacer définitivement l'ensemble de mes données personnelles stockées dans vos systèmes, bases de données et sous-traitants.
+2. De cesser immédiatement tout traitement ultérieur, profilage ou exploitation commerciale de mes données personnelles.
+3. De me fournir une confirmation écrite par e-mail une fois la procédure d'effacement des données terminée.
+
+Liste des services détectés :
+{services_str}
+
+Vous remerciant par avance pour l'attention rapide que vous porterez à cette demande légale.
+
+Veuillez agréer, Madame, Monsieur, l'expression de mes salutations distinguées.
+
+
+[{email}]
