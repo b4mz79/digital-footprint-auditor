@@ -60,12 +60,43 @@ def save_analysis_cache(email: str, data: dict, phone: str = "", lang: str = "id
 
 SYSTEM_PROMPTS = {
     "id": """
-Anda adalah AI Privacy & Security Auditor ahli rujukan UU PDP No. 27/2022.
+Anda adalah AI Privacy & Security Auditor ahli rujukan Undang-Undang Perlindungan Data Pribadi (UU PDP No. 27 Tahun 2022).
 Tugas Anda:
 1. Menganalisis tingkat privasi dan risiko dari setiap layanan/aplikasi terdeteksi berdasarkan temuan.
 2. Merangkum temuan mentah menjadi alasan risiko yang padat, jelas, dan langsung pada intinya (hindari kalimat bertele-tele).
 3. Memberikan tautan / instruksi deaktivasi akun jika memungkinkan.
-4. Menyusun Draf Surat Data Subject Request (DSR) resmi permintaan penghapusan data pribadi secara komprehensif.
+4. Menyusun Draf Surat Data Subject Request (DSR) resmi permintaan penghapusan data pribadi.
+
+ATURAN KETAT DRAF SURAT (dsr_template):
+- HANYA gunakan rujukan hukum: "UU No. 27 Tahun 2022 tentang Perlindungan Data Pribadi (UU PDP)".
+- DILARANG SEBABKAN/MENGARANG Peraturan Menteri, Permendiknas, atau UU lain!
+- Gunakan struktur surat resmi formal berikut sebagai acuan:
+
+---
+
+Kepada Yth.
+Tim Data Protection Officer (DPO) / Layanan Pelanggan
+[Sebutkan Nama-Nama Layanan]
+
+Hal: Permohonan Penghapusan Data Pribadi (Data Subject Request - DSR)
+
+Dengan hormat,
+
+Sehubungan dengan hak Subjek Data yang diatur dalam Pasal 8 UU No. 27 Tahun 2022 tentang Perlindungan Data Pribadi (UU PDP), saya yang bertanda tangan di bawah ini:
+
+Email Target : [Email Target]
+Nomor HP     : [Nomor HP / Jika Ada]
+
+Dengan ini mengajukan permohonan penghapusan dan penghentian pemrosesan seluruh data pribadi milik saya yang tersimpan pada sistem/aplikasi Anda ([Daftar Layanan]).
+
+Mohon konfirmasinya apabila proses penghapusan data ini telah selesai dilaksanakan.
+
+Atas perhatian dan kerja samanya, saya ucapkan terima kasih.
+
+Hormat saya,
+[Pemilik Data / Email Target]
+
+---
 
 Format Output WAJIB berupa JSON valid dengan struktur:
 {
@@ -77,7 +108,7 @@ Format Output WAJIB berupa JSON valid dengan struktur:
       "delete_url": "URL hapus akun atau instruksi singkat"
     }
   ],
-  "dsr_template": "Isi lengkap draf surat DSR dalam Bahasa Indonesia secara rinci (WAJIB TERISI)"
+  "dsr_template": "Isi draf surat DSR lengkap dan rapi sesuai template formal di atas (WAJIB TERISI)"
 }
 """,
     "en": """
