@@ -6,6 +6,7 @@ from pathlib import Path
 import httpx
 from dotenv import load_dotenv
 
+
 load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -117,7 +118,7 @@ def generate_default_dsr_template(email: str, found_services: list, phone: str =
 def build_user_prompt(email: str, found_services: list, phone: str = "", lang: str = "id") -> str:
     services_text = json.dumps(found_services, indent=2)
     phone_line = f"\nTarget Phone: {phone.strip()}" if phone and phone.strip() else ""
-    
+
     if lang == "en":
         return f"""Target Email: {email}{phone_line}
 List of Detected Services:

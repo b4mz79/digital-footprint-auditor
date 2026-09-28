@@ -126,3 +126,4 @@ Contributions are warmly welcomed! If you'd like to add new OSINT modules, optim
 This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
 
 > **Disclaimer**: This tool was created strictly for educational purposes, personal privacy audits, and defensive OSINT research. Any unauthorized use against targets without prior consent is the sole responsibility of the end user.
+

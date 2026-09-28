@@ -3,6 +3,7 @@
 # Pindah ke direktori tempat script ini berada
 cd "$(dirname "$0")"
 
+
 # Cek & aktifkan virtual environment (Linux/macOS path)
 if [ -f "venv/bin/activate" ]; then
     echo "🔌 Mengaktifkan virtual environment (venv)..."

@@ -1,5 +1,6 @@
 import os
 
+
 TRANSLATIONS = {
     "id": {
         "page_title": "Local Digital Footprint & Privacy Auditor",

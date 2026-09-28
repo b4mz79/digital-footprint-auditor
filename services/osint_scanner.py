@@ -4,6 +4,7 @@ import os
 import re
 from utils.translations import t
 
+
 def scan_osint_footprint(email: str, lang: str = "id") -> list[dict]:
     results = []
     try:

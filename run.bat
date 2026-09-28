@@ -2,6 +2,7 @@
 chcp 65001 >nul
 setlocal enabledelayedexpansion
 
+
 :: Pindah ke direktori tempat script ini berada
 cd /d "%~dp0"
 

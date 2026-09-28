@@ -8,6 +8,7 @@ from services.osint_scanner import scan_osint_footprint
 from services.ai_agent import analyze_smart_cache
 from services.breach_scanner import scan_data_breaches
 
+
 # Load environment variables dari file .env
 load_dotenv()
 

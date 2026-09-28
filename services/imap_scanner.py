@@ -4,6 +4,7 @@ from email.header import decode_header
 import re
 from utils.translations import t
 
+
 IMAP_SERVER = "imap.gmail.com"
 
 def parse_sender_domain(from_header: str) -> str:

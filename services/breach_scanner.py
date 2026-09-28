@@ -8,6 +8,7 @@ import httpx
 from dotenv import load_dotenv
 from utils.translations import t
 
+
 load_dotenv()
 
 BREACH_CACHE_DIR = Path("cache/breach")
