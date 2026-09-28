@@ -5,7 +5,8 @@ import asyncio
 from pathlib import Path
 import httpx
 from dotenv import load_dotenv
-
+from google import genai
+from google.genai import types
 
 load_dotenv()
 
@@ -15,6 +16,10 @@ CACHE_DIR.mkdir(exist_ok=True)
 UTILS_DIR = BASE_DIR / "utils"
 
 DELAY_SECONDS = int(os.getenv("DELAY_SECONDS", 5))
+
+# ==========================================
+# 1. CACHE MANAGEMENT
+# ==========================================
 
 def get_cache_filepath(email: str, phone: str = "", lang: str = "id") -> Path:
     safe_email = email.strip().lower().replace("@", "_at_").replace(".", "_")
@@ -48,7 +53,10 @@ def save_analysis_cache(email: str, data: dict, phone: str = "", lang: str = "id
     except Exception as e:
         print(f"[Cache Log] Error saving cache: {e}")
 
-# System Prompts per Language
+# ==========================================
+# 2. SYSTEM PROMPTS & PROMPT BUILDERS (7 LANGUAGES)
+# ==========================================
+
 SYSTEM_PROMPTS = {
     "id": """
 Anda adalah AI Privacy & Security Auditor ahli rujukan UU PDP No. 27/2022.
@@ -72,12 +80,12 @@ Format Output WAJIB berupa JSON valid dengan struktur:
 }
 """,
     "en": """
-You are an expert AI Privacy & Security Auditor specializing in global data privacy regulations (UU PDP No. 27/2022 & GDPR).
+You are an expert AI Privacy & Security Auditor specializing in global data privacy regulations (GDPR, CCPA).
 Your tasks:
 1. Analyze the privacy risk level for each detected service/application based on findings.
 2. Summarize raw findings into concise, clear, and direct risk reasons (max 2-3 sentences).
 3. Provide account deletion/deactivation links or brief instructions if available.
-4. Draft a formal, comprehensive Data Subject Request (DSR) letter for personal data erasure.
+4. Draft a formal, comprehensive Data Subject Request (DSR) letter for personal data erasure based on GDPR.
 
 Output format MUST be valid JSON with structure:
 {
@@ -91,13 +99,134 @@ Output format MUST be valid JSON with structure:
   ],
   "dsr_template": "Full comprehensive DSR request draft letter in English (MUST BE FILLED)"
 }
+""",
+    "de": """
+Sie sind ein Experten-KI-Auditor für Datenschutz und Sicherheit gemäß DSGVO (GDPR) und internationalen Datenschutzgesetzen.
+Ihre Aufgaben:
+1. Analysieren Sie die Datenschutz-Risikostufe für jeden erkannten Dienst.
+2. Fassen Sie die Ergebnisse in prägnanten, klaren Risikogründen zusammen (max. 2-3 Sätze).
+3. Geben Sie Links oder Anweisungen zur Kontolöschung an.
+4. Erstellen Sie einen formellen Entwurf einer Datenlöschungsanfrage (DSR) auf Deutsch gemäß DSGVO.
+
+Ausgabe MUSS ein gültiges JSON mit folgender Struktur sein:
+{
+  "analysis": [
+    {
+      "service": "Name des Dienstes",
+      "risk_level": "Hoch / Mittel / Niedrig",
+      "reason": "Kurze Risikobegründung (max. 2-3 Sätze)",
+      "delete_url": "URL zur Kontolöschung"
+    }
+  ],
+  "dsr_template": "Vollständiger Entwurf des DSR-Schreibens auf Deutsch"
+}
+""",
+    "ru": """
+Вы эксперт ИИ по аудиту конфиденциальности и безопасности данных (стандарты GDPR и мировые законы).
+Ваши задачи:
+1. Проанализировать уровень риска для каждого обнаруженного сервиса.
+2. Кратко изложить причины риска (максимум 2-3 предложения).
+3. Предоставить ссылки или инструкции по удалению аккаунта.
+4. Составить официальный проект запроса на удаление данных (DSR) на русском языке.
+
+Вывод ДОЛЖЕН быть в формате JSON:
+{
+  "analysis": [
+    {
+      "service": "Название сервиса",
+      "risk_level": "Высокий / Средний / Низкий",
+      "reason": "Краткая причина риска (2-3 предложения)",
+      "delete_url": "Ссылка для удаления аккаунта"
+    }
+  ],
+  "dsr_template": "Полный проект письма DSR на русском языке"
+}
+""",
+    "es": """
+Usted es un auditor experto en privacidad y seguridad digital con referencia a RGPD (GDPR) y leyes internacionales.
+Sus tareas:
+1. Analizar el nivel de riesgo para cada servicio detectado.
+2. Resumir los motivos del riesgo de forma concisa (máximo 2-3 oraciones).
+3. Proporcionar enlaces o instrucciones para la desactivación/eliminación de la cuenta.
+4. Redactar una solicitud formal de eliminación de datos (DSR) en español basada en el RGPD.
+
+La salida DEBE ser un JSON válido:
+{
+  "analysis": [
+    {
+      "service": "Nombre del Servicio",
+      "risk_level": "Alto / Medio / Bajo",
+      "reason": "Resumen conciso del riesgo (máx. 2-3 oraciones)",
+      "delete_url": "URL de eliminación de cuenta"
+    }
+  ],
+  "dsr_template": "Borrador completo de la carta DSR en español"
+}
+""",
+    "ar": """
+أنت خبير تدقيق الخصوصية والأمان الرقمي وفقاً للوائح حماية البيانات العامة (GDPR).
+مهامك:
+1. تحليل مستوى مخاطر الخصوصية لكل خدمة مكتشفة.
+2. تلخيص أسباب المخاطر بأسلوب موجز وواضح (2-3 جمل كحد أقصى).
+3. توفير روابط أو إرشادات لحذف الحساب.
+4. صياغة خطابات رسمية لطلب حذف البيانات (DSR) باللغة العربية استناداً إلى GDPR.
+
+يجب أن يكون الناتج بنسق JSON صالح:
+{
+  "analysis": [
+    {
+      "service": "اسم الخدمة",
+      "risk_level": "عالي / متوسط / منخفض",
+      "reason": "ملخص موجز لسبب الخطر (2-3 جمل)",
+      "delete_url": "رابط حذف الحساب"
+    }
+  ],
+  "dsr_template": "مسودة خطاب DSR باللغة العربية"
+}
+""",
+    "zh": """
+您是一位精通全球数据隐私法规 (GDPR 及国际标准) 的 AI 隐私与安全审计员。
+您的任务：
+1. 分析每个检测到的服务的隐私风险等级。
+2. 将风险原因精简总结（最多 2-3 句话）。
+3. 提供账户注销/删除链接或简要说明。
+4. 用中文起草一份基于 GDPR 的正式个人数据删除请求 (DSR) 信函。
+
+输出必须为合法的 JSON 格式：
+{
+  "analysis": [
+    {
+      "service": "服务/平台名称",
+      "risk_level": "高 / 中 / 低",
+      "reason": "精简的风险原因说明（最多 2-3 句）",
+      "delete_url": "注销账户 URL 或简要说明"
+    }
+  ],
+  "dsr_template": "完整的中文 DSR 请求信函草案"
+}
 """
 }
 
-def generate_default_dsr_template(email: str, found_services: list, phone: str = "", lang: str = "id") -> str:
-    services_str = "\n".join([f"- {s.get('service', s.get('name', 'Registered Service'))}" for s in found_services]) if found_services else "- [Service Name]"
-    phone_str = f"\n- Phone Number   : {phone.strip()}" if phone and phone.strip() else ""
+def build_user_prompt(email: str, found_services: list, phone: str = "", lang: str = "id") -> str:
+    services_text = json.dumps(found_services, indent=2)
+    phone_line = f"\nTarget Phone: {phone.strip()}" if phone and phone.strip() else ""
+    
+    prompts_map = {
+        "en": f"Target Email: {email}{phone_line}\nList of Detected Services:\n{services_text}\n\nProvide privacy risk analysis and draft a Data Subject Request (DSR) letter for data erasure based on GDPR.",
+        "de": f"Ziel-E-Mail: {email}{phone_line}\nListe der erkannten Dienste:\n{services_text}\n\nErstellen Sie eine Risikoanalyse und einen DSR-Entwurf zur Datenlöschung gemäß DSGVO.",
+        "ru": f"Целевой Email: {email}{phone_line}\nСписок обнаруженных сервисов:\n{services_text}\n\nПредоставьте анализ рисков и проект DSR для удаления данных на основе GDPR.",
+        "es": f"Correo Objetivo: {email}{phone_line}\nLista de servicios detectados:\n{services_text}\n\nProporcione un análisis de riesgo y redacte una carta DSR para la eliminación de datos según el RGPD.",
+        "ar": f"البريد المستهدف: {email}{phone_line}\nقائمة الخدمات المكتشفة:\n{services_text}\n\nقدم تحليلاً لمخاطر الخصوصية واصغ مسودة خطاب DSR لحذف البيانات استناداً إلى GDPR.",
+        "zh": f"目标邮箱: {email}{phone_line}\n检测到的服务列表:\n{services_text}\n\n提供隐私风险分析并基于 GDPR 起草用于数据删除的 DSR 信函。"
+    }
+    
+    return prompts_map.get(
+        lang, 
+        f"Target Email: {email}{phone_line}\nDaftar Layanan Terdeteksi:\n{services_text}\n\nBuatkan analisis risiko dan draf surat permintaan penghapusan data (DSR) berbasis UU PDP Indonesia!"
+    )
 
+def load_local_dsr_template(email: str, found_services: list, phone: str = "", lang: str = "id") -> str:
+    """Fallback lokal menggunakan template dsr_*.txt jika AI gagal/offline."""
     template_file = UTILS_DIR / f"dsr_{lang}.txt"
     if not template_file.exists():
         template_file = UTILS_DIR / "dsr_id.txt"
@@ -106,6 +235,9 @@ def generate_default_dsr_template(email: str, found_services: list, phone: str =
 
     try:
         template_content = template_file.read_text(encoding="utf-8")
+        services_str = "\n".join([f"- {s.get('service', s.get('name', 'Registered Service'))}" for s in found_services]) if found_services else "- [Service Name]"
+        phone_str = f"\n- Phone Number   : {phone.strip()}" if phone and phone.strip() else ""
+
         return template_content.format(
             email=email,
             phone_str=phone_str,
@@ -113,36 +245,24 @@ def generate_default_dsr_template(email: str, found_services: list, phone: str =
         )
     except Exception as e:
         print(f"[DSR Template Log] Error reading template file {template_file}: {e}")
-        return ""
+        return f"To DPO / Privacy Team,\n\nPlease delete all personal data for {email}.\n\nThank you."
 
-def build_user_prompt(email: str, found_services: list, phone: str = "", lang: str = "id") -> str:
-    services_text = json.dumps(found_services, indent=2)
-    phone_line = f"\nTarget Phone: {phone.strip()}" if phone and phone.strip() else ""
-
-    if lang == "en":
-        return f"""Target Email: {email}{phone_line}
-List of Detected Services:
-{services_text}
-
-Provide privacy risk analysis and draft a Data Subject Request (DSR) letter for data erasure."""
-    else:
-        return f"""Target Email: {email}{phone_line}
-Daftar Layanan Terdeteksi:
-{services_text}
-
-Buatkan analisis risiko dan draf surat permintaan penghapusan data (DSR) berbasis UU PDP Indonesia!"""
+# ==========================================
+# 3. LLM API CALLERS
+# ==========================================
 
 def call_gemini(prompt: str, api_key: str, sys_prompt: str) -> str:
-    from google import genai
-    from google.genai import types
-
     client = genai.Client(api_key=api_key)
-    model_name = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
-    config = types.GenerateContentConfig(response_mime_type="application/json")
+    model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    config = types.GenerateContentConfig(
+        system_instruction=sys_prompt,
+        response_mime_type="application/json",
+        temperature=0.2,
+    )
 
     response = client.models.generate_content(
         model=model_name,
-        contents=f"{sys_prompt}\n\n{prompt}",
+        contents=prompt,
         config=config
     )
     return response.text
@@ -198,12 +318,17 @@ def call_ollama(prompt: str, sys_prompt: str) -> str:
         print(f"[Fallback Log] Ollama Async Error: {e}")
         raise e
 
+# ==========================================
+# 4. MAIN ORCHESTRATOR
+# ==========================================
+
 def analyze_smart_cache(email: str, found_services: list, phone: str = "", force_refresh: bool = False, lang: str = "id") -> dict:
+    """Orkestrator utama analisis risiko privasi dengan cache & multi-provider fallback."""
     if not force_refresh:
         cached_result = load_analysis_cache(email, phone, max_age_hours=24.0, lang=lang)
         if cached_result:
             if not cached_result.get("dsr_template"):
-                cached_result["dsr_template"] = generate_default_dsr_template(email, found_services, phone, lang=lang)
+                cached_result["dsr_template"] = load_local_dsr_template(email, found_services, phone, lang=lang)
             return cached_result
 
     sys_prompt = SYSTEM_PROMPTS.get(lang, SYSTEM_PROMPTS["id"])
@@ -211,17 +336,23 @@ def analyze_smart_cache(email: str, found_services: list, phone: str = "", force
     raw_response = ""
     provider_used = "None"
 
-    # Gemini
-    for i in range(1, 7):
-        key = os.getenv(f"GOOGLE_API_KEY_{i}", "").strip()
-        if key:
-            try:
-                raw_response = call_gemini(user_prompt, key, sys_prompt)
-                provider_used = f"Google Gemini (Key #{i})"
-                time.sleep(DELAY_SECONDS)
-                break
-            except Exception as e:
-                print(f"[Fallback Log] Gemini Key #{i} error: {e}")
+    # 1. Google Gemini Multi-Key Strategy
+    gemini_keys = [
+        os.getenv("GEMINI_API_KEY", "").strip(),
+        os.getenv("GOOGLE_API_KEY", "").strip(),
+    ] + [os.getenv(f"GOOGLE_API_KEY_{i}", "").strip() for i in range(1, 7)]
+    
+    # Filter unique non-empty keys
+    valid_gemini_keys = list(dict.fromkeys([k for k in gemini_keys if k]))
+
+    for idx, key in enumerate(valid_gemini_keys, 1):
+        try:
+            raw_response = call_gemini(user_prompt, key, sys_prompt)
+            provider_used = f"Google Gemini (Key #{idx})"
+            time.sleep(DELAY_SECONDS)
+            break
+        except Exception as e:
+            print(f"[Fallback Log] Gemini Key #{idx} error: {e}")
 
     # Groq
     if not raw_response:
@@ -254,22 +385,38 @@ def analyze_smart_cache(email: str, found_services: list, phone: str = "", force
         except Exception as e:
             print(f"[Fallback Log] Ollama error: {e}")
 
+    # Parse and Return Response
     try:
         parsed_data = json.loads(raw_response)
         parsed_data["provider_used"] = provider_used
         parsed_data["is_from_cache"] = False
 
         if not parsed_data.get("dsr_template"):
-            parsed_data["dsr_template"] = generate_default_dsr_template(email, found_services, phone, lang=lang)
+            parsed_data["dsr_template"] = load_local_dsr_template(email, found_services, phone, lang=lang)
 
         save_analysis_cache(email, parsed_data, phone, lang=lang)
         return parsed_data
 
-    except Exception:
-        fallback_dsr = generate_default_dsr_template(email, found_services, phone, lang=lang)
-        return {
-            "provider_used": provider_used,
+    except Exception as e:
+        print(f"[AI Agent Error] All AI providers failed or returned invalid JSON. Using rule-based fallback. Error: {e}")
+        
+        fallback_analysis = []
+        for s in found_services:
+            svc_name = s.get("service", s.get("name", "Unknown"))
+            fallback_analysis.append({
+                "service": svc_name,
+                "risk_level": "Sedang" if lang == "id" else "Medium",
+                "reason": f"Terdeteksi dari modul {s.get('source', 'System Scan')}.",
+                "delete_url": f"https://www.google.com/search?q=how+to+delete+{svc_name}+account"
+            })
+
+        fallback_result = {
+            "provider_used": "Local Rule-based Engine (Offline Fallback)",
             "is_from_cache": False,
-            "analysis": [],
-            "dsr_template": fallback_dsr
+            "analysis": fallback_analysis,
+            "dsr_template": load_local_dsr_template(email, found_services, phone, lang=lang)
         }
+        return fallback_result
+
+# Alias untuk kompatibilitas panggil nama fungsi lama
+analyze_privacy_footprint = analyze_smart_cache

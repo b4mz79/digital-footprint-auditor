@@ -1,0 +1,29 @@
+An
+Datenschutzbeauftragter (DPO)  Datenschutz-Team
+[Name des Unternehmens  Dienstanbieters]
+
+Betreff Antrag auf Löschung personenbezogener Daten  Data Subject Request (DSR)
+Referenz DSGVO (GDPR) & geltende Datenschutzgesetze
+
+Sehr geehrte Damen und Herren,
+
+hiermit stelle ich formell einen Antrag auf Löschung meiner personenbezogenen Daten.
+
+Registrierte Kontodaten
+- Registrierte E-Mail-Adresse  {email}{phone_str}
+
+Auf Grundlage der mir durch die geltenden Datenschutzgesetze garantierten Rechte beantrage ich Folgendes
+
+1. Das dauerhafte Löschen undoder Vernichten aller meiner personenbezogenen Daten, die in Ihren Systemen, Datenbanken und bei Auftragsverarbeitern gespeichert sind.
+2. Das unverzügliche Einstellen jeglicher weiteren Verarbeitung, Profilerstellung oder kommerziellen Nutzung meiner personenbezogenen Daten.
+3. Eine schriftliche Bestätigung per E-Mail, sobald die Datenlöschung abgeschlossen ist.
+
+Liste der erkannten Dienste
+{services_str}
+
+Vielen Dank für die zügige Bearbeitung dieses gesetzlichen Antrags.
+
+Mit freundlichen Grüßen
+
+
+[{email}]

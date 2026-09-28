@@ -1,0 +1,29 @@
+Para:
+Delegado de Protección de Datos (DPO) / Equipo de Privacidad
+[Nombre de la Empresa / Proveedor del Servicio]
+
+Asunto: Solicitud de Supresión de Datos Personales / Data Subject Request (DSR)
+Referencia: Reglamento General de Protección de Datos (GDPR) y leyes de privacidad aplicables
+
+Estimado/a Delegado/a de Protección de Datos,
+
+Por la presente, me dirijo a usted para presentar formalmente una solicitud de supresión de mis datos personales.
+
+Detalles de la cuenta registrada:
+- Correo electrónico registrado : {email}{phone_str}
+
+En virtud de los derechos de los interesados garantizados por las leyes de privacidad aplicables, solicito lo siguiente:
+
+1. Eliminar y/o destruir de forma permanente todos mis datos personales almacenados en sus sistemas, bases de datos y encargados del tratamiento.
+2. Cesar de inmediato cualquier otro tratamiento, elaboración de perfiles o utilización comercial de mis datos personales.
+3. Proporcionar una confirmación por escrito por correo electrónico una vez finalizado el proceso de supresión de datos.
+
+Lista de servicios detectados:
+{services_str}
+
+Agradezco de antemano su pronta atención a esta solicitud legal.
+
+Atentamente,
+
+
+[{email}]

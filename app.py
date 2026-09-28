@@ -26,13 +26,34 @@ st.set_page_config(
 with st.sidebar:
     st.header("⚙️ Configuration / Konfigurasi")
 
-    # Selector Multi-Bahasa
-    selected_lang = st.selectbox(
+    # Map Pilihan Bahasa Ke Kode Bahasa
+    LANG_OPTIONS = {
+        "English": "en",
+        "Bahasa Indonesia": "id",
+        "Deutsch (Jerman)": "de",
+        "Русский (Rusia)": "ru",
+        "Español (Spanyol)": "es",
+        "العربية (Arab)": "ar",
+        "中文 (Cina)": "zh"
+    }
+
+    # Cari index bahasa aktif di session state
+    current_lang_code = st.session_state.get("lang", "en")
+    options_list = list(LANG_OPTIONS.keys())
+    default_index = 0
+    for idx, (label, code) in enumerate(LANG_OPTIONS.items()):
+        if code == current_lang_code:
+            default_index = idx
+            break
+
+    selected_lang_label = st.selectbox(
         "🌐 Language / Bahasa",
-        options=["Bahasa Indonesia", "English"],
-        index=0 if st.session_state["lang"] == "id" else 1
+        options=options_list,
+        index=default_index
     )
-    lang = "id" if "Indonesia" in selected_lang else "en"
+    
+    # Simpan kode bahasa terpilih
+    lang = LANG_OPTIONS[selected_lang_label]
     st.session_state["lang"] = lang
 
     st.subheader(t("sidebar_config", lang=lang))
@@ -90,7 +111,7 @@ with st.sidebar:
     st.caption(f"• **Tavily AI Search:** {has_tavily}")
     st.caption("• **SearXNG & DDG:** 🟢 Active (Always Free)")
 
-    run_scan = st.button(t("btn_run", lang=lang), type="primary", use_container_width=True)
+    run_scan = st.button(t("btn_run", lang=lang), type="primary", width="stretch")
 
 # Dashboard Main Header
 st.title(t("title", lang=lang))
@@ -182,7 +203,7 @@ if run_scan:
             if "service" in df_display.columns:
                 df_display = df_display.drop(columns=["service"])
 
-            st.dataframe(df_display, use_container_width=True)
+            st.dataframe(df_display, width="stretch")
 
             # Step 4: AI Audit via Hybrid Cache + Multi-LLM
             st.divider()
