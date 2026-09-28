@@ -323,7 +323,7 @@ async def call_ollama_async(prompt: str, sys_prompt: str) -> str:
         "stream": False,
         "format": "json"
     }
-    timeout_config = httpx.Timeout(connect=10.0, read=180.0, write=10.0, pool=10.0)
+    timeout_config = httpx.Timeout(connect=15.0, read=300.0, write=10.0, pool=10.0)
 
     async with httpx.AsyncClient(timeout=timeout_config) as client:
         response = await client.post(url, json=payload)
