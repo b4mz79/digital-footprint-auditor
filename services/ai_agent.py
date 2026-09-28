@@ -55,7 +55,7 @@ def save_analysis_cache(email: str, data: dict, phone: str = "", lang: str = "id
         print(f"[Cache Log] Error saving cache: {e}")
 
 # ==========================================
-# 2. SYSTEM PROMPTS & PROMPT BUILDERS (7 LANGUAGES)
+# 2. SYSTEM PROMPTS & PROMPT BUILDERS
 # ==========================================
 
 SYSTEM_PROMPTS = {
@@ -347,28 +347,45 @@ def build_user_prompt(email: str, found_services: list, phone: str = "", lang: s
 
 def load_local_dsr_template(email: str, found_services: list, phone: str = "", lang: str = "id") -> str:
     """Fallback lokal menggunakan template dsr_*.txt jika AI gagal/offline."""
-    template_file = UTILS_DIR / f"dsr_{lang}.txt"
-    if not template_file.exists():
-        template_file = UTILS_DIR / "dsr_id.txt"
-        if not template_file.exists():
-            template_file = Path("utils") / f"dsr_{lang}.txt"
+    candidate_files = [
+        UTILS_DIR / f"dsr_{lang}.txt",
+        UTILS_DIR / "dsr_id.txt",
+        Path("utils") / f"dsr_{lang}.txt",
+        Path("utils") / "dsr_id.txt",
+    ]
 
-    try:
-        template_content = template_file.read_text(encoding="utf-8")
-        services_str = "\n".join([f"- {s.get('service', s.get('name', 'Registered Service'))}" for s in found_services]) if found_services else "- [Service Name]"
-        phone_str = f"\n- Phone Number   : {phone.strip()}" if phone and phone.strip() else ""
+    template_file = next((f for f in candidate_files if f.exists()), None)
 
-        return template_content.format(
-            email=email,
-            phone_str=phone_str,
-            services_str=services_str
-        )
-    except Exception as e:
-        print(f"[DSR Template Log] Error reading template file {template_file}: {e}")
-        return f"To DPO / Privacy Team,\n\nPlease delete all personal data for {email}.\n\nThank you."
+    if template_file:
+        try:
+            template_content = template_file.read_text(encoding="utf-8")
+            services_str = "\n".join([f"- {s.get('service', s.get('name', 'Registered Service'))}" for s in found_services]) if found_services else "- [Service Name]"
+            phone_str = f"\n- Phone Number   : {phone.strip()}" if phone and phone.strip() else ""
+
+            return template_content.format(
+                email=email,
+                phone_str=phone_str,
+                services_str=services_str
+            )
+        except Exception as e:
+            print(f"[DSR Template Log] Error reading template file {template_file}: {e}")
+
+    return f"To DPO / Privacy Team,\n\nPlease delete all personal data for {email}.\n\nThank you."
+
+def clean_json_string(raw: str) -> str:
+    """Membersihkan markdown backtick ```json dari output LLM jika ada."""
+    cleaned = raw.strip()
+    if cleaned.startswith("```"):
+        lines = cleaned.splitlines()
+        if lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].startswith("```"):
+            lines = lines[:-1]
+        cleaned = "\n".join(lines).strip()
+    return cleaned
 
 # ==========================================
-# 3. LLM API CALLERS
+# 3. LLM API CALLERS (SYNC & ASYNC WRAPPERS)
 # ==========================================
 
 def call_gemini(prompt: str, api_key: str, sys_prompt: str) -> str:
@@ -415,6 +432,15 @@ def call_openai(prompt: str, api_key: str, sys_prompt: str) -> str:
     )
     return completion.choices[0].message.content
 
+async def call_gemini_async(prompt: str, api_key: str, sys_prompt: str) -> str:
+    return await asyncio.to_thread(call_gemini, prompt, api_key, sys_prompt)
+
+async def call_groq_async(prompt: str, api_key: str, sys_prompt: str) -> str:
+    return await asyncio.to_thread(call_groq, prompt, api_key, sys_prompt)
+
+async def call_openai_async(prompt: str, api_key: str, sys_prompt: str) -> str:
+    return await asyncio.to_thread(call_openai, prompt, api_key, sys_prompt)
+
 def get_wsl_host_ip() -> str:
     """Mendeteksi IP Windows Host secara otomatis dari WSL2."""
     try:
@@ -427,13 +453,11 @@ def get_wsl_host_ip() -> str:
     return "http://localhost:11434"
 
 async def call_ollama_async(prompt: str, sys_prompt: str) -> str:
+    """Eksekusi Ollama secara native async dengan timeout panjang untuk model berat."""
     model_name = os.getenv("OLLAMA_MODEL", "qwen2.5:3b")
 
     # Prioritas: .env -> Auto-detect IP WSL Host -> Fallback localhost
-    base_url = os.getenv("OLLAMA_HOST", "").strip()
-    if not base_url:
-        base_url = get_wsl_host_ip()
-
+    base_url = os.getenv("OLLAMA_HOST", "").strip() or get_wsl_host_ip()
     url = f"{base_url.rstrip('/')}/api/generate"
 
     payload = {
@@ -442,26 +466,19 @@ async def call_ollama_async(prompt: str, sys_prompt: str) -> str:
         "stream": False,
         "format": "json"
     }
-    timeout_config = httpx.Timeout(connect=15.0, read=600.0, write=10.0, pool=10.0)
+    timeout_config = httpx.Timeout(connect=30.0, read=900.0, write=30.0, pool=30.0)
 
     async with httpx.AsyncClient(timeout=timeout_config) as client:
         response = await client.post(url, json=payload)
         response.raise_for_status()
         return response.json().get("response", "")
 
-def call_ollama(prompt: str, sys_prompt: str) -> str:
-    try:
-        return asyncio.run(call_ollama_async(prompt, sys_prompt))
-    except Exception as e:
-        print(f"[Fallback Log] Ollama Async Error: {e}")
-        raise e
-
 # ==========================================
-# 4. MAIN ORCHESTRATOR
+# 4. MAIN ASYNC ORCHESTRATOR
 # ==========================================
 
-def analyze_smart_cache(email: str, found_services: list, phone: str = "", force_refresh: bool = False, lang: str = "id") -> dict:
-    """Orkestrator utama analisis risiko privasi dengan cache & multi-provider fallback."""
+async def analyze_smart_cache(email: str, found_services: list, phone: str = "", force_refresh: bool = False, lang: str = "id") -> dict:
+    """Orkestrator utama analisis risiko privasi (Full Async & Non-blocking)."""
     if not force_refresh:
         cached_result = load_analysis_cache(email, phone, max_age_hours=24.0, lang=lang)
         if cached_result:
@@ -485,47 +502,48 @@ def analyze_smart_cache(email: str, found_services: list, phone: str = "", force
 
     for idx, key in enumerate(valid_gemini_keys, 1):
         try:
-            raw_response = call_gemini(user_prompt, key, sys_prompt)
+            raw_response = await call_gemini_async(user_prompt, key, sys_prompt)
             provider_used = f"Google Gemini (Key #{idx})"
-            time.sleep(DELAY_SECONDS)
+            await asyncio.sleep(DELAY_SECONDS)
             break
         except Exception as e:
             print(f"[Fallback Log] Gemini Key #{idx} error: {e}")
 
-    # Groq
+    # 2. Groq
     if not raw_response:
         groq_key = os.getenv("GROQ_API_KEY", "").strip()
         if groq_key:
             try:
-                time.sleep(DELAY_SECONDS)
-                raw_response = call_groq(user_prompt, groq_key, sys_prompt)
+                await asyncio.sleep(DELAY_SECONDS)
+                raw_response = await call_groq_async(user_prompt, groq_key, sys_prompt)
                 provider_used = "Groq Cloud"
             except Exception as e:
                 print(f"[Fallback Log] Groq error: {e}")
 
-    # OpenAI
+    # 3. OpenAI
     if not raw_response:
         openai_key = os.getenv("OPENAI_API_KEY", "").strip()
         if openai_key:
             try:
-                time.sleep(DELAY_SECONDS)
-                raw_response = call_openai(user_prompt, openai_key, sys_prompt)
+                await asyncio.sleep(DELAY_SECONDS)
+                raw_response = await call_openai_async(user_prompt, openai_key, sys_prompt)
                 provider_used = "OpenAI"
             except Exception as e:
                 print(f"[Fallback Log] OpenAI error: {e}")
 
-    # Ollama
+    # 4. Ollama Local (Native Async)
     if not raw_response:
         try:
-            time.sleep(DELAY_SECONDS)
-            raw_response = call_ollama(user_prompt, sys_prompt)
+            await asyncio.sleep(DELAY_SECONDS)
+            raw_response = await call_ollama_async(user_prompt, sys_prompt)
             provider_used = "Ollama Local"
         except Exception as e:
             print(f"[Fallback Log] Ollama error: {e}")
 
     # Parse and Return Response
     try:
-        parsed_data = json.loads(raw_response)
+        clean_resp = clean_json_string(raw_response)
+        parsed_data = json.loads(clean_resp)
         parsed_data["provider_used"] = provider_used
         parsed_data["is_from_cache"] = False
 
@@ -556,5 +574,5 @@ def analyze_smart_cache(email: str, found_services: list, phone: str = "", force
         }
         return fallback_result
 
-# Alias untuk kompatibilitas panggil nama fungsi lama
+# Alias untuk kompatibilitas nama fungsi lama
 analyze_privacy_footprint = analyze_smart_cache

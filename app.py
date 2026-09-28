@@ -1,4 +1,5 @@
 import os
+import asyncio
 import streamlit as st
 import pandas as pd
 from dotenv import load_dotenv
@@ -208,17 +209,17 @@ if run_scan:
 
             st.dataframe(df_display, width="stretch")
 
-            # Step 4: AI Audit via Hybrid Cache + Multi-LLM
+            # Step 4: AI Audit via Hybrid Cache + Multi-LLM (Executed Async)
             st.divider()
             st.subheader(t("ai_title", lang=lang))
 
             with st.spinner(t("spinner_ai", lang=lang)):
-                ai_output = analyze_smart_cache(
+                ai_output = asyncio.run(analyze_smart_cache(
                     email=target_email,
                     found_services=all_detected_services,
                     phone=target_phone,
                     lang=lang
-                )
+                ))
 
                 st.info(t("info_provider_used", lang=lang, provider=ai_output.get("provider_used", "Local Cache")))
 
