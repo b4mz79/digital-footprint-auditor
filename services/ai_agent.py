@@ -211,7 +211,7 @@ La salida DEBE ser un JSON válido:
 def build_user_prompt(email: str, found_services: list, phone: str = "", lang: str = "id") -> str:
     services_text = json.dumps(found_services, indent=2)
     phone_line = f"\nTarget Phone: {phone.strip()}" if phone and phone.strip() else ""
-    
+
     prompts_map = {
         "en": f"Target Email: {email}{phone_line}\nList of Detected Services:\n{services_text}\n\nProvide privacy risk analysis and draft a Data Subject Request (DSR) letter for data erasure based on GDPR.",
         "de": f"Ziel-E-Mail: {email}{phone_line}\nListe der erkannten Dienste:\n{services_text}\n\nErstellen Sie eine Risikoanalyse und einen DSR-Entwurf zur Datenlöschung gemäß DSGVO.",
@@ -220,9 +220,9 @@ def build_user_prompt(email: str, found_services: list, phone: str = "", lang: s
         "ar": f"البريد المستهدف: {email}{phone_line}\nقائمة الخدمات المكتشفة:\n{services_text}\n\nقدم تحليلاً لمخاطر الخصوصية واصغ مسودة خطاب DSR لحذف البيانات استناداً إلى GDPR.",
         "zh": f"目标邮箱: {email}{phone_line}\n检测到的服务列表:\n{services_text}\n\n提供隐私风险分析并基于 GDPR 起草用于数据删除的 DSR 信函。"
     }
-    
+
     return prompts_map.get(
-        lang, 
+        lang,
         f"Target Email: {email}{phone_line}\nDaftar Layanan Terdeteksi:\n{services_text}\n\nBuatkan analisis risiko dan draf surat permintaan penghapusan data (DSR) berbasis UU PDP Indonesia!"
     )
 
@@ -309,21 +309,21 @@ def get_wsl_host_ip() -> str:
 
 async def call_ollama_async(prompt: str, sys_prompt: str) -> str:
     model_name = os.getenv("OLLAMA_MODEL", "qwen2.5:3b")
-    
+
     # Prioritas: .env -> Auto-detect IP WSL Host -> Fallback localhost
     base_url = os.getenv("OLLAMA_HOST", "").strip()
     if not base_url:
         base_url = get_wsl_host_ip()
-    
+
     url = f"{base_url.rstrip('/')}/api/generate"
-    
+
     payload = {
         "model": model_name,
         "prompt": f"{sys_prompt}\n\n{prompt}",
         "stream": False,
         "format": "json"
     }
-    timeout_config = httpx.Timeout(connect=15.0, read=300.0, write=10.0, pool=10.0)
+    timeout_config = httpx.Timeout(connect=15.0, read=600.0, write=10.0, pool=10.0)
 
     async with httpx.AsyncClient(timeout=timeout_config) as client:
         response = await client.post(url, json=payload)
@@ -360,7 +360,7 @@ def analyze_smart_cache(email: str, found_services: list, phone: str = "", force
         os.getenv("GEMINI_API_KEY", "").strip(),
         os.getenv("GOOGLE_API_KEY", "").strip(),
     ] + [os.getenv(f"GOOGLE_API_KEY_{i}", "").strip() for i in range(1, 7)]
-    
+
     # Filter unique non-empty keys
     valid_gemini_keys = list(dict.fromkeys([k for k in gemini_keys if k]))
 
@@ -418,7 +418,7 @@ def analyze_smart_cache(email: str, found_services: list, phone: str = "", force
 
     except Exception as e:
         print(f"[AI Agent Error] All AI providers failed or returned invalid JSON. Using rule-based fallback. Error: {e}")
-        
+
         fallback_analysis = []
         for s in found_services:
             svc_name = s.get("service", s.get("name", "Unknown"))
