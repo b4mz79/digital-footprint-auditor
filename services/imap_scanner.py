@@ -104,6 +104,7 @@ def safe_decode_header(header_value: str) -> str:
         return str(header_value)
 
 def scan_gmail_inbox(email_address: str, app_password: str, max_emails: int = 200, lang: str = "id") -> list[dict]:
+    logger.info(f"[IMAP] Scanning target: {mask_email(email_address)}")
     found_services = set()
     results = []
 
