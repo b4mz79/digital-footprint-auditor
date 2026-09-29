@@ -141,6 +141,9 @@ if run_scan:
                         st.success(t("success_imap", lang=lang, count=len(imap_results)))
                     except Exception as e:
                         st.error(f"Error IMAP: {e}")
+                    finally:
+                        # Bersihkan variabel password lokal dari ruang lingkup eksekusi
+                        del gmail_app_password
 
             # Step 2: Scan OSINT Holehe
             if enable_osint:
