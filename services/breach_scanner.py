@@ -68,7 +68,15 @@ class SensitiveDataFilter(logging.Filter):
                 record.args = ()
             except TypeError:
                 pass
-        if '?' in actual_msg: actual_msg = actual_msg.split('?')[0]
+
+        if '?' in actual_msg:
+            parts = actual_msg.split('?')
+            base_url = parts[0]
+            last_part = parts[-1].split()
+            status_code = f" {last_part[-1]}" if last_part and last_part[-1].isdigit() else ""
+            actual_msg = base_url + status_code
+
+        #if '?' in actual_msg: actual_msg = actual_msg.split('?')[0]
         if self.email_regex.search(actual_msg): actual_msg = self.email_regex.sub(self.mask_email, actual_msg)
         if self.secret_regex.search(actual_msg): actual_msg = self.secret_regex.sub(r'\1=[MASKED]', actual_msg)
         if self.phone_regex.search(actual_msg): actual_msg = self.phone_regex.sub(self.mask_phone, actual_msg)
@@ -87,10 +95,11 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
     datefmt="%H:%M:%S"
 )
-logger = logging.getLogger("BreachScanner")
-logger.addFilter(SensitiveDataFilter())
 logging.getLogger("httpx").addFilter(SensitiveDataFilter())
 logging.getLogger("httpcore").addFilter(SensitiveDataFilter())
+
+logger = logging.getLogger("BreachScanner")
+logger.addFilter(SensitiveDataFilter())
 
 BREACH_CACHE_DIR = Path("cache/breach")
 BREACH_CACHE_DIR.mkdir(parents=True, exist_ok=True)
