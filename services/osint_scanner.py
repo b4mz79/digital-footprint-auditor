@@ -77,13 +77,14 @@ def scan_osint_footprint(email: str, lang: str = "id") -> list[dict]:
                     # Mencegah isu subdomain menjadi aneh jika dipotong mentah
                     display_name = service_domain.split('.')[-2].capitalize() if service_domain.count('.') >= 1 else service_domain.capitalize()
 
-                    logger.info(f"[OSINT] menemukan target terdaftar di layanan: {service_domain}")
-                    results.append({
-                        "name": display_name,
-                        "domain": service_domain,
-                        "source": t("source_osint", lang=lang),
-                        "subject": t("active_account_osint", lang=lang)
-                    })
+                    if display_name != "Email" and service_domain != "email":
+                        logger.info(f"[OSINT] menemukan target terdaftar di layanan: {service_domain}")
+                        results.append({
+                            "name": display_name,
+                            "domain": service_domain,
+                            "source": t("source_osint", lang=lang),
+                            "subject": t("active_account_osint", lang=lang)
+                        })
     except subprocess.TimeoutExpired:
         logger.warning("[OSINT Warning] Proses Holehe Timeout.")
     except Exception as e:
