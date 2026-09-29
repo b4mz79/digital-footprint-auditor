@@ -62,14 +62,14 @@ class SensitiveDataFilter(logging.Filter):
     def filter(self, record):
         actual_msg = record.getMessage()
         record.args = ()
-        actual_msg = actual_msg.replace('%3F', '?').replace('%3f', '?')
-        if '?' in actual_msg:
-            parts = actual_msg.split('?')
-            base_url = parts[0]
-            query_string = parts[1]
-            status_match = re.search(r'\b(200|403|404|429|500|201|302)\b', query_string)
-            status_code = f" {status_match.group(1)}" if status_match else ""
-            actual_msg = base_url + status_code
+#        actual_msg = actual_msg.replace('%3F', '?').replace('%3f', '?')
+#        if '?' in actual_msg:
+#            parts = actual_msg.split('?')
+#            base_url = parts[0]
+#            query_string = parts[1]
+#            status_match = re.search(r'\b(200|403|404|429|500|201|302)\b', query_string)
+#            status_code = f" {status_match.group(1)}" if status_match else ""
+#            actual_msg = base_url + status_code
         if self.email_regex.search(actual_msg): actual_msg = self.email_regex.sub(self.mask_email, actual_msg)
         if self.secret_regex.search(actual_msg): actual_msg = self.secret_regex.sub(r'\1=[MASKED]', actual_msg)
         if self.phone_regex.search(actual_msg): actual_msg = self.phone_regex.sub(self.mask_phone, actual_msg)
