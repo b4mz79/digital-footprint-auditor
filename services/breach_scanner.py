@@ -62,14 +62,6 @@ class SensitiveDataFilter(logging.Filter):
     def filter(self, record):
         actual_msg = record.getMessage()
         record.args = ()
-#        actual_msg = actual_msg.replace('%3F', '?').replace('%3f', '?')
-#        if '?' in actual_msg:
-#            parts = actual_msg.split('?')
-#            base_url = parts[0]
-#            query_string = parts[1]
-#            status_match = re.search(r'\b(200|403|404|429|500|201|302)\b', query_string)
-#            status_code = f" {status_match.group(1)}" if status_match else ""
-#            actual_msg = base_url + status_code
         if self.email_regex.search(actual_msg): actual_msg = self.email_regex.sub(self.mask_email, actual_msg)
         if self.secret_regex.search(actual_msg): actual_msg = self.secret_regex.sub(r'\1=[MASKED]', actual_msg)
         if self.phone_regex.search(actual_msg): actual_msg = self.phone_regex.sub(self.mask_phone, actual_msg)
@@ -145,17 +137,11 @@ def mask_pii(text: str) -> str:
 def mask_sensitive_snippet(subject_text: str) -> str:
     """Melakukan redaksi pada Email, Nomor Telepon, OTP, PIN, atau Kode dari teks snippet."""
     if not subject_text: return ""
-    # 1. Masking format Email (Contoh: user@gmail.com -> ***@***)
     masked = re.sub(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+', '***@***', subject_text)
-    # 2. Masking Nomor Telepon Internasional/Lokal bersambung (Contoh: +6281234567890 -> ***)
     masked = re.sub(r'\+?\b\d{9,15}\b', '***', masked)
-    # 3. Masking Nomor Telepon dengan pemisah spasi/strip (Contoh: 0812-3456-7890 -> ***)
     masked = re.sub(r'\b(?:\+62|62|0)[ \-]?\d{2,4}[ \-]?\d{3,4}[ \-]?\d{3,5}\b', '***', masked)
-    # 4. Masking angka 4-8 digit yang berdiri sendiri (Contoh: 123456, 9876)
     masked = re.sub(r'\b\d{4,8}\b', '***', masked)
-    # 5. Masking format Google Code (Contoh: G-123456)
     masked = re.sub(r'\bG-\d{4,8}\b', 'G-***', masked)
-    # 6. Masking string alfanumerik yang mengikuti kata kunci OTP/PIN/Code
     masked = re.sub(r'(?i)\b(otp|pin|kode|code|token|sandi|password)[\s:=]+[A-Za-z0-9_-]{4,12}\b', r'\1 ***', masked)
     return masked
 
