@@ -61,13 +61,8 @@ class SensitiveDataFilter(logging.Filter):
         return "[PHONE_MASKED]"
 
     def filter(self, record):
-        actual_msg = str(record.msg)
-        if record.args:
-            try:
-                actual_msg = actual_msg % record.args
-                record.args = ()
-            except TypeError:
-                pass
+        actual_msg = record.getMessage()
+        record.args = ()
 
         if '?' in actual_msg:
             parts = actual_msg.split('?')
