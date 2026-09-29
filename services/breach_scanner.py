@@ -16,14 +16,59 @@ from dotenv import load_dotenv
 from utils.translations import t
 from cache_security import save_encrypted_json, load_encrypted_json
 
+# class Filter khusus untuk Masking
+class SensitiveDataFilter(logging.Filter):
+    def __init__(self):
+        super().__init__()
+        self.email_regex = re.compile(r'([\w\.-]+)((?:@|%40))([\w\.-]+)(\.\w+)', re.IGNORECASE)
+        self.secret_regex = re.compile(r'(password|token|api_key|secret|code|pin|otp)["\s]*[:=]["\s]*([^\s,]+)', re.IGNORECASE)
+        self.phone_regex = re.compile(r'(?:\+?62|0)8[0-9\s-]{7,11}\b')
+
+    def mask_email(self, m):
+        username = m.group(1)
+        separator = m.group(2)
+        domain_name = m.group(3)
+        tld = m.group(4)
+        masked_user = username + "***"
+        if len(domain_name) > 2: masked_domain = "***" + domain_name[-2:]
+        else: masked_domain = "***"
+        return f"{masked_user}{separator}{masked_domain}{tld}"
+
+    def mask_phone(self, match):
+        phone = match.group(0)
+        clean_phone = re.sub(r'[\s-]', '', phone)
+        if len(clean_phone) > 5: return clean_phone[:4] + "*" * (len(clean_phone) - 6) + clean_phone[-2:]
+        return "[PHONE_MASKED]"
+
+    def filter(self, record):
+        actual_msg = str(record.msg)
+        if record.args:
+            try:
+                actual_msg = actual_msg % record.args
+                record.args = ()
+            except TypeError:
+                pass
+        if self.email_regex.search(actual_msg): actual_msg = self.email_regex.sub(self.mask_email, actual_msg)
+        if self.secret_regex.search(actual_msg): actual_msg = self.secret_regex.sub(r'\1=[MASKED]', actual_msg)
+        if self.phone_regex.search(actual_msg): actual_msg = self.phone_regex.sub(self.mask_phone, actual_msg)
+        record.msg = actual_msg
+        return True
+
 load_dotenv()
 LOG_LEVEL = os.getenv("LOG_LEVEL", "NOTSET").upper()
+num_log_level = getattr(logging, LOG_LEVEL, logging.NOTSET)
 logging.basicConfig(
-    level=getattr(logging, LOG_LEVEL, logging.NOTSET),
+    level=num_log_level,
     format="%(asctime)s [%(levelname)s] %(message)s",
     datefmt="%H:%M:%S"
 )
+#if num_log_level <= logging.INFO:
+#    logging.getLogger("httpx").setLevel(logging.WARNING)
+#else:
+#    logging.getLogger("httpx").setLevel(logging.ERROR)
 logger = logging.getLogger("BreachScanner")
+logger.addFilter(SensitiveDataFilter())
+logging.getLogger("httpx").addFilter(SensitiveDataFilter())
 
 BREACH_CACHE_DIR = Path("cache/breach")
 BREACH_CACHE_DIR.mkdir(parents=True, exist_ok=True)
