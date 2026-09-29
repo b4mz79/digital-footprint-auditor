@@ -11,7 +11,7 @@ Dear Data Protection Officer,
 I am writing to formally submit a Data Subject Request regarding my personal data.
 
 Registered Account Details:
-- Registered Email : {email}{phone_str}
+- Registered Email : {email} {phone_str}
 
 Under data subject rights guaranteed by applicable privacy laws, I hereby request the following:
 

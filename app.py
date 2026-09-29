@@ -173,10 +173,29 @@ if run_scan:
 
                     cache_status_msg = t("cached_tag", lang=lang) if is_breach_cached else ""
 
+                    engines_report = breach_output.get("engines", {})
+                    failed_engines = [
+                        name for name, info in engines_report.items()
+                        if info.get("status") in ("error", "partial")
+                    ]
+                    scan_complete = bool(breach_output.get("complete", False))
+
                     if breach_findings:
                         st.warning(t("warn_breach_found", lang=lang, count=len(breach_findings), engine=engine_used, cache_status=cache_status_msg))
-                    else:
+                        if failed_engines:
+                            st.warning(t("breach_incomplete_with_hits", lang=lang, n_failed=len(failed_engines), failed=", ".join(failed_engines)))
+                    elif scan_complete:
                         st.success(t("success_no_breach", lang=lang, engine=engine_used, cache_status=cache_status_msg))
+                    else:
+                        # Jangan pernah menampilkan "aman" jika ada engine yang gagal.
+                        st.warning(t("breach_incomplete", lang=lang, n_failed=len(failed_engines), failed=", ".join(failed_engines) or "-"))
+
+                    if engines_report:
+                        icons = {"ok": "✅", "partial": "⚠️", "error": "❌", "skipped": "⏭️"}
+                        with st.expander(t("engine_status_title", lang=lang)):
+                            for name, info in engines_report.items():
+                                status = info.get("status", "error")
+                                st.write(f"{icons.get(status, '❔')} **{name}** — {t('engine_status_' + status, lang=lang)}")
                 except Exception as e:
                     st.error(f"Error Breach Scan: {e}")
 

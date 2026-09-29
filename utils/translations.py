@@ -60,7 +60,14 @@ TRANSLATIONS = {
         "source_imap": "Gmail IMAP Scan",
         "cache_badge_data": "⚡ (Data Cache)",
         "cache_badge_live": "🔴 (Live Scan)",
-        "no_summary": "Tidak ada ringkasan detail tersedia."
+        "no_summary": "Tidak ada ringkasan detail tersedia.",
+        "breach_incomplete": "Tidak ada hasil, tetapi pemindaian TIDAK LENGKAP ({n_failed} engine gagal: {failed}). Ini BUKAN bukti bahwa tidak ada kebocoran.",
+        "breach_incomplete_with_hits": "Catatan: pemindaian tidak lengkap ({n_failed} engine gagal: {failed}); mungkin masih ada paparan lain.",
+        "engine_status_title": "Status engine",
+        "engine_status_ok": "OK",
+        "engine_status_partial": "Sebagian",
+        "engine_status_error": "Gagal",
+        "engine_status_skipped": "Dilewati (belum dikonfigurasi)"
     },
     "en": {
         "page_title": "Local Digital Footprint & Privacy Auditor",
@@ -121,7 +128,14 @@ TRANSLATIONS = {
         "source_imap": "Gmail IMAP Scan",
         "cache_badge_data": "⚡ (Cached Data)",
         "cache_badge_live": "🔴 (Live Scan)",
-        "no_summary": "No detailed summary available."
+        "no_summary": "No detailed summary available.",
+        "breach_incomplete": "No results, but the scan is INCOMPLETE ({n_failed} engine(s) failed: {failed}). This is NOT proof that nothing was leaked.",
+        "breach_incomplete_with_hits": "Note: the scan is incomplete ({n_failed} engine(s) failed: {failed}); more exposure may exist.",
+        "engine_status_title": "Engine status",
+        "engine_status_ok": "OK",
+        "engine_status_partial": "Partial",
+        "engine_status_error": "Failed",
+        "engine_status_skipped": "Skipped (not configured)"
     },
     "de": {
         "page_title": "Lokaler Auditor für digitalen Fußabdruck",
@@ -182,7 +196,14 @@ TRANSLATIONS = {
         "source_imap": "Gmail IMAP Scan",
         "cache_badge_data": "⚡ (Cache-Daten)",
         "cache_badge_live": "🔴 (Live Scan)",
-        "no_summary": "Keine detaillierte Zusammenfassung verfügbar."
+        "no_summary": "Keine detaillierte Zusammenfassung verfügbar.",
+        "breach_incomplete": "Keine Treffer, aber der Scan ist UNVOLLSTÄNDIG ({n_failed} Engine(s) fehlgeschlagen: {failed}). Das ist KEIN Beweis dafür, dass nichts offengelegt wurde.",
+        "breach_incomplete_with_hits": "Hinweis: Der Scan ist unvollständig ({n_failed} Engine(s) fehlgeschlagen: {failed}); es könnten weitere Offenlegungen existieren.",
+        "engine_status_title": "Engine-Status",
+        "engine_status_ok": "OK",
+        "engine_status_partial": "Teilweise",
+        "engine_status_error": "Fehlgeschlagen",
+        "engine_status_skipped": "Übersprungen (nicht konfiguriert)"
     },
     "ru": {
         "page_title": "Локальный аудитор цифрового следа",
@@ -243,7 +264,14 @@ TRANSLATIONS = {
         "source_imap": "Сканирование Gmail IMAP",
         "cache_badge_data": "⚡ (Данные из кэша)",
         "cache_badge_live": "🔴 (Живое сканирование)",
-        "no_summary": "Подробная сводка отсутствует."
+        "no_summary": "Подробная сводка отсутствует.",
+        "breach_incomplete": "Результатов нет, но сканирование НЕПОЛНОЕ (сбоев движков: {n_failed} — {failed}). Это НЕ доказательство того, что утечек нет.",
+        "breach_incomplete_with_hits": "Примечание: сканирование неполное (сбоев движков: {n_failed} — {failed}); возможны и другие утечки.",
+        "engine_status_title": "Статус движков",
+        "engine_status_ok": "OK",
+        "engine_status_partial": "Частично",
+        "engine_status_error": "Сбой",
+        "engine_status_skipped": "Пропущено (не настроено)"
     },
     "es": {
         "page_title": "Auditor de Huella Digital Local",
@@ -304,7 +332,14 @@ TRANSLATIONS = {
         "source_imap": "Escaneo Gmail IMAP",
         "cache_badge_data": "⚡ (Datos en Caché)",
         "cache_badge_live": "🔴 (Escaneo en Vivo)",
-        "no_summary": "No hay resumen detallado disponible."
+        "no_summary": "No hay resumen detallado disponible.",
+        "breach_incomplete": "Sin resultados, pero el análisis está INCOMPLETO ({n_failed} motor(es) fallaron: {failed}). Esto NO demuestra que no haya filtraciones.",
+        "breach_incomplete_with_hits": "Nota: el análisis está incompleto ({n_failed} motor(es) fallaron: {failed}); podría haber más exposición.",
+        "engine_status_title": "Estado de los motores",
+        "engine_status_ok": "OK",
+        "engine_status_partial": "Parcial",
+        "engine_status_error": "Fallido",
+        "engine_status_skipped": "Omitido (no configurado)"
     },
     "ar": {
         "page_title": "مُدقق الأثر الرقمي المحلي",
@@ -365,7 +400,14 @@ TRANSLATIONS = {
         "source_imap": "فحص Gmail IMAP",
         "cache_badge_data": "⚡ (بيانات مخزنة)",
         "cache_badge_live": "🔴 (فحص مباشر)",
-        "no_summary": "لا يوجد ملخص تفصيلي متاح."
+        "no_summary": "لا يوجد ملخص تفصيلي متاح.",
+        "breach_incomplete": "لا توجد نتائج، لكن الفحص غير مكتمل (فشل {n_failed} من المحركات: {failed}). هذا ليس دليلاً على عدم وجود تسريب.",
+        "breach_incomplete_with_hits": "ملاحظة: الفحص غير مكتمل (فشل {n_failed} من المحركات: {failed})؛ قد توجد تسريبات أخرى.",
+        "engine_status_title": "حالة المحركات",
+        "engine_status_ok": "نجح",
+        "engine_status_partial": "جزئي",
+        "engine_status_error": "فشل",
+        "engine_status_skipped": "تم التخطي (غير مهيأ)"
     },
     "zh": {
         "page_title": "本地数字足迹审计工具",
@@ -426,7 +468,14 @@ TRANSLATIONS = {
         "source_imap": "Gmail IMAP 扫描",
         "cache_badge_data": "⚡ (缓存数据)",
         "cache_badge_live": "🔴 (实时扫描)",
-        "no_summary": "无详细摘要。"
+        "no_summary": "无详细摘要。",
+        "breach_incomplete": "没有结果，但扫描不完整（{n_failed} 个引擎失败：{failed}）。这并不能证明没有泄露。",
+        "breach_incomplete_with_hits": "注意：扫描不完整（{n_failed} 个引擎失败：{failed}），可能还存在其他暴露。",
+        "engine_status_title": "引擎状态",
+        "engine_status_ok": "正常",
+        "engine_status_partial": "部分成功",
+        "engine_status_error": "失败",
+        "engine_status_skipped": "已跳过（未配置）"
     },
     "fr": {
         "page_title": "Auditeur Local d'Empreinte Numérique & Vie Privée",
@@ -487,7 +536,14 @@ TRANSLATIONS = {
         "source_imap": "Scan Gmail IMAP",
         "cache_badge_data": "⚡ (Données en Cache)",
         "cache_badge_live": "🔴 (Scan en Direct)",
-        "no_summary": "Aucun résumé détaillé disponible."
+        "no_summary": "Aucun résumé détaillé disponible.",
+        "breach_incomplete": "Aucun résultat, mais l'analyse est INCOMPLÈTE ({n_failed} moteur(s) en échec : {failed}). Cela ne prouve PAS l'absence de fuite.",
+        "breach_incomplete_with_hits": "Remarque : l'analyse est incomplète ({n_failed} moteur(s) en échec : {failed}) ; d'autres expositions peuvent exister.",
+        "engine_status_title": "État des moteurs",
+        "engine_status_ok": "OK",
+        "engine_status_partial": "Partiel",
+        "engine_status_error": "Échec",
+        "engine_status_skipped": "Ignoré (non configuré)"
     },
     "it": {
         "page_title": "Auditor Locale dell'Impronta Digitale e della Privacy",
@@ -548,7 +604,14 @@ TRANSLATIONS = {
         "source_imap": "Scansione Gmail IMAP",
         "cache_badge_data": "⚡ (Dati in Cache)",
         "cache_badge_live": "🔴 (Scansione in Tempo Reale)",
-        "no_summary": "Nessun riepilogo dettagliato disponibile."
+        "no_summary": "Nessun riepilogo dettagliato disponibile.",
+        "breach_incomplete": "Nessun risultato, ma la scansione è INCOMPLETA ({n_failed} motore/i falliti: {failed}). Questo NON prova che non ci siano state fughe di dati.",
+        "breach_incomplete_with_hits": "Nota: la scansione è incompleta ({n_failed} motore/i falliti: {failed}); potrebbero esserci altre esposizioni.",
+        "engine_status_title": "Stato dei motori",
+        "engine_status_ok": "OK",
+        "engine_status_partial": "Parziale",
+        "engine_status_error": "Fallito",
+        "engine_status_skipped": "Saltato (non configurato)"
     },
     "nl": {
         "page_title": "Lokale Digitale Voetafdruk & Privacy Auditor",
@@ -609,7 +672,14 @@ TRANSLATIONS = {
         "source_imap": "Gmail IMAP Scan",
         "cache_badge_data": "⚡ (Gecachte Gegevens)",
         "cache_badge_live": "🔴 (Live Scan)",
-        "no_summary": "Geen gedetailleerde samenvatting beschikbaar."
+        "no_summary": "Geen gedetailleerde samenvatting beschikbaar.",
+        "breach_incomplete": "Geen resultaten, maar de scan is ONVOLLEDIG ({n_failed} engine(s) mislukt: {failed}). Dit is GEEN bewijs dat er niets gelekt is.",
+        "breach_incomplete_with_hits": "Let op: de scan is onvolledig ({n_failed} engine(s) mislukt: {failed}); er kan meer blootstelling zijn.",
+        "engine_status_title": "Engine-status",
+        "engine_status_ok": "OK",
+        "engine_status_partial": "Gedeeltelijk",
+        "engine_status_error": "Mislukt",
+        "engine_status_skipped": "Overgeslagen (niet geconfigureerd)"
     },
     "ja": {
         "page_title": "ローカルデジタルフットプリント＆プライバシー監査員",
@@ -670,7 +740,14 @@ TRANSLATIONS = {
         "source_imap": "Gmail IMAPスキャン",
         "cache_badge_data": "⚡ (キャッシュデータ)",
         "cache_badge_live": "🔴 (ライブスキャン)",
-        "no_summary": "詳細な要約はありません。"
+        "no_summary": "詳細な要約はありません。",
+        "breach_incomplete": "結果は0件ですが、スキャンは不完全です（{n_failed} 件のエンジンが失敗: {failed}）。漏洩がないことの証明にはなりません。",
+        "breach_incomplete_with_hits": "注意: スキャンは不完全です（{n_failed} 件のエンジンが失敗: {failed}）。他にも露出がある可能性があります。",
+        "engine_status_title": "エンジンの状態",
+        "engine_status_ok": "正常",
+        "engine_status_partial": "一部成功",
+        "engine_status_error": "失敗",
+        "engine_status_skipped": "スキップ（未設定）"
     }
 }
 

@@ -634,6 +634,23 @@ class ResponseTooLargeError(RuntimeError):
     pass
 
 
+class EngineSkipped(Exception):
+    """Raised by an engine that is not configured; reported as 'skipped', not 'ok'."""
+
+
+# Stable engine identifiers used in the scan report (not shown as finding sources).
+ENGINE_BREACHDIRECTORY = "BreachDirectory"
+ENGINE_GOOGLE_API = "Google Custom Search"
+ENGINE_GOOGLE_SCRAPER = "Google Scraper"
+ENGINE_BING = "Bing Scraper"
+ENGINE_TAVILY = "Tavily"
+ENGINE_SEARXNG = "SearXNG"
+ENGINE_DDG = "DuckDuckGo"
+
+# Hard ceiling per engine call (thread-based scrapers have no reliable timeout of their own).
+ENGINE_TIMEOUT_SECONDS = 45.0
+
+
 async def _read_response_limited(
     response: httpx.Response,
     max_bytes: int,
@@ -768,8 +785,11 @@ async def scan_breachdirectory_async(
             max_bytes=RESPONSE_LIMIT_JSON,
         )
 
+        if not isinstance(data, dict):
+            raise ValueError("Unexpected response shape.")
+
         findings: list[dict] = []
-        if isinstance(data, dict) and data.get("success") and data.get("result"):
+        if data.get("success") and data.get("result"):
             results = data.get("result", [])
             if isinstance(results, list):
                 for item in results[:MAX_FINDINGS_PER_ENGINE]:
@@ -792,7 +812,7 @@ async def scan_breachdirectory_async(
         return findings
     except Exception as exc:
         _log_http_error("BreachDirectory", exc)
-        return []
+        raise
 
 
 async def scan_google_custom_search_async(
@@ -819,11 +839,11 @@ async def scan_google_custom_search_async(
 
         findings: list[dict] = []
         if not isinstance(data, dict):
-            return []
+            raise ValueError("Unexpected response shape.")
 
         items = data.get("items", [])
         if not isinstance(items, list):
-            return []
+            raise ValueError("Unexpected response shape.")
 
         for item in items[:MAX_FINDINGS_PER_ENGINE]:
             if not isinstance(item, dict):
@@ -849,7 +869,7 @@ async def scan_google_custom_search_async(
         return findings
     except Exception as exc:
         _log_http_error("Google Custom Search", exc)
-        return []
+        raise
 
 
 def scan_googlesearch_python(target: str, lang: str = "id") -> list[dict]:
@@ -903,7 +923,7 @@ def scan_googlesearch_python(target: str, lang: str = "id") -> list[dict]:
         return findings
     except Exception as exc:
         logger.warning("[Google Scraper] Error: %s", type(exc).__name__)
-        return []
+        raise
 
 
 async def scan_bing_scrape_async(
@@ -935,12 +955,18 @@ async def scan_bing_scrape_async(
         )
         if status_code != 200:
             logger.warning("[Bing Scraper] HTTP status: %s", status_code)
-            return []
+            raise RuntimeError(f"Bing returned HTTP {status_code}")
 
         soup = BeautifulSoup(response_text, "html.parser")
         findings: list[dict] = []
 
-        for item in soup.select("li.b_algo")[:MAX_FINDINGS_PER_ENGINE]:
+        result_items = soup.select("li.b_algo")
+        if not result_items and re.search(
+            r"captcha|unusual traffic", response_text, re.IGNORECASE
+        ):
+            raise RuntimeError("Bing returned a bot-check page")
+
+        for item in result_items[:MAX_FINDINGS_PER_ENGINE]:
             title_elem = item.select_one("h2 a")
             if not title_elem:
                 continue
@@ -970,7 +996,7 @@ async def scan_bing_scrape_async(
         return findings
     except Exception as exc:
         _log_http_error("Bing Scraper", exc)
-        return []
+        raise
 
 
 async def scan_searxng_async(
@@ -983,7 +1009,7 @@ async def scan_searxng_async(
         logger.info(
             "[SearXNG] Pemindaian dilewati: SEARXNG_INSTANCE_URL tidak dikonfigurasi/invalid."
         )
-        return []
+        raise EngineSkipped(ENGINE_SEARXNG)
 
     query = f'"{target}" (breach OR leak OR "database dump" OR "combolist")'
     params = {
@@ -1009,11 +1035,11 @@ async def scan_searxng_async(
         )
 
         if not isinstance(data, dict):
-            return []
+            raise ValueError("Unexpected response shape.")
 
         results = data.get("results", [])
         if not isinstance(results, list):
-            return []
+            raise ValueError("Unexpected response shape.")
 
         findings: list[dict] = []
         for r in results[:MAX_FINDINGS_PER_ENGINE]:
@@ -1035,7 +1061,7 @@ async def scan_searxng_async(
         return findings
     except Exception as exc:
         _log_http_error("SearXNG", exc)
-        return []
+        raise
 
 
 async def scan_breaches_tavily_async(
@@ -1066,11 +1092,11 @@ async def scan_breaches_tavily_async(
 
         findings: list[dict] = []
         if not isinstance(data, dict):
-            return []
+            raise ValueError("Unexpected response shape.")
 
         results = data.get("results", [])
         if not isinstance(results, list):
-            return []
+            raise ValueError("Unexpected response shape.")
 
         for result in results[:MAX_FINDINGS_PER_ENGINE]:
             if not isinstance(result, dict):
@@ -1101,7 +1127,7 @@ async def scan_breaches_tavily_async(
         return findings
     except Exception as exc:
         _log_http_error("Tavily AI", exc)
-        return []
+        raise
 
 
 def scan_breaches_ddg(target: str, lang: str = "id") -> list[dict]:
@@ -1141,7 +1167,7 @@ def scan_breaches_ddg(target: str, lang: str = "id") -> list[dict]:
         return findings
     except Exception as exc:
         logger.warning("[DuckDuckGo] Error: %s", type(exc).__name__)
-        return []
+        raise
 
 
 # =============================================================================
@@ -1176,7 +1202,9 @@ async def scan_data_breaches(
             max_age_hours=12.0,
             tenant_id=tenant_id,
         )
-        if cached_result:
+        # Only trust caches written by a *complete* scan. Entries without the flag
+        # predate engine-status tracking and may be false "clean" results.
+        if cached_result and cached_result.get("complete") is True:
             logger.info("[BreachScan] Memuat hasil dari Local Cache.")
             return cached_result
 
@@ -1188,6 +1216,34 @@ async def scan_data_breaches(
     google_search_key = os.getenv("GOOGLE_SEARCH_API_KEY", "").strip()
     google_cx_id = os.getenv("GOOGLE_CX_ID", "").strip()
     rapidapi_key = os.getenv("RAPIDAPI_KEY", "").strip()
+
+    engine_enabled = {
+        ENGINE_BREACHDIRECTORY: bool(rapidapi_key),
+        ENGINE_GOOGLE_API: bool(google_search_key and google_cx_id),
+        ENGINE_GOOGLE_SCRAPER: True,
+        ENGINE_BING: True,
+        ENGINE_TAVILY: bool(tavily_key),
+        ENGINE_SEARXNG: bool(SEARXNG_INSTANCE_URL),
+        ENGINE_DDG: True,
+    }
+    stats = {name: {"ok": 0, "failed": 0} for name, on in engine_enabled.items() if on}
+    skipped_engines = [name for name, on in engine_enabled.items() if not on]
+
+    def build_plan(client: httpx.AsyncClient, target: str) -> list[tuple[str, object]]:
+        plan: list[tuple[str, object]] = []
+        if engine_enabled[ENGINE_BREACHDIRECTORY]:
+            plan.append((ENGINE_BREACHDIRECTORY, scan_breachdirectory_async(client, target, rapidapi_key)))
+        if engine_enabled[ENGINE_GOOGLE_API]:
+            plan.append((ENGINE_GOOGLE_API, scan_google_custom_search_async(
+                client, target, google_search_key, google_cx_id, lang=lang)))
+        plan.append((ENGINE_GOOGLE_SCRAPER, asyncio.to_thread(scan_googlesearch_python, target, lang=lang)))
+        plan.append((ENGINE_BING, scan_bing_scrape_async(client, target, lang=lang)))
+        if engine_enabled[ENGINE_TAVILY]:
+            plan.append((ENGINE_TAVILY, scan_breaches_tavily_async(client, target, tavily_key, lang=lang)))
+        if engine_enabled[ENGINE_SEARXNG]:
+            plan.append((ENGINE_SEARXNG, scan_searxng_async(client, target, lang=lang)))
+        plan.append((ENGINE_DDG, asyncio.to_thread(scan_breaches_ddg, target, lang=lang)))
+        return plan
 
     all_findings: list[dict] = []
     active_engines: set[str] = set()
@@ -1219,54 +1275,25 @@ async def scan_data_breaches(
                 )
                 await asyncio.sleep(DELAY_SECONDS)
 
-            tasks = []
+            plan = build_plan(client, target)
+            results = await asyncio.gather(
+                *(asyncio.wait_for(coro, timeout=ENGINE_TIMEOUT_SECONDS) for _, coro in plan),
+                return_exceptions=True,
+            )
 
-            if rapidapi_key:
-                tasks.append(
-                    scan_breachdirectory_async(client, target, rapidapi_key)
-                )
-
-            if google_search_key and google_cx_id:
-                tasks.append(
-                    scan_google_custom_search_async(
-                        client,
-                        target,
-                        google_search_key,
-                        google_cx_id,
-                        lang=lang,
-                    )
-                )
-
-            tasks.append(asyncio.to_thread(scan_googlesearch_python, target, lang=lang))
-            tasks.append(scan_bing_scrape_async(client, target, lang=lang))
-
-            if tavily_key:
-                tasks.append(
-                    scan_breaches_tavily_async(
-                        client,
-                        target,
-                        tavily_key,
-                        lang=lang,
-                    )
-                )
-
-            tasks.append(scan_searxng_async(client, target, lang=lang))
-            tasks.append(asyncio.to_thread(scan_breaches_ddg, target, lang=lang))
-
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-
-            for res in results:
-                if isinstance(res, Exception):
-                    logger.error(
-                        "[Task Exec Error]: %s",
-                        type(res).__name__,
-                    )
+            for (name, _coro), res in zip(plan, results):
+                if isinstance(res, EngineSkipped):
+                    continue
+                if isinstance(res, BaseException):
+                    stats[name]["failed"] += 1
+                    logger.warning("[%s] Engine gagal: %s", name, type(res).__name__)
                     continue
 
+                stats[name]["ok"] += 1
                 if isinstance(res, list) and res:
                     remaining = MAX_TOTAL_FINDINGS - len(all_findings)
                     if remaining <= 0:
-                        break
+                        continue
                     bounded_results = res[:remaining]
                     all_findings.extend(bounded_results)
                     for item in bounded_results:
@@ -1285,6 +1312,32 @@ async def scan_data_breaches(
         "=== PARALLEL SCAN SELESAI Dalam %.2f detik ===",
         elapsed,
     )
+
+    # Per-engine outcome. "ok" means it answered for every target queried.
+    engines_report: dict[str, dict] = {}
+    for name, st in stats.items():
+        if st["failed"] == 0:
+            status = "ok"
+        elif st["ok"] == 0:
+            status = "error"
+        else:
+            status = "partial"
+        engines_report[name] = {
+            "status": status,
+            "targets_ok": st["ok"],
+            "targets_failed": st["failed"],
+        }
+    for name in skipped_engines:
+        engines_report[name] = {"status": "skipped", "targets_ok": 0, "targets_failed": 0}
+
+    # A scan is "complete" only if every enabled engine answered. An empty result from an
+    # incomplete scan is NOT evidence that nothing was found.
+    complete = bool(stats) and all(
+        v["status"] == "ok" for v in engines_report.values() if v["status"] != "skipped"
+    )
+    if not complete:
+        failed_names = [n for n, v in engines_report.items() if v["status"] in {"error", "partial"}]
+        logger.warning("[BreachScan] Scan tidak lengkap. Engine bermasalah: %s", ", ".join(failed_names) or "-")
 
     # De-duplicate by normalized URL.
     unique_findings: list[dict] = []
@@ -1307,12 +1360,16 @@ async def scan_data_breaches(
         "engine": ", ".join(sorted(active_engines)) if active_engines else "None",
         "results": unique_findings,
         "is_from_cache": False,
+        "engines": engines_report,
+        "complete": complete,
     }
 
-    save_breach_cache(
-        email,
-        output,
-        phone,
-        tenant_id=tenant_id,
-    )
+    # Never cache an incomplete scan: it would replay a possibly false "clean" result for 12h.
+    if complete:
+        save_breach_cache(
+            email,
+            output,
+            phone,
+            tenant_id=tenant_id,
+        )
     return output

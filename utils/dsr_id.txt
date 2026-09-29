@@ -8,7 +8,7 @@ Rujukan: UU No. 27 Tahun 2022 tentang Perlindungan Data Pribadi (UU PDP)
 Dengan hormat,
 
 Saya yang bertanda tangan di bawah ini:
-- Email Terdaftar : {email}{phone_str}
+- Email Terdaftar : {email} {phone_str}
 
 Berdasarkan hak subjek data sebagaimana diatur dalam Pasal 8 Undang-Undang Nomor 27 Tahun 2022 tentang Perlindungan Data Pribadi (UU PDP), bersama surat ini saya mengajukan permohonan untuk:
 
