@@ -70,11 +70,11 @@ class SensitiveDataFilter(logging.Filter):
             parts = actual_msg.split('?')
             base_url = parts[0]       # Teks bersih sebelum tanda tanya
             query_string = parts[1]   # Teks yang penuh data bocor setelah tanda tanya
-            
+
             # Cari status HTTP (3 digit angka: 200, 403, 429, dll) di sepanjang query_string
             status_match = re.search(r'\b(200|403|404|429|500|201|302)\b', query_string)
             status_code = f" {status_match.group(1)}" if status_match else ""
-            
+
             # Satukan kembali. Data pencarian/telepon hancur total di sini, tersisa status code saja
             actual_msg = base_url + status_code
 
@@ -158,6 +158,12 @@ def mask_pii(text: str) -> str:
     if len(clean_num) >= 8:
         return clean_num[:2] + "****" + clean_num[-2:]
     return "***"
+
+def split_url_part(url: str) -> str:
+    if '?' in url:
+        parts = url.split('?')
+        return parts[0]
+    return url
 
 def mask_sensitive_snippet(subject_text: str) -> str:
     """Melakukan redaksi pada Email, Nomor Telepon, OTP, PIN, atau Kode dari teks snippet."""
@@ -296,7 +302,7 @@ async def scan_breachdirectory_async(client: httpx.AsyncClient, target: str, rap
 
     try:
         response = await client.get(url, headers=headers, params=params, timeout=12.0)
-        logger.info("response: %s://%s%s %s", response.url.scheme, response.url.host, response.url.path, response.status_code)
+        logger.info("response: %s://%s%s %s", response.url.scheme, response.url.host, split_url_part(response.url.path), response.status_code)
         response.raise_for_status()
         data = response.json()
 
@@ -323,7 +329,7 @@ async def scan_google_custom_search_async(client: httpx.AsyncClient, target: str
 
     try:
         response = await client.get(url, params=params, timeout=12.0)
-        logger.info("response: %s://%s%s %s", response.url.scheme, response.url.host, response.url.path, response.status_code)
+        logger.info("response: %s://%s%s %s", response.url.scheme, response.url.host, split_url_part(response.url.path), response.status_code)
         response.raise_for_status()
         data = response.json()
 
@@ -382,7 +388,7 @@ async def scan_bing_scrape_async(client: httpx.AsyncClient, target: str, lang: s
         url = "https://www.bing.com/search"
 
         response = await client.get(url, headers=headers, params={"q": query}, timeout=10.0, follow_redirects=True)
-        logger.info("response: %s://%s%s %s", response.url.scheme, response.url.host, response.url.path, response.status_code)
+        logger.info("response: %s://%s%s %s", response.url.scheme, response.url.host, split_url_part(response.url.path), response.status_code)
         if response.status_code != 200: return []
 
         soup = BeautifulSoup(response.text, "html.parser")
@@ -435,7 +441,7 @@ async def scan_searxng_async(client: httpx.AsyncClient, target: str, lang: str =
     try:
         logger.info(f"[SearXNG] Terhubung ke {SEARXNG_INSTANCE_URL} dan memulai scan untuk target: {mask_pii(target)}")
         response = await client.get(search_endpoint, params=params, timeout=10.0)
-        logger.info("response: %s://%s%s %s", response.url.scheme, response.url.host, response.url.path, response.status_code)
+        logger.info("response: %s://%s%s %s", response.url.scheme, response.url.host, split_url_part(response.url.path), response.status_code)
         if response.status_code == 200:
             data = response.json()
             results = data.get("results", [])
@@ -461,7 +467,7 @@ async def scan_breaches_tavily_async(client: httpx.AsyncClient, target: str, api
 
     try:
         response = await client.post(url, json=payload, timeout=12.0)
-        logger.info("response: %s://%s%s %s", response.url.scheme, response.url.host, response.url.path, response.status_code)
+        logger.info("response: %s://%s%s %s", response.url.scheme, response.url.host, split_url_part(response.url.path), response.status_code)
         response.raise_for_status()
         data = response.json()
 
