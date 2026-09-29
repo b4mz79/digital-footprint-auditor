@@ -17,6 +17,12 @@ from utils.translations import t
 from cache_security import save_encrypted_json, load_encrypted_json
 
 load_dotenv()
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=getattr(logging, LOG_LEVEL, logging.INFO),
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%H:%M:%S"
+)
 logger = logging.getLogger("BreachScanner")
 
 BREACH_CACHE_DIR = Path("cache/breach")

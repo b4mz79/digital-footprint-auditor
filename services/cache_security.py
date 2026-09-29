@@ -4,11 +4,19 @@ import logging
 import getpass
 import subprocess
 import base64
+from dotenv import load_dotenv
 from pathlib import Path
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives import hashes
 
+load_dotenv()
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=getattr(logging, LOG_LEVEL, logging.INFO),
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%H:%M:%S"
+)
 logger = logging.getLogger("CacheSecurity")
 
 def set_secure_file_permissions(file_path: Path) -> None:
