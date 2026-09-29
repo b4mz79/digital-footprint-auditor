@@ -22,7 +22,7 @@ class SensitiveDataFilter(logging.Filter):
         super().__init__()
         self.email_regex = re.compile(r'([\w\.-]+)((?:@|%40))([\w\.-]+)(\.\w+)', re.IGNORECASE)
         self.secret_regex = re.compile(r'(password|token|api_key|secret|code|pin|otp)["\s]*[:=]["\s]*([^\s,]+)', re.IGNORECASE)
-        self.phone_regex = re.compile(r'(?:\+?62|0)8[0-9\s-]{7,11}\b')
+        self.phone_regex = re.compile(r'(?:\+|%2B|0)[0-9(?:%20)|\s|+\-]{7,20}\b', re.IGNORECASE)
 
     def mask_email(self, m):
         username = m.group(1)
@@ -37,8 +37,27 @@ class SensitiveDataFilter(logging.Filter):
 
     def mask_phone(self, match):
         phone = match.group(0)
-        clean_phone = re.sub(r'[\s-]', '', phone)
-        if len(clean_phone) > 5: return clean_phone[:4] + "*" * (len(clean_phone) - 6) + clean_phone[-2:]
+
+        # 1. Bersihkan semua karakter encoding dan pemisah agar menjadi angka murni
+        # (Menghapus %, B, spasi, +, -, dan angka 20 jika itu bagian dari %20)
+        clean_phone = re.sub(r'%20|[\s\+\-]', '', phone)
+        clean_phone = re.sub(r'[^0-9]', '', clean_phone)
+
+        # Batasan standar nomor telepon dunia (biasanya 7 hingga 15 digit angka murni)
+        if len(clean_phone) < 7 or len(clean_phone) > 16:
+            return phone # Jika terlalu pendek/panjang, kembalikan teks asli (bukan nomor telepon)
+
+        # 2. Aturan Masking Dinamis:
+        # Apapun kode negaranya, kita amankan bagian tengahnya.
+        # Kita sisakan 3 angka di depan dan 2 angka di belakang.
+        if len(clean_phone) > 5:
+            masked_core = clean_phone[:3] + "*" * (len(clean_phone) - 5) + clean_phone[-2:]
+
+            # Jika di teks aslinya ada tanda '+' atau '%2B', kembalikan tanda '+' di depan log agar rapi
+            if phone.upper().startswith("%2B") or phone.startswith("+"):
+                return "+" + masked_core
+            return masked_core
+
         return "[PHONE_MASKED]"
 
     def filter(self, record):
