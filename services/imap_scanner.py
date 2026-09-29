@@ -71,14 +71,36 @@ def select_all_mail_folder(mail: imaplib.IMAP4_SSL) -> str:
     return "inbox"
 
 def parse_sender_domain(from_header: str) -> str:
+    """Mengekstrak root domain (TLD) agar tidak ada duplikasi subdomain."""
     if not from_header:
         return ""
+
     match = re.search(r'<([^>]+)>', from_header)
     clean_email = match.group(1) if match else from_header.strip()
+
     if "@" in clean_email:
         domain = clean_email.split("@")[-1].lower()
-        if domain not in ["gmail.com", "yahoo.com", "hotmail.com", "outlook.com", "google.com"]:
-            return domain
+
+        # Abaikan provider email umum
+        if domain in ["gmail.com", "yahoo.com", "hotmail.com", "outlook.com", "google.com"]:
+            return ""
+
+        # Logika Ekstraksi Root Domain (Mencegah e.seagate.com -> e)
+        parts = domain.split('.')
+        if len(parts) >= 2:
+            # Daftar ekstensi negara/umum dua tingkat (contoh: .co.id, .or.id)
+            common_slds = {"co", "com", "net", "org", "ac", "go", "sch", "or", "web", "my", "biz"}
+
+            # Jika domain memiliki >= 3 bagian dan bagian kedua dari belakang adalah SLD
+            # (Contoh: seagate.co.id -> ambil 3 bagian terakhir)
+            if len(parts) >= 3 and parts[-2] in common_slds:
+                domain = ".".join(parts[-3:])
+            else:
+                # Jika domain standar (Contoh: e.seagate.com -> ambil 2 bagian terakhir: seagate.com)
+                domain = ".".join(parts[-2:])
+
+        return domain
+
     return ""
 
 def safe_decode_header(header_value: str) -> str:
@@ -131,6 +153,7 @@ def scan_gmail_inbox(email_address: str, app_password: str, max_emails: int = 20
 
                         domain = parse_sender_domain(from_header)
                         if domain and domain not in found_services:
+                            logger.info(f"[IMAP] menemukan email sesuai filter dari layanan: {domain}")
                             found_services.add(domain)
                             results.append({
                                 "name": domain.split(".")[0].capitalize(),
