@@ -29,8 +29,9 @@ class SensitiveDataFilter(logging.Filter):
         separator = m.group(2)
         domain_name = m.group(3)
         tld = m.group(4)
-        masked_user = username + "***"
-        if len(domain_name) > 2: masked_domain = "***" + domain_name[-2:]
+        if len(username) > 3: masked_user = username[:-3] + "***"
+        else: masked_user = "***"
+        if len(domain_name) > 3: masked_domain = "***" + domain_name[-3:]
         else: masked_domain = "***"
         return f"{masked_user}{separator}{masked_domain}{tld}"
 
@@ -62,10 +63,6 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
     datefmt="%H:%M:%S"
 )
-#if num_log_level <= logging.INFO:
-#    logging.getLogger("httpx").setLevel(logging.WARNING)
-#else:
-#    logging.getLogger("httpx").setLevel(logging.ERROR)
 logger = logging.getLogger("BreachScanner")
 logger.addFilter(SensitiveDataFilter())
 logging.getLogger("httpx").addFilter(SensitiveDataFilter())
