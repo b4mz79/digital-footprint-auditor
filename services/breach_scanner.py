@@ -71,6 +71,10 @@ class SensitiveDataFilter(logging.Filter):
         if self.email_regex.search(actual_msg): actual_msg = self.email_regex.sub(self.mask_email, actual_msg)
         if self.secret_regex.search(actual_msg): actual_msg = self.secret_regex.sub(r'\1=[MASKED]', actual_msg)
         if self.phone_regex.search(actual_msg): actual_msg = self.phone_regex.sub(self.mask_phone, actual_msg)
+        MAX_LEN = 100
+        if len(actual_msg) > MAX_LEN:
+            suffix = " ..."
+            actual_msg = actual_msg[:MAX_LEN - len(suffix)] + suffix
         record.msg = actual_msg
         return True
 
