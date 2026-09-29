@@ -2,6 +2,7 @@ import os
 import re
 import json
 import time
+import hmac
 import hashlib
 import asyncio
 import logging
@@ -56,12 +57,114 @@ def mask_pii(text: str) -> str:
 # 1. CACHE MANAGEMENT
 # ==========================================
 
+CONTROL_CHARS_RE = re.compile(r"[\x00-\x1f\x7f]")
+
 def get_cache_filepath(email: str, phone: str = "", lang: str = "id") -> Path:
     """Menghasilkan Path Cache Menggunakan SHA-256 Hashing untuk Menghindari Ekspos PII."""
     raw_identity = f"{email.strip().lower()}_{phone.strip()}_{lang}"
     hashed_identity = hashlib.sha256(raw_identity.encode("utf-8")).hexdigest()[:24]
     return CACHE_DIR / f"audit_cache_{hashed_identity}.json"
 
+def safe_tenant_identity(tenant_id: str) -> str:
+    secret_pepper = os.getenv("PII_PEPPER_KEY", "").strip()
+    if len(secret_pepper) < 32:
+        raise RuntimeError("PII_PEPPER_KEY harus dikonfigurasi dan minimal 32 karakter.")
+    tenant_id = tenant_id.strip()
+    if not tenant_id or len(tenant_id) > 128 or CONTROL_CHARS_RE.search(tenant_id):
+        raise ValueError("tenant_id tidak valid.")
+    return hmac.new(
+        secret_pepper.encode("utf-8"),
+        tenant_id.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+
+def safe_filename_identity(email_addr: str, phone: str = "") -> str:
+    """Create an HMAC-based cache identity without a hard-coded fallback key."""
+    secret_pepper = os.getenv("PII_PEPPER_KEY", "").strip()
+    if len(secret_pepper) < 32:
+        raise RuntimeError("PII_PEPPER_KEY harus dikonfigurasi dan minimal 32 karakter.")
+
+    normalized_email = email_addr.strip().lower()
+    normalized_phone = re.sub(r"\D", "", phone.strip())
+    raw_id = f"{normalized_email}_{normalized_phone}".encode("utf-8")
+    return hmac.new(
+        secret_pepper.encode("utf-8"),
+        raw_id,
+        hashlib.sha256,
+    ).hexdigest()
+
+def get_cache_filepath_ext(
+    email_addr: str,
+    phone: str = "",
+    lang: str = "id",
+    tenant_id: str = "default",
+) -> Path:
+    tenant_hash = safe_tenant_identity(tenant_id)
+    identity_hash = safe_filename_identity(email_addr, phone)
+    tenant_dir = CACHE_DIR / tenant_hash
+    tenant_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if os.name != "nt":
+        try:
+            os.chmod(tenant_dir, 0o700)
+        except OSError:
+            pass
+    return tenant_dir / f"audit_cache_{identity_hash}.json"
+
+def load_analysis_cache_ext(
+    email_addr: str,
+    phone: str = "",
+    max_age_hours: float = 12.0,
+    lang: str = "id",
+    tenant_id: str = "default",
+) -> dict | None:
+    try:
+        if max_age_hours < 0:
+            raise ValueError("max_age_hours must be >= 0")
+
+        cache_file = get_cache_filepath_ext(email_addr, phone, lang, tenant_id)
+        if not cache_file.exists():
+            return None
+
+        # Expiry is authenticated by Fernet's token timestamp rather than relying
+        # on filesystem mtime, which may be changed independently of the token.
+        max_age_seconds = int(max_age_hours * 3600)
+        data = load_encrypted_json(
+            cache_file,
+            tenant_id=tenant_id,
+            max_age_seconds=max_age_seconds,
+        )
+        if isinstance(data, dict):
+            data["is_from_cache"] = True
+            data["cache_filepath"] = str(cache_file)
+            return data
+        return None
+    except Exception:
+        # Cache failure must not fail the scan.
+        return None
+
+def save_analysis_cache_ext(
+    email_addr: str,
+    data: dict,
+    phone: str = "",
+    lang: str = "id",
+    tenant_id: str = "default",
+) -> None:
+    try:
+        cache_file = get_cache_filepath_ext(email_addr, phone, lang, tenant_id)
+        save_encrypted_json(cache_file, data, tenant_id=tenant_id)
+        if os.name != "nt":
+            try:
+                os.chmod(cache_file, 0o600)
+            except OSError:
+                pass
+    except Exception as exc:
+        logger.error(
+            "[AICache] Error saving: %s",
+            type(exc).__name__,
+        )
+
+
+#==start old version for documentation
 def load_analysis_cache(email: str, phone: str = "", max_age_hours: float = 24.0, lang: str = "id") -> dict | None:
     cache_file = get_cache_filepath(email, phone, lang=lang)
     if not cache_file.exists():
@@ -94,6 +197,7 @@ def save_analysis_cache(email: str, data: dict, phone: str = "", lang: str = "id
     except Exception as e:
         logger.error(f"[AICache] Error saving cache: {e}")
 
+#==end old version for documentation
 
 # ==========================================
 # 2. SANITIZATION, SYSTEM PROMPTS & PROMPT BUILDERS
@@ -566,19 +670,46 @@ async def call_ollama_async(prompt: str, sys_prompt: str) -> str:
 # 4. MAIN ASYNC ORCHESTRATOR
 # ==========================================
 
-async def analyze_smart_cache(email: str, found_services: list, phone: str = "", force_refresh: bool = False, lang: str = "id") -> dict:
+async def analyze_smart_cache(email: str, found_services: list, phone: str = "", force_refresh: bool = False, lang: str = "id", tenant_id: str = "default") -> dict:
     """Orkestrator utama analisis risiko privasi (Full Async & Non-blocking)."""
     start_time = time.time()
     logger.info(f"Memulai AI Privacy Audit target [{mask_pii(email)}] ({len(found_services)} layanan) [Bahasa: {lang}]")
 
+    if not isinstance(force_refresh, bool):
+        force_refresh = bool(force_refresh)
+
+    # Cache is tenant-scoped. The caller in a multi-tenant deployment must pass the
+    # authenticated tenant identifier; it must not be taken from untrusted form data.
+    tenant_id = tenant_id.strip()
+    if not tenant_id or len(tenant_id) > 128 or CONTROL_CHARS_RE.search(tenant_id):
+        raise ValueError("tenant_id tidak valid.")
+
     if not force_refresh:
-        cached_result = load_analysis_cache(email, phone, max_age_hours=24.0, lang=lang)
+        cached_result = load_analysis_cache_ext(
+            email,
+            phone,
+            max_age_hours=12.0,
+            lang=lang,
+            tenant_id=tenant_id,
+        )
         if cached_result:
+            logger.info("[AICache] Memuat hasil dari Local Cache.")
             if not cached_result.get("dsr_template"):
                 cached_result["dsr_template"] = load_local_dsr_template(email, found_services, phone, lang=lang)
             return cached_result
     else:
         logger.info("[AICache] 'Paksa Refresh' AKTIF. Mengabaikan cache lama & meminta analisis baru dari LLM...")
+
+
+#    if not force_refresh:
+#        cached_result = load_analysis_cache(email, phone, max_age_hours=24.0, lang=lang)
+#        if cached_result:
+#            if not cached_result.get("dsr_template"):
+#                cached_result["dsr_template"] = load_local_dsr_template(email, found_services, phone, lang=lang)
+#            return cached_result
+#    else:
+#        logger.info("[AICache] 'Paksa Refresh' AKTIF. Mengabaikan cache lama & meminta analisis baru dari LLM...")
+
 
     sys_prompt = SYSTEM_PROMPTS.get(lang, SYSTEM_PROMPTS["id"])
     user_prompt = build_user_prompt(email, found_services, phone, lang=lang)
@@ -655,7 +786,8 @@ async def analyze_smart_cache(email: str, found_services: list, phone: str = "",
         if not parsed_data.get("dsr_template"):
             parsed_data["dsr_template"] = load_local_dsr_template(email, found_services, phone, lang=lang)
 
-        save_analysis_cache(email, parsed_data, phone, lang=lang)
+        save_analysis_cache_ext(email, parsed_data, phone, lang=lang, tenant_id=tenant_id)
+        #save_analysis_cache(email, parsed_data, phone, lang=lang)
         elapsed = time.time() - start_time
         logger.info(f"AI Audit Selesai ({provider_used}) dalam {elapsed:.2f} detik.")
         return parsed_data
