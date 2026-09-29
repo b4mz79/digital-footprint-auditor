@@ -5,7 +5,6 @@ Tim Perlindungan Data Pribadi / Data Protection Officer (DPO)
 Perihal: Permohonan Penghapusan Data Pribadi (Data Subject Request / DSR)
 Rujukan: UU No. 27 Tahun 2022 tentang Perlindungan Data Pribadi (UU PDP)
 
-
 Dengan hormat,
 
 Saya yang bertanda tangan di bawah ini:
@@ -23,6 +22,5 @@ Daftar Layanan Terdeteksi:
 Demikian permohonan ini saya sampaikan. Atas perhatian dan pemenuhannya sesuai ketentuan perundang-undangan yang berlaku, saya ucapkan terima kasih.
 
 Hormat saya,
-
 
 [{email}]

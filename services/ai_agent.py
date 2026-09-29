@@ -496,19 +496,26 @@ def build_user_prompt(email: str, found_services: list, phone: str = "", lang: s
         raise ValueError("LLM prompt terlalu besar.")
     return prompt
 
+def read_dsr_template_c(lang: str = "id") -> str:
+    candidate_files = [
+        UTILS_DIR / f"dsr_{lang}.txt",
+        Path("utils") / f"dsr_{lang}.txt",
+        UTILS_DIR / "dsr_id.txt",
+        Path("utils") / "dsr_id.txt",
+    ]
+    template_file = next((f for f in candidate_files if f.is_file()), None)
+    if template_file:
+        try:
+            return template_file.read_text(encoding="utf-8", errors="strict")[:MAX_LOCAL_TEMPLATE_LENGTH]
+        except (OSError, UnicodeError, KeyError, ValueError) as exc:
+            logger.error("[DSR Template] Template error: %s", type(exc).__name__)
+    return ""
 
 def load_local_dsr_template(email: str, found_services: list, phone: str = "", lang: str = "id") -> str:
     lang = _validate_lang(lang)
     email = _validate_email(email)
     phone = _validate_phone(phone)
-
-    candidate_files = [
-        UTILS_DIR / f"dsr_{lang}.txt",
-        UTILS_DIR / "dsr_id.txt",
-        Path("utils") / f"dsr_{lang}.txt",
-        Path("utils") / "dsr_id.txt",
-    ]
-    template_file = next((f for f in candidate_files if f.is_file()), None)
+    template_file = read_dsr_template_c(lang)
 
     services: list[str] = []
     for item in found_services[:MAX_FOUND_SERVICES] if isinstance(found_services, list) else []:
@@ -522,10 +529,9 @@ def load_local_dsr_template(email: str, found_services: list, phone: str = "", l
     services_str = "\n".join(f"- {s}" for s in services) if services else "- [Service Name]"
     phone_str = f"- Phone Number : {phone}" if phone else "- Phone Number : [Not provided]"
 
-    if template_file:
+    if template_file!="" :
         try:
-            content = template_file.read_text(encoding="utf-8", errors="strict")[:MAX_LOCAL_TEMPLATE_LENGTH]
-            return content.format(
+            return template_file.format(
                 email=email,
                 phone_str=phone_str,
                 services_str=services_str,
@@ -542,12 +548,13 @@ def load_local_dsr_template(email: str, found_services: list, phone: str = "", l
     )
 
 
-def _hydrate_dsr_template(template: str, email: str, phone: str, found_services: list) -> str:
+def _hydrate_dsr_template(template: str, email: str, phone: str, found_services: list, lang: str = "id") -> str:
     if not isinstance(template, str) or not template.strip():
-        return load_local_dsr_template(email, found_services, phone)
+        return load_local_dsr_template(email, found_services, phone, lang)
 
     email = _validate_email(email)
     phone = _validate_phone(phone)
+
     services: list[str] = []
     for item in found_services[:MAX_FOUND_SERVICES] if isinstance(found_services, list) else []:
         name = item.get("service", item.get("name", "Registered Service")) if isinstance(item, dict) else str(item)
@@ -973,12 +980,14 @@ async def analyze_smart_cache(
         parsed_data["provider_used"] = provider_used
         parsed_data["is_from_cache"] = False
 
-        dsr = _hydrate_dsr_template(
-            parsed_data.get("dsr_template", ""),
-            email,
-            phone,
-            found_services,
-        )
+        dsr = load_local_dsr_template(email, found_services, phone, lang)
+#        dsr = _hydrate_dsr_template(
+#            parsed_data.get("dsr_template", read_dsr_template_c(lang)),
+#            email,
+#            phone,
+#            found_services,
+#            lang
+#        )
         parsed_data["dsr_template"] = dsr
 
         save_analysis_cache_ext(
