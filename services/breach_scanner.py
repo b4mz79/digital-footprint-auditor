@@ -37,55 +37,43 @@ class SensitiveDataFilter(logging.Filter):
 
     def mask_phone(self, match):
         phone = match.group(0)
-
-        # 1. Bersihkan semua karakter encoding dan pemisah agar menjadi angka murni
-        # (Menghapus %, B, spasi, +, -, dan angka 20 jika itu bagian dari %20)
         clean_phone = re.sub(r'%20|[\s\+\-]', '', phone)
         clean_phone = re.sub(r'[^0-9]', '', clean_phone)
-
-        # Batasan standar nomor telepon dunia (biasanya 7 hingga 15 digit angka murni)
         if len(clean_phone) < 7 or len(clean_phone) > 16:
-            return phone # Jika terlalu pendek/panjang, kembalikan teks asli (bukan nomor telepon)
-
-        # 2. Aturan Masking Dinamis:
-        # Apapun kode negaranya, kita amankan bagian tengahnya.
-        # Kita sisakan 3 angka di depan dan 2 angka di belakang.
+            return phone
         if len(clean_phone) > 5:
             masked_core = clean_phone[:3] + "*" * (len(clean_phone) - 5) + clean_phone[-2:]
-
-            # Jika di teks aslinya ada tanda '+' atau '%2B', kembalikan tanda '+' di depan log agar rapi
             if phone.upper().startswith("%2B") or phone.startswith("+"):
                 return "+" + masked_core
             return masked_core
-
         return "[PHONE_MASKED]"
+
+    def more_mask(self, subject_text):
+        """Melakukan redaksi pada Email, Nomor Telepon, OTP, PIN, atau Kode dari teks snippet."""
+        if not subject_text: return ""
+        masked = re.sub(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+', '***@***', subject_text)
+        masked = re.sub(r'\+?\b\d{9,15}\b', '***', masked)
+        masked = re.sub(r'\b(?:\+62|62|0)[ \-]?\d{2,4}[ \-]?\d{3,4}[ \-]?\d{3,5}\b', '***', masked)
+        masked = re.sub(r'\b\d{4,8}\b', '***', masked)
+        masked = re.sub(r'\bG-\d{4,8}\b', 'G-***', masked)
+        masked = re.sub(r'(?i)\b(otp|pin|kode|code|token|sandi|password)[\s:=]+[A-Za-z0-9_-]{4,12}\b', r'\1 ***', masked)
+        return masked
 
     def filter(self, record):
         actual_msg = record.getMessage()
         record.args = ()
         actual_msg = actual_msg.replace('%3F', '?').replace('%3f', '?')
-
-        # 3. POTONG TOTAL SETELAH TANDA TANYA (Jika ada)
         if '?' in actual_msg:
             parts = actual_msg.split('?')
-            base_url = parts[0]       # Teks bersih sebelum tanda tanya
-            query_string = parts[1]   # Teks yang penuh data bocor setelah tanda tanya
-
-            # Cari status HTTP (3 digit angka: 200, 403, 429, dll) di sepanjang query_string
+            base_url = parts[0]
+            query_string = parts[1]
             status_match = re.search(r'\b(200|403|404|429|500|201|302)\b', query_string)
             status_code = f" {status_match.group(1)}" if status_match else ""
-
-            # Satukan kembali. Data pencarian/telepon hancur total di sini, tersisa status code saja
             actual_msg = base_url + status_code
-
         if self.email_regex.search(actual_msg): actual_msg = self.email_regex.sub(self.mask_email, actual_msg)
         if self.secret_regex.search(actual_msg): actual_msg = self.secret_regex.sub(r'\1=[MASKED]', actual_msg)
         if self.phone_regex.search(actual_msg): actual_msg = self.phone_regex.sub(self.mask_phone, actual_msg)
-        MAX_LEN = 100
-        if len(actual_msg) > MAX_LEN:
-            suffix = " ..."
-            actual_msg = actual_msg[:MAX_LEN - len(suffix)] + suffix
-        record.msg = actual_msg
+        record.msg = self.more_mask(actual_msg)
         return True
 
 load_dotenv()
@@ -96,13 +84,8 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
     datefmt="%H:%M:%S"
 )
-logging.getLogger("httpx").addFilter(SensitiveDataFilter())
-logging.getLogger("httpcore").addFilter(SensitiveDataFilter())
-logging.getLogger("httpx").setLevel(logging.ERROR)
-logging.getLogger("httpcore").setLevel(logging.ERROR)
-
+for handler in logging.root.handlers: handler.addFilter(SensitiveDataFilter())
 logger = logging.getLogger("BreachScanner")
-logger.addFilter(SensitiveDataFilter())
 
 BREACH_CACHE_DIR = Path("cache/breach")
 BREACH_CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -159,35 +142,21 @@ def mask_pii(text: str) -> str:
         return clean_num[:2] + "****" + clean_num[-2:]
     return "***"
 
-def split_url_part(url: str) -> str:
-    if '?' in url:
-        parts = url.split('?')
-        return parts[0]
-    return url
-
 def mask_sensitive_snippet(subject_text: str) -> str:
     """Melakukan redaksi pada Email, Nomor Telepon, OTP, PIN, atau Kode dari teks snippet."""
-    if not subject_text:
-        return ""
-
+    if not subject_text: return ""
     # 1. Masking format Email (Contoh: user@gmail.com -> ***@***)
     masked = re.sub(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+', '***@***', subject_text)
-
     # 2. Masking Nomor Telepon Internasional/Lokal bersambung (Contoh: +6281234567890 -> ***)
     masked = re.sub(r'\+?\b\d{9,15}\b', '***', masked)
-
     # 3. Masking Nomor Telepon dengan pemisah spasi/strip (Contoh: 0812-3456-7890 -> ***)
     masked = re.sub(r'\b(?:\+62|62|0)[ \-]?\d{2,4}[ \-]?\d{3,4}[ \-]?\d{3,5}\b', '***', masked)
-
     # 4. Masking angka 4-8 digit yang berdiri sendiri (Contoh: 123456, 9876)
     masked = re.sub(r'\b\d{4,8}\b', '***', masked)
-
     # 5. Masking format Google Code (Contoh: G-123456)
     masked = re.sub(r'\bG-\d{4,8}\b', 'G-***', masked)
-
     # 6. Masking string alfanumerik yang mengikuti kata kunci OTP/PIN/Code
     masked = re.sub(r'(?i)\b(otp|pin|kode|code|token|sandi|password)[\s:=]+[A-Za-z0-9_-]{4,12}\b', r'\1 ***', masked)
-
     return masked
 
 def safe_filename_identity(email_addr: str, phone: str = "") -> str:
@@ -302,7 +271,6 @@ async def scan_breachdirectory_async(client: httpx.AsyncClient, target: str, rap
 
     try:
         response = await client.get(url, headers=headers, params=params, timeout=12.0)
-        logger.info("response: %s://%s%s %s", response.url.scheme, response.url.host, split_url_part(response.url.path), response.status_code)
         response.raise_for_status()
         data = response.json()
 
@@ -329,7 +297,6 @@ async def scan_google_custom_search_async(client: httpx.AsyncClient, target: str
 
     try:
         response = await client.get(url, params=params, timeout=12.0)
-        logger.info("response: %s://%s%s %s", response.url.scheme, response.url.host, split_url_part(response.url.path), response.status_code)
         response.raise_for_status()
         data = response.json()
 
@@ -388,7 +355,6 @@ async def scan_bing_scrape_async(client: httpx.AsyncClient, target: str, lang: s
         url = "https://www.bing.com/search"
 
         response = await client.get(url, headers=headers, params={"q": query}, timeout=10.0, follow_redirects=True)
-        logger.info("response: %s://%s%s %s", response.url.scheme, response.url.host, split_url_part(response.url.path), response.status_code)
         if response.status_code != 200: return []
 
         soup = BeautifulSoup(response.text, "html.parser")
@@ -441,7 +407,6 @@ async def scan_searxng_async(client: httpx.AsyncClient, target: str, lang: str =
     try:
         logger.info(f"[SearXNG] Terhubung ke {SEARXNG_INSTANCE_URL} dan memulai scan untuk target: {mask_pii(target)}")
         response = await client.get(search_endpoint, params=params, timeout=10.0)
-        logger.info("response: %s://%s%s %s", response.url.scheme, response.url.host, split_url_part(response.url.path), response.status_code)
         if response.status_code == 200:
             data = response.json()
             results = data.get("results", [])
@@ -467,7 +432,6 @@ async def scan_breaches_tavily_async(client: httpx.AsyncClient, target: str, api
 
     try:
         response = await client.post(url, json=payload, timeout=12.0)
-        logger.info("response: %s://%s%s %s", response.url.scheme, response.url.host, split_url_part(response.url.path), response.status_code)
         response.raise_for_status()
         data = response.json()
 
