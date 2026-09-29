@@ -1,7 +1,7 @@
 # Environment Variables & Keys
 .env
+.cache_key
 *.pem
-
 
 # Python Cache
 __pycache__/
@@ -15,12 +15,8 @@ venv/
 cache/
 ignored_domains.txt
 main.py
-app-v0.py
-app-v1.py
-privacy-auditor.zip
 services/phone_scanner.py
 services/scanner.py
-services/ai_agent-v0.py
-services/ai_agent-v1.py
-services/breach_scanner-v0.py
 *.json
+*-v*.py
+*.zip
