@@ -8,9 +8,9 @@ from dotenv import load_dotenv
 from utils.translations import t
 
 load_dotenv()
-LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+LOG_LEVEL = os.getenv("LOG_LEVEL", "NOTSET").upper()
 logging.basicConfig(
-    level=getattr(logging, LOG_LEVEL, logging.INFO),
+    level=getattr(logging, LOG_LEVEL, logging.NOTSET),
     format="%(asctime)s [%(levelname)s] %(message)s",
     datefmt="%H:%M:%S"
 )
@@ -69,7 +69,7 @@ def scan_osint_footprint(email: str, lang: str = "id") -> list[dict]:
                         "name": service_name.split(".")[0].capitalize(),
                         "domain": service_name,
                         "source": t("source_osint", lang=lang),
-                        "sample_subject": t("active_account_osint", lang=lang)
+                        "subject": t("active_account_osint", lang=lang)
                     })
     except subprocess.TimeoutExpired:
         logger.warning("[OSINT Warning] Proses Holehe Timeout.")

@@ -15,10 +15,14 @@ fi
 
 # Parsing parameter untuk mengecek perintah 'reset'
 RESET_MODE=false
+FULL_RESET_MODE=false
 ARGS=""
 for arg in "$@"; do
     if [ "$arg" = "reset" ]; then
         RESET_MODE=true
+    else if [ "$arg" = "full-reset" ]; then
+        RESET_MODE=true
+		FULL_RESET_MODE=true
     else
         ARGS="\(ARGS\)arg"
     fi
@@ -29,6 +33,11 @@ if [ "$RESET_MODE" = "true" ]; then
     echo "🧹 Parameter 'reset' terdeteksi! Membersihkan cache..."
     find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null
     echo "✅ Folder __pycache__ berhasil dibersihkan!"
+	
+	if [ "$FULL_RESET_MODE" = "true" ]; then
+		find . -type f -name "*.json" -exec rm -rf {} + 2>/dev/null
+		echo "✅ File json berhasil dibersihkan!"
+	fi
 
     # Matikan proses yang sedang berjalan di port 8501 jika ada
     if command -v lsof &> /dev/null && lsof -i :8501 >/dev/null 2>&1; then

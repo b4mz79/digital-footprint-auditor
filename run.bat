@@ -16,12 +16,16 @@ if exist "venv\Scripts\activate.bat" (
 )
 
 :: Parsing parameter untuk mengecek perintah 'reset' dan 'web'
-set "RESET_MODE=true"
+set "RESET_MODE=false"
+set "FULL_RESET_MODE=false"
 set "ARGS="
 
 for %%a in (%*) do (
     if /i "%%~a"=="reset" (
         set "RESET_MODE=true"
+    ) else if /i "%%~a"=="full-reset" (
+	    set "RESET_MODE=true"
+        set "FULL_RESET_MODE=true"
     ) else (
         set "ARGS=!ARGS! %%~a"
     )
@@ -34,6 +38,13 @@ if "%RESET_MODE%"=="true" (
         if exist "%%d" rd /s /q "%%d" 2>nul
     )
     echo ✅ Folder __pycache__ berhasil dibersihkan!
+	
+	if "%FULL_RESET_MODE%"=="true" (
+		for /d /r . %%d in (cache) do (
+			if exist "%%d" rd /s /q "%%d" 2>nul
+		)
+		echo ✅ Folder cache berhasil dibersihkan!
+	)
 
     :: Jika Streamlit lagi jalan di port 8501, matikan prosesnya
     set "KILLED=false"

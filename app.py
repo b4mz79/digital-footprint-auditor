@@ -205,7 +205,7 @@ if run_scan:
                 "name": t("col_service", lang=lang),
                 "domain": t("col_domain", lang=lang),
                 "source": t("col_source", lang=lang),
-                "sample_subject": t("col_sample", lang=lang)
+                "subject": t("col_sample", lang=lang)
             })
             if "service" in df_display.columns:
                 df_display = df_display.drop(columns=["service"])
