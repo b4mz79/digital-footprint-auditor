@@ -12,6 +12,9 @@ services/__pycache__/
 *$py.class
 .venv/
 venv/
+files/
+files-1/
+files-2/
 
 # Project Specific Caches (Data Hasil Scan Privasi)
 cache/
