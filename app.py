@@ -4,6 +4,7 @@ import streamlit as st
 import pandas as pd
 from dotenv import load_dotenv
 from utils.translations import t
+from utils.risk import normalize_risk, risk_icon
 from services.imap_scanner import scan_gmail_inbox
 from services.osint_scanner import scan_osint_footprint
 from services.ai_agent import analyze_smart_cache
@@ -12,6 +13,24 @@ from services.breach_scanner import scan_data_breaches
 
 # Load environment variables dari file .env
 load_dotenv()
+
+def _md_escape(text: str) -> str:
+    """Escape characters that could break out of a markdown link label."""
+    return str(text).replace("\\", "\\\\").replace("[", "\\[").replace("]", "\\]")
+
+
+def _finding_text(item: dict, lang: str) -> tuple[str, str]:
+    """Localized title/snippet. Database findings are rendered from structured fields
+    (the stored text is English and the cache is not language-specific)."""
+    if item.get("kind") == "breach_db":
+        if item.get("dataset"):
+            title = t("bd_title", lang=lang, name=item["dataset"])
+        else:
+            title = t("bd_title_unknown", lang=lang, count=item.get("record_count", 0))
+        secret_key = "bd_password_yes" if item.get("has_password") else "bd_password_no"
+        return title, t(secret_key, lang=lang)
+    return str(item.get("title", "")), str(item.get("snippet", ""))
+
 
 # Setup Pilihan Bahasa awal di Session State
 if "lang" not in st.session_state:
@@ -206,30 +225,32 @@ if run_scan:
             st.subheader(t("breach_details_title", lang=lang, cache_badge=cache_badge))
             with st.expander(t("expander_breach", lang=lang), expanded=True):
                 for item in breach_findings:
-                    st.markdown(f"**[{item['title']}]({item['url']})**")
+                    finding_title, finding_snippet = _finding_text(item, lang)
+                    st.markdown(f"**[{_md_escape(finding_title)}]({item['url']})**")
                     st.caption(f"{t('source_label', lang=lang)}: {item['source']} | {t('link_label', lang=lang)}: {item['url']}")
-                    st.write(item['snippet'])
+                    st.write(finding_snippet)
                     st.divider()
 
         # Display Account Results & AI Audit
-        if not all_detected_services:
+        if not all_detected_services and not breach_findings:
             st.warning(t("warn_no_services", lang=lang))
         else:
-            st.divider()
-            st.subheader(t("services_count_title", lang=lang, count=len(all_detected_services)))
+            if all_detected_services:
+                st.divider()
+                st.subheader(t("services_count_title", lang=lang, count=len(all_detected_services)))
 
-            # Format Tabel Sesuai Bahasa Active
-            df = pd.DataFrame(all_detected_services)
-            df_display = df.rename(columns={
-                "name": t("col_service", lang=lang),
-                "domain": t("col_domain", lang=lang),
-                "source": t("col_source", lang=lang),
-                "subject": t("col_sample", lang=lang)
-            })
-            if "service" in df_display.columns:
-                df_display = df_display.drop(columns=["service"])
+                # Format Tabel Sesuai Bahasa Active
+                df = pd.DataFrame(all_detected_services)
+                df_display = df.rename(columns={
+                    "name": t("col_service", lang=lang),
+                    "domain": t("col_domain", lang=lang),
+                    "source": t("col_source", lang=lang),
+                    "subject": t("col_sample", lang=lang)
+                })
+                if "service" in df_display.columns:
+                    df_display = df_display.drop(columns=["service"])
 
-            st.dataframe(df_display, width="stretch")
+                st.dataframe(df_display, width="stretch")
 
             # Step 4: AI Audit via Hybrid Cache + Multi-LLM (Executed Async)
             st.divider()
@@ -241,7 +262,8 @@ if run_scan:
                     found_services=all_detected_services,
                     phone=target_phone,
                     force_refresh=force_refresh_breach,
-                    lang=lang
+                    lang=lang,
+                    breach_findings=breach_findings,
                 ))
 
                 st.info(t("info_provider_used", lang=lang, provider=ai_output.get("provider_used", "Local Cache")))
@@ -251,19 +273,39 @@ if run_scan:
 
                 with tab1:
                     analysis_list = ai_output.get("analysis", [])
+                    exposures = ai_output.get("exposures", [])
+
                     if analysis_list:
                         for item in analysis_list:
-                            risk = item.get("risk_level", "Medium")
-                            color = "🔴" if ("Tinggi" in risk or "High" in risk) else ("🟡" if ("Sedang" in risk or "Medium" in risk) else "🟢")
+                            # Warna/label ditentukan oleh kunci kanonik, bukan teks berbahasa tertentu.
+                            risk_key = item.get("risk_key") or normalize_risk(item.get("risk_level")) or "medium"
+                            risk_label = t(f"risk_{risk_key}", lang=lang)
                             delete_url = item.get("delete_url", "#")
 
-                            st.markdown(f"**{color} {item.get('service')}** - *{t('risk_level_label', lang=lang)}: {risk}*")
+                            st.markdown(
+                                f"**{risk_icon(risk_key)} {_md_escape(item.get('service', ''))}** - "
+                                f"*{t('risk_level_label', lang=lang)}: {risk_label}*"
+                            )
                             st.write(f"**{t('reason_label', lang=lang)}:** {item.get('reason')}")
+                            if item.get("evidence_count"):
+                                st.caption("⚠️ " + t("evidence_note", lang=lang, count=item["evidence_count"], level=risk_label))
                             if delete_url and delete_url != "-":
                                 st.markdown(t("delete_link_label", lang=lang, url=delete_url))
                             st.caption("---")
-                    else:
+                    elif not exposures:
                         st.write(t("no_risk_analysis", lang=lang))
+
+                    if exposures:
+                        st.markdown(f"#### {t('exposures_title', lang=lang)}")
+                        for exposure in exposures:
+                            exp_key = exposure.get("risk_key") or "medium"
+                            exp_title, exp_snippet = _finding_text({"kind": "breach_db", **exposure}, lang)
+                            st.markdown(
+                                f"**{risk_icon(exp_key)} {_md_escape(exp_title)}** - "
+                                f"*{t('risk_level_label', lang=lang)}: {t(f'risk_{exp_key}', lang=lang)}*"
+                            )
+                            st.write(exp_snippet)
+                        st.info(t("exposure_action", lang=lang))
 
                 with tab2:
                     dsr_text = ai_output.get("dsr_template", "")

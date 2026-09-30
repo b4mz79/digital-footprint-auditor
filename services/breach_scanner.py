@@ -219,6 +219,7 @@ MAX_RESULT_URL_LENGTH = 4096
 MAX_TITLE_LENGTH = 512
 MAX_RESULT_SNIPPET_LENGTH = 2_000
 MAX_FINDINGS_PER_ENGINE = 10
+MAX_BREACHDIRECTORY_RECORDS = 500  # records inspected per response (never stored individually)
 MAX_TOTAL_FINDINGS = 100
 MAX_HTTP_REDIRECTS = 3
 RESPONSE_LIMIT_JSON = 2 * 1024 * 1024
@@ -761,11 +762,39 @@ def _log_http_error(source: str, exc: Exception) -> None:
 # Scanner engines
 # =============================================================================
 
+_NOT_FOUND_RE = re.compile(r"not\s*found|no\s*(results?|records?|data|breach)", re.IGNORECASE)
+
+
+def _truthy(value: object) -> bool:
+    """Interpret API flags that may be bool, number, or string ('true', 'Available', ...)."""
+    if isinstance(value, str):
+        return value.strip().lower() not in {"", "false", "0", "no", "none", "null"}
+    return bool(value)
+
+
+def _breach_dataset_names(record: dict) -> list[str]:
+    raw = record.get("sources")
+    if isinstance(raw, str):
+        raw = [raw]
+    names: list[str] = []
+    if isinstance(raw, list):
+        for entry in raw:
+            name = _safe_text(entry, 80).strip()
+            if name and name not in names:
+                names.append(name)
+    return names
+
+
 async def scan_breachdirectory_async(
     client: httpx.AsyncClient,
     target: str,
     rapidapi_key: str,
 ) -> list[dict]:
+    """Query BreachDirectory and return *metadata only*.
+
+    Raw record content (the 'line', password, sha1 and hash fields) is inspected only to set
+    a boolean flag and is never copied into a finding, the UI, logs or the cache.
+    """
     logger.info("[BreachDirectory] Memulai scan untuk target: %s", mask_pii(target))
     url = "https://breachdirectory.p.rapidapi.com/"
     headers = {
@@ -788,22 +817,72 @@ async def scan_breachdirectory_async(
         if not isinstance(data, dict):
             raise ValueError("Unexpected response shape.")
 
+        if data.get("success") is False:
+            message = _safe_text(data.get("error") or data.get("message") or "", 200)
+            if data.get("found") == 0 or _NOT_FOUND_RE.search(message):
+                logger.info("[BreachDirectory] Selesai. Tidak ada temuan.")
+                return []
+            # Any other explicit failure (quota, auth, upstream error) is NOT a clean result.
+            raise RuntimeError("BreachDirectory reported a failure.")
+
+        results = data.get("result")
+        if not isinstance(results, list):
+            # Neither a result list nor a recognised failure: schema changed or unknown reply.
+            raise ValueError("Unexpected response shape.")
+
+        # dataset name -> whether any record in it carries password/hash material
+        datasets: dict[str, bool] = {}
+        unattributed = 0
+        unattributed_has_secret = False
+
+        for record in results[:MAX_BREACHDIRECTORY_RECORDS]:
+            if not isinstance(record, dict):
+                continue
+            has_secret = _truthy(record.get("has_password")) or any(
+                record.get(field) for field in ("password", "sha1", "hash")
+            )
+            names = _breach_dataset_names(record)
+            if names:
+                for name in names:
+                    datasets[name] = datasets.get(name, False) or has_secret
+            else:
+                unattributed += 1
+                unattributed_has_secret = unattributed_has_secret or has_secret
+
         findings: list[dict] = []
-        if data.get("success") and data.get("result"):
-            results = data.get("result", [])
-            if isinstance(results, list):
-                for item in results[:MAX_FINDINGS_PER_ENGINE]:
-                    if not isinstance(item, dict):
-                        continue
-                    line = _safe_text(item.get("line", "Database Dump"), MAX_TITLE_LENGTH)
-                    findings.append(
-                        {
-                            "source": "BreachDirectory DB API",
-                            "title": f"Leak Detected: {line or 'Database Dump'}",
-                            "url": "https://breachdirectory.org",
-                            "snippet": f"Credentials exposed. Hash Status: {_safe_text(item.get('has_password', 'Available'), 64)}",
-                        }
-                    )
+        for name, has_secret in list(datasets.items())[:MAX_FINDINGS_PER_ENGINE]:
+            findings.append(
+                {
+                    "source": "BreachDirectory DB API",
+                    "kind": "breach_db",
+                    "dataset": name,
+                    "has_password": has_secret,
+                    "title": f"Breach dataset: {name}",
+                    "url": "https://breachdirectory.org",
+                    "snippet": (
+                        "Password or hash data exists for this record (not shown)."
+                        if has_secret
+                        else "No password data reported for this record."
+                    ),
+                }
+            )
+        if unattributed and len(findings) < MAX_FINDINGS_PER_ENGINE:
+            findings.append(
+                {
+                    "source": "BreachDirectory DB API",
+                    "kind": "breach_db",
+                    "dataset": "",
+                    "record_count": unattributed,
+                    "has_password": unattributed_has_secret,
+                    "title": f"{unattributed} record(s) found in BreachDirectory",
+                    "url": "https://breachdirectory.org",
+                    "snippet": (
+                        "Password or hash data exists for this record (not shown)."
+                        if unattributed_has_secret
+                        else "No password data reported for this record."
+                    ),
+                }
+            )
 
         logger.info(
             "[BreachDirectory] Selesai. Ditemukan: %d temuan.",
@@ -1341,14 +1420,21 @@ async def scan_data_breaches(
 
     # De-duplicate by normalized URL.
     unique_findings: list[dict] = []
-    seen_urls: set[str] = set()
+    seen_keys: set[tuple] = set()
     for item in all_findings:
         if not isinstance(item, dict):
             continue
         url = _normalize_result_url(item.get("url", ""))
-        if not url or url in seen_urls:
+        if not url:
             continue
-        seen_urls.add(url)
+        if item.get("kind") == "breach_db":
+            # Every BreachDirectory finding shares one URL; key on the dataset instead.
+            dedupe_key = (url, str(item.get("dataset", "")), item.get("record_count"))
+        else:
+            dedupe_key = (url,)
+        if dedupe_key in seen_keys:
+            continue
+        seen_keys.add(dedupe_key)
         sanitized_item = dict(item)
         sanitized_item["url"] = url
         unique_findings.append(sanitized_item)

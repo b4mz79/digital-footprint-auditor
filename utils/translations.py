@@ -67,7 +67,19 @@ TRANSLATIONS = {
         "engine_status_ok": "OK",
         "engine_status_partial": "Sebagian",
         "engine_status_error": "Gagal",
-        "engine_status_skipped": "Dilewati (belum dikonfigurasi)"
+        "engine_status_skipped": "Dilewati (belum dikonfigurasi)",
+        "bd_title": "Terdaftar dalam dataset kebocoran: {name}",
+        "bd_title_unknown": "{count} catatan ditemukan di BreachDirectory (nama dataset tidak tersedia)",
+        "bd_password_yes": "Data kata sandi atau hash tersedia untuk catatan ini (tidak ditampilkan).",
+        "bd_password_no": "Tidak ada data kata sandi yang dilaporkan untuk catatan ini.",
+        "dsr_phone_label": "Nomor Telepon",
+        "risk_high": "Tinggi",
+        "risk_medium": "Sedang",
+        "risk_low": "Rendah",
+        "evidence_note": "Bukti kebocoran ditemukan untuk layanan ini ({count} temuan); risiko minimal {level}.",
+        "exposures_title": "Paparan lain yang tidak terkait akun yang terdeteksi",
+        "exposure_action": "Saran: ganti kata sandi di semua tempat email/nomor ini dipakai ulang, aktifkan verifikasi dua langkah, dan waspadai phishing.",
+        "fallback_reason": "Terdeteksi dari hasil pemindaian dan memerlukan verifikasi manual."
     },
     "en": {
         "page_title": "Local Digital Footprint & Privacy Auditor",
@@ -135,7 +147,19 @@ TRANSLATIONS = {
         "engine_status_ok": "OK",
         "engine_status_partial": "Partial",
         "engine_status_error": "Failed",
-        "engine_status_skipped": "Skipped (not configured)"
+        "engine_status_skipped": "Skipped (not configured)",
+        "bd_title": "Listed in breach dataset: {name}",
+        "bd_title_unknown": "{count} record(s) found in BreachDirectory (dataset name not provided)",
+        "bd_password_yes": "Password or hash data exists for this record (not shown).",
+        "bd_password_no": "No password data reported for this record.",
+        "dsr_phone_label": "Phone Number",
+        "risk_high": "High",
+        "risk_medium": "Medium",
+        "risk_low": "Low",
+        "evidence_note": "Breach evidence found for this service ({count} finding(s)); risk is at least {level}.",
+        "exposures_title": "Other exposures not tied to a detected account",
+        "exposure_action": "Recommended: change the password anywhere this email/number was reused, enable two-factor authentication, and watch for phishing.",
+        "fallback_reason": "Detected by the scan and requires manual verification."
     },
     "de": {
         "page_title": "Lokaler Auditor für digitalen Fußabdruck",
@@ -203,7 +227,19 @@ TRANSLATIONS = {
         "engine_status_ok": "OK",
         "engine_status_partial": "Teilweise",
         "engine_status_error": "Fehlgeschlagen",
-        "engine_status_skipped": "Übersprungen (nicht konfiguriert)"
+        "engine_status_skipped": "Übersprungen (nicht konfiguriert)",
+        "bd_title": "In Datenleck-Datensatz gelistet: {name}",
+        "bd_title_unknown": "{count} Eintrag/Einträge in BreachDirectory gefunden (Datensatzname nicht angegeben)",
+        "bd_password_yes": "Für diesen Eintrag liegen Passwort- oder Hash-Daten vor (nicht angezeigt).",
+        "bd_password_no": "Für diesen Eintrag wurden keine Passwortdaten gemeldet.",
+        "dsr_phone_label": "Telefonnummer",
+        "risk_high": "Hoch",
+        "risk_medium": "Mittel",
+        "risk_low": "Niedrig",
+        "evidence_note": "Leck-Hinweise für diesen Dienst gefunden ({count} Treffer); Risiko mindestens {level}.",
+        "exposures_title": "Weitere Offenlegungen ohne Bezug zu einem erkannten Konto",
+        "exposure_action": "Empfehlung: Passwort überall ändern, wo diese E-Mail/Nummer wiederverwendet wurde, Zwei-Faktor-Authentifizierung aktivieren und auf Phishing achten.",
+        "fallback_reason": "Vom Scan erkannt; manuelle Überprüfung erforderlich."
     },
     "ru": {
         "page_title": "Локальный аудитор цифрового следа",
@@ -271,7 +307,19 @@ TRANSLATIONS = {
         "engine_status_ok": "OK",
         "engine_status_partial": "Частично",
         "engine_status_error": "Сбой",
-        "engine_status_skipped": "Пропущено (не настроено)"
+        "engine_status_skipped": "Пропущено (не настроено)",
+        "bd_title": "Указан в наборе данных об утечке: {name}",
+        "bd_title_unknown": "Найдено записей в BreachDirectory: {count} (название набора данных не указано)",
+        "bd_password_yes": "Для этой записи существуют данные пароля или хеша (не отображаются).",
+        "bd_password_no": "Для этой записи данные пароля не сообщаются.",
+        "dsr_phone_label": "Номер телефона",
+        "risk_high": "Высокий",
+        "risk_medium": "Средний",
+        "risk_low": "Низкий",
+        "evidence_note": "Для этого сервиса найдены признаки утечки (находок: {count}); риск не ниже: {level}.",
+        "exposures_title": "Другие утечки, не связанные с обнаруженными аккаунтами",
+        "exposure_action": "Рекомендуется: сменить пароль везде, где повторно использовались этот email/номер, включить двухфакторную аутентификацию и остерегаться фишинга.",
+        "fallback_reason": "Обнаружено при сканировании; требуется ручная проверка."
     },
     "es": {
         "page_title": "Auditor de Huella Digital Local",
@@ -339,7 +387,19 @@ TRANSLATIONS = {
         "engine_status_ok": "OK",
         "engine_status_partial": "Parcial",
         "engine_status_error": "Fallido",
-        "engine_status_skipped": "Omitido (no configurado)"
+        "engine_status_skipped": "Omitido (no configurado)",
+        "bd_title": "Aparece en el conjunto de datos filtrado: {name}",
+        "bd_title_unknown": "{count} registro(s) encontrados en BreachDirectory (nombre del conjunto no indicado)",
+        "bd_password_yes": "Existen datos de contraseña o hash para este registro (no se muestran).",
+        "bd_password_no": "No se informan datos de contraseña para este registro.",
+        "dsr_phone_label": "Número de teléfono",
+        "risk_high": "Alto",
+        "risk_medium": "Medio",
+        "risk_low": "Bajo",
+        "evidence_note": "Se encontraron indicios de filtración para este servicio ({count} hallazgo(s)); riesgo mínimo: {level}.",
+        "exposures_title": "Otras exposiciones no vinculadas a una cuenta detectada",
+        "exposure_action": "Recomendado: cambie la contraseña en todos los sitios donde reutilizó este correo/número, active la autenticación de dos factores y esté atento al phishing.",
+        "fallback_reason": "Detectado por el análisis; requiere verificación manual."
     },
     "ar": {
         "page_title": "مُدقق الأثر الرقمي المحلي",
@@ -407,7 +467,19 @@ TRANSLATIONS = {
         "engine_status_ok": "نجح",
         "engine_status_partial": "جزئي",
         "engine_status_error": "فشل",
-        "engine_status_skipped": "تم التخطي (غير مهيأ)"
+        "engine_status_skipped": "تم التخطي (غير مهيأ)",
+        "bd_title": "مُدرج في مجموعة بيانات التسريب: {name}",
+        "bd_title_unknown": "تم العثور على {count} سجل في BreachDirectory (اسم مجموعة البيانات غير متوفر)",
+        "bd_password_yes": "توجد بيانات كلمة مرور أو تجزئة لهذا السجل (غير معروضة).",
+        "bd_password_no": "لم يُبلَّغ عن بيانات كلمة مرور لهذا السجل.",
+        "dsr_phone_label": "رقم الهاتف",
+        "risk_high": "عالي",
+        "risk_medium": "متوسط",
+        "risk_low": "منخفض",
+        "evidence_note": "تم العثور على دلائل تسريب لهذه الخدمة ({count} نتيجة)؛ المخاطر على الأقل {level}.",
+        "exposures_title": "تعرّضات أخرى غير مرتبطة بحساب تم اكتشافه",
+        "exposure_action": "يُنصح بتغيير كلمة المرور أينما أُعيد استخدام هذا البريد/الرقم، وتفعيل المصادقة الثنائية، والحذر من التصيّد.",
+        "fallback_reason": "تم اكتشافها بواسطة الفحص وتتطلب تحققاً يدوياً."
     },
     "zh": {
         "page_title": "本地数字足迹审计工具",
@@ -475,7 +547,19 @@ TRANSLATIONS = {
         "engine_status_ok": "正常",
         "engine_status_partial": "部分成功",
         "engine_status_error": "失败",
-        "engine_status_skipped": "已跳过（未配置）"
+        "engine_status_skipped": "已跳过（未配置）",
+        "bd_title": "出现在泄露数据集中：{name}",
+        "bd_title_unknown": "在 BreachDirectory 中发现 {count} 条记录（未提供数据集名称）",
+        "bd_password_yes": "此记录存在密码或哈希数据（不显示）。",
+        "bd_password_no": "此记录未报告密码数据。",
+        "dsr_phone_label": "电话号码",
+        "risk_high": "高",
+        "risk_medium": "中",
+        "risk_low": "低",
+        "evidence_note": "已发现该服务的泄露线索（{count} 条）；风险至少为{level}。",
+        "exposures_title": "与已检测账户无关的其他暴露",
+        "exposure_action": "建议：在重复使用此邮箱/号码的所有地方更改密码，启用双重验证，并警惕网络钓鱼。",
+        "fallback_reason": "由扫描检测到，需要手动核实。"
     },
     "fr": {
         "page_title": "Auditeur Local d'Empreinte Numérique & Vie Privée",
@@ -543,7 +627,19 @@ TRANSLATIONS = {
         "engine_status_ok": "OK",
         "engine_status_partial": "Partiel",
         "engine_status_error": "Échec",
-        "engine_status_skipped": "Ignoré (non configuré)"
+        "engine_status_skipped": "Ignoré (non configuré)",
+        "bd_title": "Présent dans le jeu de données compromis : {name}",
+        "bd_title_unknown": "{count} enregistrement(s) trouvé(s) dans BreachDirectory (nom du jeu de données non fourni)",
+        "bd_password_yes": "Des données de mot de passe ou de hachage existent pour cet enregistrement (non affichées).",
+        "bd_password_no": "Aucune donnée de mot de passe signalée pour cet enregistrement.",
+        "dsr_phone_label": "Numéro de téléphone",
+        "risk_high": "Élevé",
+        "risk_medium": "Moyen",
+        "risk_low": "Faible",
+        "evidence_note": "Indices de fuite trouvés pour ce service ({count} résultat(s)) ; risque au moins {level}.",
+        "exposures_title": "Autres expositions non liées à un compte détecté",
+        "exposure_action": "Recommandé : changez le mot de passe partout où cet e-mail/numéro a été réutilisé, activez l'authentification à deux facteurs et méfiez-vous du hameçonnage.",
+        "fallback_reason": "Détecté par l'analyse ; vérification manuelle requise."
     },
     "it": {
         "page_title": "Auditor Locale dell'Impronta Digitale e della Privacy",
@@ -611,7 +707,19 @@ TRANSLATIONS = {
         "engine_status_ok": "OK",
         "engine_status_partial": "Parziale",
         "engine_status_error": "Fallito",
-        "engine_status_skipped": "Saltato (non configurato)"
+        "engine_status_skipped": "Saltato (non configurato)",
+        "bd_title": "Presente nel dataset della violazione: {name}",
+        "bd_title_unknown": "{count} record trovati in BreachDirectory (nome del dataset non fornito)",
+        "bd_password_yes": "Esistono dati di password o hash per questo record (non mostrati).",
+        "bd_password_no": "Nessun dato di password segnalato per questo record.",
+        "dsr_phone_label": "Numero di telefono",
+        "risk_high": "Alto",
+        "risk_medium": "Medio",
+        "risk_low": "Basso",
+        "evidence_note": "Indizi di violazione trovati per questo servizio ({count} risultato/i); rischio almeno {level}.",
+        "exposures_title": "Altre esposizioni non collegate a un account rilevato",
+        "exposure_action": "Consigliato: cambia la password ovunque questa email/numero sia stata riutilizzata, attiva l'autenticazione a due fattori e fai attenzione al phishing.",
+        "fallback_reason": "Rilevato dalla scansione; richiede verifica manuale."
     },
     "nl": {
         "page_title": "Lokale Digitale Voetafdruk & Privacy Auditor",
@@ -679,7 +787,19 @@ TRANSLATIONS = {
         "engine_status_ok": "OK",
         "engine_status_partial": "Gedeeltelijk",
         "engine_status_error": "Mislukt",
-        "engine_status_skipped": "Overgeslagen (niet geconfigureerd)"
+        "engine_status_skipped": "Overgeslagen (niet geconfigureerd)",
+        "bd_title": "Vermeld in datalek-dataset: {name}",
+        "bd_title_unknown": "{count} record(s) gevonden in BreachDirectory (naam van dataset niet opgegeven)",
+        "bd_password_yes": "Voor dit record bestaan wachtwoord- of hashgegevens (niet getoond).",
+        "bd_password_no": "Voor dit record zijn geen wachtwoordgegevens gemeld.",
+        "dsr_phone_label": "Telefoonnummer",
+        "risk_high": "Hoog",
+        "risk_medium": "Gemiddeld",
+        "risk_low": "Laag",
+        "evidence_note": "Aanwijzingen voor een datalek gevonden voor deze dienst ({count} resultaat/resultaten); risico minimaal {level}.",
+        "exposures_title": "Andere blootstellingen die niet aan een gedetecteerd account gekoppeld zijn",
+        "exposure_action": "Aanbevolen: wijzig het wachtwoord overal waar dit e-mailadres/nummer hergebruikt is, schakel tweefactorauthenticatie in en let op phishing.",
+        "fallback_reason": "Gedetecteerd door de scan; handmatige controle vereist."
     },
     "ja": {
         "page_title": "ローカルデジタルフットプリント＆プライバシー監査員",
@@ -747,7 +867,19 @@ TRANSLATIONS = {
         "engine_status_ok": "正常",
         "engine_status_partial": "一部成功",
         "engine_status_error": "失敗",
-        "engine_status_skipped": "スキップ（未設定）"
+        "engine_status_skipped": "スキップ（未設定）",
+        "bd_title": "漏洩データセットに記載: {name}",
+        "bd_title_unknown": "BreachDirectory で {count} 件のレコードが見つかりました（データセット名は不明）",
+        "bd_password_yes": "このレコードにはパスワードまたはハッシュのデータが存在します（非表示）。",
+        "bd_password_no": "このレコードにパスワードデータは報告されていません。",
+        "dsr_phone_label": "電話番号",
+        "risk_high": "高",
+        "risk_medium": "中",
+        "risk_low": "低",
+        "evidence_note": "このサービスに関する漏洩の形跡が見つかりました（{count} 件）。リスクは少なくとも{level}です。",
+        "exposures_title": "検出されたアカウントに紐づかないその他の露出",
+        "exposure_action": "推奨: このメール/番号を使い回したすべての場所でパスワードを変更し、二要素認証を有効にし、フィッシングに注意してください。",
+        "fallback_reason": "スキャンで検出されました。手動での確認が必要です。"
     }
 }
 
