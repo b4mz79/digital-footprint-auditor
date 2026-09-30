@@ -59,6 +59,82 @@ def _env_positive_float(name: str, default: float, maximum: float) -> float:
 CONTROL_CHARS_RE = re.compile(r"[\x00-\x1f\x7f]")
 EMAIL_RE = re.compile(r"[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 PHONE_RE = re.compile(r"(?<!\d)\+?\d[\d\s().-]{5,18}\d(?!\d)")
+
+# Conservative post-validation guard: generic account/authentication events do not
+# establish Low/Medium/High by themselves. More specific activity can override this.
+GENERIC_EVENT_TERMS = (
+    # English and common European-language evidence.
+    "welcome", "willkommen", "bienvenido", "bienvenue", "benvenuto", "welkom",
+    "добро пожаловать", "регистрация", "注册", "欢迎", "ようこそ",
+    "thank you for joining", "thanks for joining", "thank you for your interest",
+    "thank you for participating", "thank you for creating", "thank you for creating an account",
+    "subscribe", "subscription",
+    "registration", "registered", "register", "registration is live",
+    "verify your email", "verify your e-mail", "verify your account",
+    "verification code", "verification email", "verification e-mail",
+    "confirmation code", "confirmation email", "confirmation e-mail",
+    "confirm your email", "confirm your e-mail", "confirm your account",
+    "security code", "one-time password", "one time password", "otp", "captcha",
+    "account verification", "email verification",
+    # Indonesian evidence.
+    "verifikasi", "pendaftaran", "terdaftar", "sambutan", "kode verifikasi",
+    "kode otp", "verifikasi email", "verifikasi e-mail", "verifikasi akun",
+    "verifikasi alamat email", "konfirmasi email", "konfirmasi akun",
+    "terima kasih telah bergabung", "terima kasih atas partisipasi", "terima kasih untuk partisipasi", "partisipasinya",
+    "terima kasih atas minat", "menyelesaikan pendaftaran",
+    # Other supported-language signals commonly found in subjects.
+    "registrierung", "verifizierung", "bestätigungscode", "registro", "verificación",
+    "código de verificación", "inscription", "vérification", "code de vérification",
+    "registrazione", "verifica", "codice di verifica", "registratie", "verificatiecode",
+    "verificatie", "验证码", "验证邮箱", "確認コード", "認証コード", "メール確認",
+    "код подтверждения", "код верификации",
+)
+SPECIFIC_ACTIVITY_TERMS = (
+    "payment", "paid", "pembayaran", "transaction", "transaksi", "order", "pesanan",
+    "pemesanan", "booking", "reservation", "reservasi", "invoice", "tagihan",
+    "application", "applying", "lamaran", "recruitment", "rekrutmen",
+    "identity verification", "verifikasi identitas", "verifikasi data diri", "kyc",
+    "internet banking", "mobile banking", "banking login", "banking authentication",
+    "medical record", "rekam medis", "lab result", "hasil laboratorium", "prescription",
+    "resep", "medical appointment", "janji medis", "insurance claim", "klaim asuransi",
+    "claim", "password reset", "reset password", "vehicle verification",
+    "verifikasi unit kendaraan", "unit kendaraan",
+    "2 langkah", "two-step verification",
+)
+GENERIC_EVENT_RES = tuple(
+    re.compile(rf"(?<!\w){re.escape(term)}(?!\w)", re.IGNORECASE)
+    for term in GENERIC_EVENT_TERMS
+)
+SPECIFIC_ACTIVITY_RES = tuple(
+    re.compile(rf"(?<!\w){re.escape(term)}(?!\w)", re.IGNORECASE)
+    for term in SPECIFIC_ACTIVITY_TERMS
+)
+
+# Deterministic floors: direct evidence may establish a minimum risk level even when
+# the LLM under-rates it. Service category alone never triggers these floors.
+HIGH_ACTIVITY_TERMS = (
+    "payment", "paid", "pembayaran", "transaction", "transaksi",
+    "internet banking", "mobile banking", "banking login", "banking authentication",
+    "identity verification", "verifikasi identitas", "verifikasi data diri", "kyc",
+    "medical record", "rekam medis", "lab result", "hasil laboratorium",
+    "prescription", "resep", "medical appointment", "janji medis",
+    "insurance claim", "klaim asuransi",
+)
+MEDIUM_ACTIVITY_TERMS = (
+    "application", "applying", "lamaran", "recruitment", "rekrutmen",
+    "order", "pesanan", "pemesanan", "booking", "reservation", "reservasi",
+    "invoice", "tagihan", "vehicle verification",
+    "verifikasi unit kendaraan", "unit kendaraan",
+)
+HIGH_ACTIVITY_RES = tuple(
+    re.compile(rf"(?<!\w){re.escape(term)}(?!\w)", re.IGNORECASE)
+    for term in HIGH_ACTIVITY_TERMS
+)
+MEDIUM_ACTIVITY_RES = tuple(
+    re.compile(rf"(?<!\w){re.escape(term)}(?!\w)", re.IGNORECASE)
+    for term in MEDIUM_ACTIVITY_TERMS
+)
+
 DOMAIN_RE = re.compile(
     r"(?=.{1,253}$)"
     r"(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+"
@@ -87,7 +163,7 @@ MAX_EMAIL_LENGTH = 254
 MAX_PHONE_INPUT_LENGTH = 32
 MAX_TENANT_ID_LENGTH = 128
 MAX_FOUND_SERVICES = 50
-MAX_SERVICE_FIELDS = 8
+MAX_SERVICE_FIELDS = 9
 MAX_SERVICE_FIELD_LENGTH = 1200
 MAX_PROMPT_CHARS = 60_000
 MAX_RAW_LLM_RESPONSE = 120_000
@@ -97,6 +173,7 @@ MAX_REASON_LENGTH = 1200
 MAX_DELETE_URL_LENGTH = 2048
 MAX_DSR_LENGTH = 30_000
 MAX_LOCAL_TEMPLATE_LENGTH = 30_000
+ANALYSIS_SCHEMA_VERSION = "risk-v11-evidence-floors"
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").strip().upper() or "INFO"
 LOG_LEVEL_VALUE = getattr(logging, LOG_LEVEL, logging.INFO)
@@ -564,12 +641,19 @@ HIGH
 Gunakan hanya jika evidence menunjukkan salah satu berikut:
 
 * breach/exposure data sensitif secara langsung; atau
-* aktivitas atau kejadian yang secara eksplisit memiliki dampak
-  privasi tinggi, misalnya transaksi finansial nyata,
-  aktivitas perbankan nyata, atau verifikasi identitas yang
-  secara jelas merupakan aktivitas sensitif; atau
+* evidence secara eksplisit menunjukkan transaksi/pembayaran nyata,
+  aktivitas perbankan nyata, verifikasi identitas/data diri, atau
+  aktivitas kesehatan yang secara langsung bersifat sensitif; atau
 * kombinasi evidence langsung dan konteks layanan menunjukkan
   dampak tinggi secara wajar.
+
+Risk floor penting:
+* subject yang secara eksplisit menyebut PAYMENT/PEMBAYARAN/TRANSACTION/TRANSAKSI
+  harus minimal HIGH;
+* subject yang secara eksplisit menunjukkan INTERNET BANKING/MOBILE BANKING
+  atau banking authentication harus minimal HIGH;
+* subject yang secara eksplisit menunjukkan IDENTITY VERIFICATION/KYC/VERIFIKASI IDENTITAS
+  harus minimal HIGH.
 
 PENTING:
 Konteks industri atau jenis layanan SAJA tidak cukup untuk
@@ -582,20 +666,44 @@ Contoh:
 * welcome message pada layanan finansial ≠ otomatis HIGH.
 
 MEDIUM
-Gunakan bila terdapat evidence nyata mengenai hubungan atau
-aktivitas yang relevan terhadap privasi, dan konteks layanan
-menambah sensitivitas, tetapi evidence belum menunjukkan
-dampak tingkat HIGH.
+Gunakan bila evidence langsung menunjukkan aktivitas yang memang
+relevan terhadap privasi, tetapi belum memenuhi ambang HIGH.
+Konteks layanan boleh memperjelas mengapa aktivitas tersebut
+relevan, tetapi konteks tidak boleh menggantikan evidence aktivitas.
 
-Contohnya dapat mencakup verifikasi akun, aktivitas rekrutmen,
-aktivitas platform sosial, layanan cloud, atau layanan finansial
-ketika bukti hanya menunjukkan hubungan/aktivitas terbatas.
+Contoh yang dapat mendukung MEDIUM:
+* lamaran atau proses rekrutmen yang eksplisit;
+* pemesanan atau booking yang nyata;
+* verifikasi unit kendaraan yang eksplisit;
+* transaksi yang nyata tetapi tidak menunjukkan karakter HIGH;
+* aktivitas profil/komunikasi sosial yang secara eksplisit terlihat;
+* aktivitas layanan lain yang jelas lebih dari sekadar keberadaan akun.
+
+Risk floor penting:
+* evidence lamaran/rekrutmen eksplisit → minimal MEDIUM;
+* evidence order/pesanan/booking/reservation eksplisit → minimal MEDIUM;
+* evidence verifikasi unit kendaraan eksplisit → minimal MEDIUM.
+
+VERIFIKASI EMAIL, OTP, WELCOME, dan REGISTRATION yang berdiri sendiri
+BUKAN MEDIUM.
 
 LOW
-Gunakan bila evidence terbatas pada pendaftaran awal,
-welcome message, konfirmasi dasar, verifikasi email dasar,
-atau hubungan layanan yang tidak menunjukkan aktivitas dengan
-dampak privasi besar.
+Gunakan hanya bila evidence itu sendiri menunjukkan aktivitas yang
+jelas berdampak rendah, misalnya komunikasi promosi/newsletter atau
+aktivitas publik/forum yang tidak menunjukkan autentikasi, transaksi,
+rekrutmen, identitas, kesehatan, finansial, atau data profil sensitif.
+
+Pendaftaran awal, welcome message, verification email, OTP, confirmation
+code, dan event autentikasi dasar TIDAK boleh diberi LOW hanya karena
+terlihat rutin atau umum. Untuk event seperti itu, gunakan UNKNOWN
+kecuali ada evidence tambahan yang secara langsung mendukung tingkat
+LOW, MEDIUM, atau HIGH.
+
+DEFAULT KONSERVATIF
+Bila pilihan antara LOW dan UNKNOWN tidak dapat diputuskan dari evidence,
+pilih UNKNOWN. Bila pilihan antara MEDIUM dan UNKNOWN tidak dapat
+diputuskan dari evidence, pilih UNKNOWN. Jangan menggunakan MEDIUM
+sebagai jalan tengah.
 
 ATURAN MUTLAK:
 Jangan menaikkan risiko hanya karena layanan terkenal, populer,
@@ -670,7 +778,7 @@ Pertahankan struktur output berikut:
 "analysis": [
 {
 "service": "...",
-"risk_level": "high|medium|low",
+"risk_level": "high|medium|low|unknown",
 "reason": "...",
 "delete_url": "..."
 }
@@ -681,7 +789,7 @@ Aturan:
 
 * "service" harus mempertahankan nama service dari input.
 * "risk_level" harus tepat salah satu dari:
-  "high", "medium", "low".
+  "high", "medium", "low", "unknown".
 * "reason" harus menggunakan bahasa output yang diminta.
 * "delete_url" harus berupa URL penghapusan yang didukung
   evidence, ATAU instruksi generik yang jujur.
@@ -706,6 +814,8 @@ Sebelum menghasilkan JSON, periksa setiap service:
 10. Apakah delete_url benar-benar didukung evidence dan bukan
     URL pencarian?
 11. Apakah saya menyatakan breach tanpa breach_evidence?
+12. Jika evidence hanya generik, apakah UNKNOWN lebih tepat daripada LOW atau MEDIUM?
+13. Jika saya memilih LOW/MEDIUM/HIGH, evidence langsung mana yang memenuhi ambang level itu?
 
 Jika suatu klaim tidak dapat didukung oleh evidence atau konteks
 layanan yang wajar, HAPUS KLAIM tersebut.
@@ -878,8 +988,8 @@ def validate_ai_output(parsed: Any, lang: str) -> dict[str, Any]:
         reason = _safe_component(str(item.get("reason", "")), MAX_REASON_LENGTH)
         delete_url = _sanitize_delete_value(item.get("delete_url", ""))
         # Accept the canonical key or a label in any supported language. An unrecognised value
-        # is rated "medium" (needs verification) rather than silently dropping the service.
-        risk_key = normalize_risk(item.get("risk_level")) or "medium"
+        # is "unknown" rather than inventing a Medium rating.
+        risk_key = normalize_risk(item.get("risk_level")) or "unknown"
         cleaned_analysis.append({
             "service": service,
             "risk_key": risk_key,
@@ -1186,14 +1296,62 @@ def _attach_breach_evidence(services: list[dict], findings: list[dict]) -> list[
     return enriched
 
 
+def _service_evidence_text(svc: dict) -> str:
+    """Build bounded evidence text from scanner fields used by the conservative risk guard."""
+    parts: list[str] = []
+    for key in ("subject", "title", "snippet"):
+        value = _safe_component(str(svc.get(key, "") or ""), MAX_SERVICE_FIELD_LENGTH)
+        if value:
+            parts.append(value)
+    return " ".join(parts)[:MAX_PROMPT_CHARS]
+
+
+def _is_generic_event_only(svc: dict) -> bool:
+    """Return True when evidence is dominated by generic account/auth events."""
+    evidence = _service_evidence_text(svc)
+    if not evidence or not any(rx.search(evidence) for rx in GENERIC_EVENT_RES):
+        return False
+    return not any(rx.search(evidence) for rx in SPECIFIC_ACTIVITY_RES)
+
+
+def _activity_risk_floor(svc: dict) -> str:
+    """Return the minimum risk established by explicit activity evidence."""
+    evidence = _service_evidence_text(svc)
+    if not evidence:
+        return "unknown"
+    if any(rx.search(evidence) for rx in HIGH_ACTIVITY_RES):
+        return "high"
+    if any(rx.search(evidence) for rx in MEDIUM_ACTIVITY_RES):
+        return "medium"
+    return "unknown"
+
+
+def _apply_conservative_unknown_guard(svc: dict, risk_key: str, has_breach: bool) -> str:
+    """Apply explicit-activity floors and reject unsupported model ratings."""
+    # No scanner evidence means the model has nothing concrete to classify.
+    # Service name/domain alone are never sufficient to choose Low/Medium/High.
+    evidence = _service_evidence_text(svc).strip()
+    if not evidence and not has_breach:
+        return "unknown"
+
+    floor = _activity_risk_floor(svc)
+    if floor != "unknown" and RISK_RANK[floor] > RISK_RANK.get(risk_key, -1):
+        return floor
+    if has_breach:
+        return risk_key
+    if _is_generic_event_only(svc):
+        return "unknown"
+    return risk_key
+
+
 def _rule_based_item(name: str, lang: str) -> dict[str, str]:
-    query_str = urllib.parse.quote_plus(f"how to delete {name} account")
+    """Return an explicitly undetermined result when the model cannot rate a service."""
     return {
         "service": name,
-        "risk_key": "medium",
-        "risk_level": t("risk_medium", lang=lang),
-        "reason": t("fallback_reason", lang=lang),
-        "delete_url": f"https://www.google.com/search?q={query_str}",
+        "risk_key": "unknown",
+        "risk_level": t("risk_unknown", lang=lang),
+        "reason": t("unknown_reason", lang=lang),
+        "delete_url": "-",
     }
 
 
@@ -1232,13 +1390,23 @@ def _finalize_analysis(
 
         found = _find_analysis_item(by_name, key)
         item = dict(found) if found else _rule_based_item(name, lang)
-        risk_key = item.get("risk_key") or normalize_risk(item.get("risk_level")) or "medium"
+        risk_key = item.get("risk_key") or normalize_risk(item.get("risk_level")) or "unknown"
 
         matches = _matching_findings(svc, findings)
         matched_ids.update(id(f) for f in matches)
+        guarded_risk_key = _apply_conservative_unknown_guard(svc, risk_key, bool(matches))
+        if guarded_risk_key != risk_key:
+            risk_key = guarded_risk_key
+            item["risk_guarded"] = True
+            item["reason"] = (
+                t("unknown_generic_event_reason", lang=lang)
+                if _service_evidence_text(svc).strip()
+                else t("unknown_reason", lang=lang)
+            )
+            item["delete_url"] = "-"
         if matches:
             floor = max((_finding_floor(f) for f in matches), key=lambda k: RISK_RANK[k])
-            if RISK_RANK[floor] > RISK_RANK.get(risk_key, 1):
+            if RISK_RANK[floor] > RISK_RANK.get(risk_key, -1):
                 risk_key = floor
                 item["risk_raised"] = True
         item["risk_key"] = risk_key
@@ -1286,7 +1454,7 @@ def _input_fingerprint(services: list[dict], findings: list[dict]) -> str:
         ])
         for f in findings
     )
-    blob = json.dumps([svc_part, find_part], ensure_ascii=False, separators=(",", ":"))
+    blob = json.dumps([ANALYSIS_SCHEMA_VERSION, svc_part, find_part], ensure_ascii=False, separators=(",", ":"))
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 # =============================================================================
@@ -1444,7 +1612,8 @@ async def analyze_smart_cache(
     except Exception as exc:
         logger.error("[AI Agent Error] Output AI ditolak/gagal: %s", type(exc).__name__)
 
-        # Offline fallback: every service rated "medium", then raised by breach evidence.
+        # Offline fallback: every service is "unknown", then raised only when deterministic breach evidence
+        # establishes a minimum risk. Unknown is never treated as Medium.
         # Not cached, so the next run retries the models.
         analysis, exposures = _finalize_analysis([], services, findings, lang)
         fallback_result = {

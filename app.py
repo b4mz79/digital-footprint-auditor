@@ -278,7 +278,7 @@ if run_scan:
                     if analysis_list:
                         for item in analysis_list:
                             # Warna/label ditentukan oleh kunci kanonik, bukan teks berbahasa tertentu.
-                            risk_key = item.get("risk_key") or normalize_risk(item.get("risk_level")) or "medium"
+                            risk_key = normalize_risk(item.get("risk_key")) or normalize_risk(item.get("risk_level")) or "unknown"
                             risk_label = t(f"risk_{risk_key}", lang=lang)
                             delete_url = item.get("delete_url", "#")
 
@@ -290,7 +290,10 @@ if run_scan:
                             if item.get("evidence_count"):
                                 st.caption("⚠️ " + t("evidence_note", lang=lang, count=item["evidence_count"], level=risk_label))
                             if delete_url and delete_url != "-":
-                                st.markdown(t("delete_link_label", lang=lang, url=delete_url))
+                                if isinstance(delete_url, str) and delete_url.startswith("https://"):
+                                    st.markdown(t("delete_link_label", lang=lang, url=delete_url))
+                                else:
+                                    st.write(f"🔗 {delete_url}")
                             st.caption("---")
                     elif not exposures:
                         st.write(t("no_risk_analysis", lang=lang))
@@ -298,7 +301,7 @@ if run_scan:
                     if exposures:
                         st.markdown(f"#### {t('exposures_title', lang=lang)}")
                         for exposure in exposures:
-                            exp_key = exposure.get("risk_key") or "medium"
+                            exp_key = normalize_risk(exposure.get("risk_key")) or "unknown"
                             exp_title, exp_snippet = _finding_text({"kind": "breach_db", **exposure}, lang)
                             st.markdown(
                                 f"**{risk_icon(exp_key)} {_md_escape(exp_title)}** - "
