@@ -2,6 +2,8 @@
 .env
 .cache_key
 *.pem
+*.patch
+test_*.py
 
 # Python Cache
 __pycache__/
