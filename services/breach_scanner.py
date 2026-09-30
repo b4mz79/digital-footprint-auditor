@@ -1290,6 +1290,8 @@ async def scan_data_breaches(
     search_targets = [email]
     if phone:
         search_targets.extend(normalize_phone_number(phone))
+    start_time = time.monotonic()
+    logger.info("=== MEMULAI PARALLEL DATA BREACH SCAN (%d target) ===", len(search_targets))
 
     tavily_key = os.getenv("TAVILY_API_KEY", "").strip()
     google_search_key = os.getenv("GOOGLE_SEARCH_API_KEY", "").strip()
@@ -1326,12 +1328,6 @@ async def scan_data_breaches(
 
     all_findings: list[dict] = []
     active_engines: set[str] = set()
-
-    start_time = time.monotonic()
-    logger.info(
-        "=== MEMULAI PARALLEL DATA BREACH SCAN (%d target) ===",
-        len(search_targets),
-    )
 
     limits = httpx.Limits(
         max_connections=20,
@@ -1385,12 +1381,6 @@ async def scan_data_breaches(
                     MAX_TOTAL_FINDINGS,
                 )
                 break
-
-    elapsed = time.monotonic() - start_time
-    logger.info(
-        "=== PARALLEL SCAN SELESAI Dalam %.2f detik ===",
-        elapsed,
-    )
 
     # Per-engine outcome. "ok" means it answered for every target queried.
     engines_report: dict[str, dict] = {}
@@ -1458,4 +1448,5 @@ async def scan_data_breaches(
             phone,
             tenant_id=tenant_id,
         )
+    logger.info("=== PARALLEL DATA BREACH SCAN SELESAI Dalam %.2f detik ===", time.monotonic() - start_time)
     return output

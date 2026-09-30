@@ -1,4 +1,5 @@
 import os
+import time
 import imaplib
 import email
 from email.header import decode_header
@@ -104,7 +105,9 @@ def safe_decode_header(header_value: str) -> str:
         return str(header_value)
 
 def scan_gmail_inbox(email_address: str, app_password: str, max_emails: int = 200, lang: str = "id") -> list[dict]:
-    logger.info(f"[IMAP] Scanning target: {mask_email(email_address)}")
+    start_time = time.monotonic()
+    logger.info("=== MEMULAI IMAP SCAN (%s) ===", mask_email(email_address))
+    #logger.info(f"[IMAP] Scanning target: {mask_email(email_address)}")
     found_services = set()
     results = []
 
@@ -127,6 +130,7 @@ def scan_gmail_inbox(email_address: str, app_password: str, max_emails: int = 20
             status, messages = mail.search(None, 'X-GM-RAW', f'"{escaped_query}"')
 
             if status != "OK" or not messages[0]:
+                #logger.info("=== IMAP SCAN SELESAI Dalam %.2f detik ===", time.monotonic() - start_time)
                 return []
 
             email_ids = messages[0].split()[-max_emails:]
@@ -149,6 +153,7 @@ def scan_gmail_inbox(email_address: str, app_password: str, max_emails: int = 20
                                 "source": t("source_imap", lang=lang),
                                 "subject": subject[:60]
                             })
+        #logger.info("=== IMAP SCAN SELESAI Dalam %.2f detik ===", time.monotonic() - start_time)
         return results
     except imaplib.IMAP4.error as imap_err:
         logger.error(f"[IMAP Error] Otentikasi/Perintah IMAP Gagal untuk [{mask_email(email_address)}]")
@@ -157,6 +162,7 @@ def scan_gmail_inbox(email_address: str, app_password: str, max_emails: int = 20
         logger.error(f"[IMAP Error] Kendala jaringan atau server: {e}")
         raise RuntimeError(f"IMAP Service Error: {e}")
     finally:
+        logger.info("=== IMAP SCAN SELESAI Dalam %.2f detik ===", time.monotonic() - start_time)
         # Memastikan tidak ada sisa kredensial di local scope meskipun terjadi Exception keras
         if '_cred' in locals():
             del _cred

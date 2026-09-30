@@ -2,6 +2,7 @@ import subprocess
 import sys
 import os
 import re
+import time
 import logging
 from dotenv import load_dotenv
 from utils.translations import t
@@ -38,17 +39,20 @@ def resolve_holehe_binary() -> str | None:
     return None
 
 def scan_osint_footprint(email: str, lang: str = "id") -> list[dict]:
-    logger.info(f"[OSINT] Scanning target: {mask_email(email)}")
+    start_time = time.monotonic()
+    logger.info("=== MEMULAI OSINT SCAN (%s) ===", mask_email(email))
     results = []
     clean_email = email.strip()
 
     if not EMAIL_REGEX.match(clean_email):
         logger.error("[OSINT Error] Format email tidak valid.")
+        logger.info("=== OSINT SCAN SELESAI Dalam %.2f detik ===", time.monotonic() - start_time)
         return results
 
     cmd_path = resolve_holehe_binary()
     if not cmd_path:
         logger.error("[OSINT Error] Executable 'holehe' terisolasi tidak ditemukan.")
+        logger.info("=== OSINT SCAN SELESAI Dalam %.2f detik ===", time.monotonic() - start_time)
         return results
 
     # FIX: Isolasi Environment Variables agar kredensial di .env tidak bocor ke child process (Holehe)
@@ -89,5 +93,7 @@ def scan_osint_footprint(email: str, lang: str = "id") -> list[dict]:
         logger.warning("[OSINT Warning] Proses Holehe Timeout.")
     except Exception as e:
         logger.error(f"[OSINT Error] OSINT Engine crash: {e}")
+    finally:
+        logger.info("=== OSINT SCAN SELESAI Dalam %.2f detik ===", time.monotonic() - start_time)
 
     return results
