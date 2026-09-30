@@ -98,7 +98,8 @@ LOG_LEVEL_VALUE = getattr(logging, LOG_LEVEL, logging.INFO)
 DELAY_SECONDS = _env_non_negative_int("DELAY_SECONDS", 5, 300)
 AI_CONCURRENCY = _env_non_negative_int("AI_CONCURRENCY", 4, 16) or 1
 AI_THREAD_SEMAPHORE = asyncio.Semaphore(AI_CONCURRENCY)
-AI_TIMEOUT_SECONDS = _env_positive_float("AI_TIMEOUT_SECONDS", 120.0, 900.0)
+#AI_TIMEOUT_SECONDS = _env_positive_float("AI_TIMEOUT_SECONDS", 120.0, 900.0)
+AI_TIMEOUT_SECONDS = _env_positive_float("AI_TIMEOUT_SECONDS", 300.0, 900.0)
 OLLAMA_TIMEOUT_SECONDS = _env_positive_float("OLLAMA_TIMEOUT_SECONDS", 900.0, 1800.0)
 MAX_LLM_OUTPUT_TOKENS = _env_non_negative_int("MAX_LLM_OUTPUT_TOKENS", 4096, 16_384) or 4096
 EXPOSE_CACHE_PATH = _env_bool("EXPOSE_CACHE_PATH", False)
@@ -432,11 +433,13 @@ Task: for EACH detected service, return its privacy risk.
 - "delete_url": an HTTPS account-deletion URL only if you are confident it is real; otherwise a short, honest instruction in the output language.
 
 Evidence rules:
+- Validate and factually verify whether the service is still operational, including if it has changed name or been acquired by another party. Services that are no longer active or operational can be declared risk_level = "low".
 - A service may carry "breach_evidence": unverified third-party breach-database/search metadata. Mention it in the reason and rate the risk accordingly.
+- Sources or references for analysis MUST be sought and/or taken from credible and trusted sources internet or security media or companies (such as publications, reports, or news) within the last year or so. DO NOT speculate, DO NOT fabricate, and DO NOT assume.
 - Do NOT claim that credentials were leaked unless breach_evidence explicitly says password/hash data is present.
 - Do NOT treat a service as breached when it has no breach_evidence.
 
-Return ONLY valid JSON:
+REQUIRED! STRICT AND MANDATORY! **Only return valid JSON**:
 {"analysis":[{"service":"...","risk_level":"high|medium|low","reason":"...","delete_url":"..."}]}
 """
 
@@ -448,6 +451,7 @@ def build_user_prompt(email: str, found_services: list, phone: str = "", lang: s
     # Intentionally do NOT send raw email/phone to cloud LLM providers.
     # DSR identity is inserted locally after the model response returns.
     safe_services = _sanitize_service_records(found_services)
+    with open("safe_services.json", "w") as f: json.dump(safe_services, f)
     payload = json.dumps(safe_services, ensure_ascii=False, separators=(",", ":"))
     prompt = (
         "Perform the privacy/security analysis requested in the system instruction.\n"
