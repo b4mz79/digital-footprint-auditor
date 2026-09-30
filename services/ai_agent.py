@@ -718,11 +718,7 @@ def build_user_prompt(email: str, found_services: list, phone: str = "", lang: s
     lang = _validate_lang(lang)
     # Intentionally do NOT send raw email/phone to cloud LLM providers.
     # DSR identity is inserted locally after the model response returns.
-
-    #safe_services = _sanitize_service_records(found_services)
-    #with open("safe_services.json", "w") as f: json.dump(safe_services, f)
-    with open("safe_services.json", "r") as f: safe_services = json.load(f)
-
+    safe_services = _sanitize_service_records(found_services)
     payload = json.dumps(safe_services, ensure_ascii=False, separators=(",", ":"))
     prompt = (
         "Perform the privacy/security analysis requested in the system instruction.\n"
