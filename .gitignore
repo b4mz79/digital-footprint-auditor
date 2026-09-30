@@ -2,7 +2,6 @@
 .env
 .cache_key
 *.pem
-*.txt
 
 # Python Cache
 __pycache__/
@@ -18,6 +17,7 @@ ignored_domains.txt
 main.py
 services/phone_scanner.py
 services/scanner.py
+log.txt
 *.json
 *-v*.py
 *.zip
