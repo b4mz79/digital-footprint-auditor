@@ -803,69 +803,343 @@ _DEFAULT_PROVIDER_ORDER = ["gemini", "groq", "openai", "ollama"]
 
 
 def _provider_order() -> list[str]:
-    """LLM_LOCAL_ONLY=true restricts to Ollama; LLM_PROVIDER_ORDER (comma separated) sets the
-    order, e.g. "ollama,gemini" to try the local model first."""
+    """Return the configured provider failover order.
+
+    LLM_LOCAL_ONLY=true restricts execution to Ollama.
+    LLM_PROVIDER_ORDER can override the default order, for example:
+        LLM_PROVIDER_ORDER=gemini,groq,openai,ollama
+
+    A provider is considered successful only after its response has been:
+      1. received,
+      2. parsed as JSON,
+      3. validated against the AI output contract.
+
+    Therefore malformed model output is treated as a provider failure and
+    causes rotation to the next configured provider.
+    """
     if _env_bool("LLM_LOCAL_ONLY", False):
         return ["ollama"]
-    return env_choice_list("LLM_PROVIDER_ORDER", _DEFAULT_PROVIDER_ORDER, _KNOWN_PROVIDERS)
+
+    return env_choice_list(
+        "LLM_PROVIDER_ORDER",
+        _DEFAULT_PROVIDER_ORDER,
+        _KNOWN_PROVIDERS,
+    )
 
 
-async def _run_provider_chain(user_prompt: str, sys_prompt: str) -> tuple[str, str]:
-    """Try the configured providers in order. Returns (raw_response, provider_label);
-    ("", "None") when every provider failed or none is configured."""
+def _parse_and_validate_provider_response(raw: str, lang: str) -> dict[str, Any]:
+    """Parse and validate one provider response.
+
+    This function deliberately raises on malformed or unusable model output.
+    The caller treats that exception exactly like an API/provider failure and
+    continues the failover chain.
+
+    It is intentionally separate from provider-specific API callers so that
+    every provider is subjected to the same output contract.
+    """
+    clean_resp = clean_json_string(raw)
+
+    if not clean_resp:
+        raise ValueError("Provider menghasilkan respons kosong.")
+
+    try:
+        parsed = json.loads(clean_resp)
+    except json.JSONDecodeError as exc:
+        raise ValueError("Provider menghasilkan JSON tidak valid.") from exc
+
+    return validate_ai_output(parsed, lang)
+
+
+async def _run_provider_chain(
+    user_prompt: str,
+    sys_prompt: str,
+    lang: str,
+) -> tuple[dict[str, Any] | None, str]:
+    """Run the configured AI provider failover chain.
+
+    IMPORTANT:
+    A provider is NOT successful merely because its HTTP/API request returned
+    a response. The response must also be valid JSON and satisfy the output
+    validation contract.
+
+    Failover hierarchy:
+
+        Gemini key #1
+             ↓ failure / invalid output
+        Gemini key #2
+             ↓ failure / invalid output
+        ...
+             ↓
+        Groq
+             ↓ failure / invalid output
+        OpenAI
+             ↓ failure / invalid output
+        Ollama Local
+             ↓ failure / invalid output
+        return (None, "None")
+
+    The final rule-based offline fallback is intentionally NOT executed here.
+    It remains the responsibility of analyze_smart_cache(), and is reached only
+    after every configured provider has failed.
+    """
+
     for provider in _provider_order():
+
+        # ---------------------------------------------------------------------
+        # Google Gemini
+        # ---------------------------------------------------------------------
         if provider == "gemini":
-            keys = [os.getenv("GEMINI_API_KEY", "").strip(), os.getenv("GOOGLE_API_KEY", "").strip()] + [
-                os.getenv(f"GOOGLE_API_KEY_{i}", "").strip() for i in range(1, 7)
+            keys = [
+                os.getenv("GEMINI_API_KEY", "").strip(),
+                os.getenv("GOOGLE_API_KEY", "").strip(),
+            ] + [
+                os.getenv(f"GOOGLE_API_KEY_{i}", "").strip()
+                for i in range(1, 7)
             ]
+
             valid_keys = list(dict.fromkeys(k for k in keys if k))
-            if valid_keys:
-                logger.info("[Gemini] Terdeteksi %d API Key aktif.", len(valid_keys))
+
+            if not valid_keys:
+                logger.info("[Gemini] Tidak ada API Key yang dikonfigurasi.")
+                continue
+
+            logger.info(
+                "[Gemini] Terdeteksi %d API Key aktif.",
+                len(valid_keys),
+            )
+
             for idx, key in enumerate(valid_keys, 1):
                 try:
-                    logger.info("[Gemini] Mencoba eksekusi dengan Key #%d...", idx)
-                    raw = await call_gemini_async(user_prompt, key, sys_prompt)
-                    if raw:
-                        logger.info("[Gemini] Berhasil mendapatkan respons.")
-                        return raw, "Google Gemini"
-                except Exception as exc:
-                    logger.warning("[Gemini] Key #%d gagal: %s", idx, type(exc).__name__)
+                    logger.info(
+                        "[Gemini] Mencoba eksekusi dengan Key #%d...",
+                        idx,
+                    )
 
+                    raw = await call_gemini_async(
+                        user_prompt,
+                        key,
+                        sys_prompt,
+                    )
+
+                    if not raw:
+                        logger.warning(
+                            "[Gemini] Key #%d menghasilkan respons kosong.",
+                            idx,
+                        )
+                        continue
+
+                    logger.info(
+                        "[Gemini] Key #%d berhasil mendapatkan respons.",
+                        idx,
+                    )
+
+                    try:
+                        parsed = _parse_and_validate_provider_response(
+                            raw,
+                            lang,
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            "[Gemini] Key #%d respons ditolak: %s.",
+                            idx,
+                            type(exc).__name__,
+                        )
+                        # IMPORTANT:
+                        # Invalid model output is a failed attempt.
+                        # Continue to the next Gemini key first.
+                        continue
+
+                    logger.info(
+                        "[Gemini] Key #%d menghasilkan JSON tervalidasi.",
+                        idx,
+                    )
+                    return parsed, "Google Gemini"
+
+                except Exception as exc:
+                    logger.warning(
+                        "[Gemini] Key #%d gagal: %s",
+                        idx,
+                        type(exc).__name__,
+                    )
+
+            # All Gemini keys exhausted.
+            # Continue to the NEXT PROVIDER rather than offline fallback.
+            logger.warning(
+                "[Gemini] Semua API Key gagal atau menghasilkan output "
+                "yang tidak dapat divalidasi. Rotasi ke provider berikutnya."
+            )
+
+        # ---------------------------------------------------------------------
+        # Groq
+        # ---------------------------------------------------------------------
         elif provider == "groq":
             key = os.getenv("GROQ_API_KEY", "").strip()
-            if key:
-                try:
-                    logger.info("[Groq Cloud] Memulai eksekusi via Groq API...")
-                    raw = await call_groq_async(user_prompt, key, sys_prompt)
-                    if raw:
-                        logger.info("[Groq Cloud] Berhasil mendapatkan respons.")
-                        return raw, "Groq Cloud"
-                except Exception as exc:
-                    logger.warning("[Groq Cloud] Gagal: %s", type(exc).__name__)
 
+            if not key:
+                logger.info(
+                    "[Groq Cloud] GROQ_API_KEY tidak dikonfigurasi."
+                )
+                continue
+
+            try:
+                logger.info(
+                    "[Groq Cloud] Memulai eksekusi via Groq API..."
+                )
+
+                raw = await call_groq_async(
+                    user_prompt,
+                    key,
+                    sys_prompt,
+                )
+
+                if not raw:
+                    logger.warning(
+                        "[Groq Cloud] Provider menghasilkan respons kosong."
+                    )
+                    continue
+
+                logger.info(
+                    "[Groq Cloud] Berhasil mendapatkan respons."
+                )
+
+                try:
+                    parsed = _parse_and_validate_provider_response(
+                        raw,
+                        lang,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "[Groq Cloud] Respons ditolak: %s. "
+                        "Rotasi ke provider berikutnya.",
+                        type(exc).__name__,
+                    )
+                    continue
+
+                logger.info(
+                    "[Groq Cloud] Menghasilkan JSON tervalidasi."
+                )
+                return parsed, "Groq Cloud"
+
+            except Exception as exc:
+                logger.warning(
+                    "[Groq Cloud] Gagal: %s. "
+                    "Rotasi ke provider berikutnya.",
+                    type(exc).__name__,
+                )
+
+        # ---------------------------------------------------------------------
+        # OpenAI
+        # ---------------------------------------------------------------------
         elif provider == "openai":
             key = os.getenv("OPENAI_API_KEY", "").strip()
-            if key:
-                try:
-                    logger.info("[OpenAI] Memulai eksekusi via OpenAI API...")
-                    raw = await call_openai_async(user_prompt, key, sys_prompt)
-                    if raw:
-                        logger.info("[OpenAI] Berhasil mendapatkan respons.")
-                        return raw, "OpenAI"
-                except Exception as exc:
-                    logger.warning("[OpenAI] Gagal: %s", type(exc).__name__)
 
+            if not key:
+                logger.info(
+                    "[OpenAI] OPENAI_API_KEY tidak dikonfigurasi."
+                )
+                continue
+
+            try:
+                logger.info(
+                    "[OpenAI] Memulai eksekusi via OpenAI API..."
+                )
+
+                raw = await call_openai_async(
+                    user_prompt,
+                    key,
+                    sys_prompt,
+                )
+
+                if not raw:
+                    logger.warning(
+                        "[OpenAI] Provider menghasilkan respons kosong."
+                    )
+                    continue
+
+                logger.info(
+                    "[OpenAI] Berhasil mendapatkan respons."
+                )
+
+                try:
+                    parsed = _parse_and_validate_provider_response(
+                        raw,
+                        lang,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "[OpenAI] Respons ditolak: %s. "
+                        "Rotasi ke provider berikutnya.",
+                        type(exc).__name__,
+                    )
+                    continue
+
+                logger.info(
+                    "[OpenAI] Menghasilkan JSON tervalidasi."
+                )
+                return parsed, "OpenAI"
+
+            except Exception as exc:
+                logger.warning(
+                    "[OpenAI] Gagal: %s. "
+                    "Rotasi ke provider berikutnya.",
+                    type(exc).__name__,
+                )
+
+        # ---------------------------------------------------------------------
+        # Ollama Local
+        # ---------------------------------------------------------------------
         elif provider == "ollama":
             try:
-                logger.info("[Ollama Local] Memulai eksekusi lokal...")
-                raw = await call_ollama_async(user_prompt, sys_prompt)
-                if raw:
-                    logger.info("[Ollama Local] Berhasil mendapatkan respons.")
-                    return raw, "Ollama Local"
-            except Exception as exc:
-                logger.warning("[Ollama Local] Gagal: %s", type(exc).__name__)
+                logger.info(
+                    "[Ollama Local] Memulai eksekusi lokal..."
+                )
 
-    return "", "None"
+                raw = await call_ollama_async(
+                    user_prompt,
+                    sys_prompt,
+                )
+
+                if not raw:
+                    logger.warning(
+                        "[Ollama Local] Provider menghasilkan respons kosong."
+                    )
+                    continue
+
+                logger.info(
+                    "[Ollama Local] Berhasil mendapatkan respons."
+                )
+
+                try:
+                    parsed = _parse_and_validate_provider_response(
+                        raw,
+                        lang,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "[Ollama Local] Respons ditolak: %s.",
+                        type(exc).__name__,
+                    )
+                    continue
+
+                logger.info(
+                    "[Ollama Local] Menghasilkan JSON tervalidasi."
+                )
+                return parsed, "Ollama Local"
+
+            except Exception as exc:
+                logger.warning(
+                    "[Ollama Local] Gagal: %s.",
+                    type(exc).__name__,
+                )
+
+    # IMPORTANT:
+    # This means every configured provider has been exhausted.
+    # Only NOW may the caller activate the final rule-based offline fallback.
+    logger.error(
+        "[AI Provider Chain] Semua provider gagal atau menghasilkan "
+        "output yang tidak dapat divalidasi."
+    )
+    return None, "None"
 
 
 # =============================================================================
@@ -1175,6 +1449,7 @@ async def analyze_smart_cache(
     breach_findings: list | None = None,
 ) -> dict[str, Any]:
     start_time = time.monotonic()
+
     email = _validate_email(email)
     phone = _validate_phone(phone)
     lang = _validate_lang(lang)
@@ -1183,38 +1458,65 @@ async def analyze_smart_cache(
     if not isinstance(found_services, list):
         raise TypeError("found_services harus berupa list.")
 
-    services = [s if isinstance(s, dict) else {"name": str(s)} for s in found_services[:MAX_FOUND_SERVICES]]
+    services = [
+        s if isinstance(s, dict) else {"name": str(s)}
+        for s in found_services[:MAX_FOUND_SERVICES]
+    ]
     services = [s for s in services if _service_name(s)]
+
     findings = (
-        [f for f in breach_findings if isinstance(f, dict)][:MAX_BREACH_FINDINGS]
+        [
+            f
+            for f in breach_findings
+            if isinstance(f, dict)
+        ][:MAX_BREACH_FINDINGS]
         if isinstance(breach_findings, list)
         else []
     )
+
     fingerprint = _input_fingerprint(services, findings)
 
     safe_preview = _safe_component(mask_pii(email), 64)
+
     logger.info(
-        "Memulai AI Privacy Audit target [%s] (%d layanan, %d temuan breach) [Bahasa: %s]",
+        "Memulai AI Privacy Audit target [%s] "
+        "(%d layanan, %d temuan breach) [Bahasa: %s]",
         safe_preview,
         len(services),
         len(findings),
         lang,
     )
 
-    # Nothing to rate with a model: only breach datasets (if any) to surface.
+    # -------------------------------------------------------------------------
+    # Nothing to rate with a model.
+    # -------------------------------------------------------------------------
     if not services:
-        _, exposures = _finalize_analysis([], [], findings, lang)
+        _, exposures = _finalize_analysis(
+            [],
+            [],
+            findings,
+            lang,
+        )
+
         return {
             "provider_used": "Local Rule-based Engine",
             "is_from_cache": False,
             "analysis": [],
             "exposures": exposures,
-            "dsr_template": load_local_dsr_template(email, [], phone, lang),
+            "dsr_template": load_local_dsr_template(
+                email,
+                [],
+                phone,
+                lang,
+            ),
             "input_fp": fingerprint,
         }
 
     force_refresh = bool(force_refresh)
 
+    # -------------------------------------------------------------------------
+    # Cache
+    # -------------------------------------------------------------------------
     if not force_refresh:
         cached_result = load_analysis_cache_ext(
             email,
@@ -1223,64 +1525,201 @@ async def analyze_smart_cache(
             lang=lang,
             tenant_id=tenant_id,
         )
-        # Reuse only if the inputs are identical; entries without a fingerprint predate
-        # breach-evidence support and may be stale.
-        if cached_result and cached_result.get("input_fp") == fingerprint:
+
+        # Reuse only when the exact analysis inputs match.
+        if (
+            cached_result
+            and cached_result.get("input_fp") == fingerprint
+        ):
             if not cached_result.get("dsr_template"):
-                cached_result["dsr_template"] = load_local_dsr_template(email, services, phone, lang)
+                cached_result["dsr_template"] = load_local_dsr_template(
+                    email,
+                    services,
+                    phone,
+                    lang,
+                )
+
             return cached_result
 
-    #sys_prompt = SYSTEM_PROMPTS.get(lang, SYSTEM_PROMPTS["id"])
-    #Improved by chatgpt. Now SYSTEM_PROMPTS loaded from external local file.
+    # -------------------------------------------------------------------------
+    # Prompt construction
+    # -------------------------------------------------------------------------
     sys_prompt = load_system_prompt(lang)
-    user_prompt = build_user_prompt(email, _attach_breach_evidence(services, findings), phone, lang)
-    raw_response, provider_used = await _run_provider_chain(user_prompt, sys_prompt)
 
-    try:
-        clean_resp = clean_json_string(raw_response)
-        if not clean_resp:
-            raise ValueError("Semua provider AI tidak menghasilkan respons.")
-        parsed = json.loads(clean_resp)
-        parsed_data = validate_ai_output(parsed, lang)
+    user_prompt = build_user_prompt(
+        email,
+        _attach_breach_evidence(services, findings),
+        phone,
+        lang,
+    )
 
-        analysis, exposures = _finalize_analysis(parsed_data["analysis"], services, findings, lang)
-        parsed_data["analysis"] = analysis
-        parsed_data["exposures"] = exposures
-        parsed_data["provider_used"] = provider_used
-        parsed_data["is_from_cache"] = False
-        parsed_data["input_fp"] = fingerprint
-        parsed_data["dsr_template"] = load_local_dsr_template(email, services, phone, lang)
+    # -------------------------------------------------------------------------
+    # Provider failover chain
+    #
+    # IMPORTANT:
+    # _run_provider_chain() now performs JSON parsing + output validation
+    # internally. Therefore:
+    #
+    #   API failure
+    #   empty response
+    #   invalid JSON
+    #   invalid output structure
+    #
+    # are ALL treated as provider failures and cause rotation.
+    #
+    # The returned `parsed_data` is already validated.
+    # -------------------------------------------------------------------------
+    parsed_data, provider_used = await _run_provider_chain(
+        user_prompt,
+        sys_prompt,
+        lang,
+    )
 
-        save_analysis_cache_ext(
+    # -------------------------------------------------------------------------
+    # At this point:
+    #
+    # parsed_data != None
+    #     => a provider successfully returned validated JSON.
+    #
+    # parsed_data is None
+    #     => ALL configured providers, including Ollama when configured,
+    #        have failed.
+    #
+    # ONLY the second case may enter the final offline fallback.
+    # -------------------------------------------------------------------------
+    if parsed_data is not None:
+        try:
+            analysis, exposures = _finalize_analysis(
+                parsed_data["analysis"],
+                services,
+                findings,
+                lang,
+            )
+
+            parsed_data["analysis"] = analysis
+            parsed_data["exposures"] = exposures
+            parsed_data["provider_used"] = provider_used
+            parsed_data["is_from_cache"] = False
+            parsed_data["input_fp"] = fingerprint
+            parsed_data["dsr_template"] = load_local_dsr_template(
+                email,
+                services,
+                phone,
+                lang,
+            )
+
+            save_analysis_cache_ext(
+                email,
+                parsed_data,
+                phone,
+                lang=lang,
+                tenant_id=tenant_id,
+            )
+
+            elapsed = time.monotonic() - start_time
+
+            logger.info(
+                "AI Audit Selesai (%s) dalam %.2f detik.",
+                provider_used,
+                elapsed,
+            )
+
+            return parsed_data
+
+        except Exception as exc:
+            # This is deliberately NOT converted into the old provider-level
+            # JSON fallback. Provider response was already validated.
+            #
+            # Any unexpected post-validation/finalization failure is a genuine
+            # application-side failure.
+            logger.error(
+                "[AI Agent Error] Post-processing gagal: %s",
+                type(exc).__name__,
+            )
+
+            # Preserve the existing final deterministic fallback semantics.
+            analysis, exposures = _finalize_analysis(
+                [],
+                services,
+                findings,
+                lang,
+            )
+
+            fallback_result = {
+                "provider_used": (
+                    "Local Rule-based Engine "
+                    "(Offline Fallback)"
+                ),
+                "is_from_cache": False,
+                "analysis": analysis,
+                "exposures": exposures,
+                "dsr_template": load_local_dsr_template(
+                    email,
+                    services,
+                    phone,
+                    lang,
+                ),
+                "input_fp": fingerprint,
+            }
+
+            elapsed = time.monotonic() - start_time
+
+            logger.info(
+                "AI Audit Fallback Selesai dalam %.2f detik.",
+                elapsed,
+            )
+
+            return fallback_result
+
+    # -------------------------------------------------------------------------
+    # FINAL FALLBACK
+    #
+    # This block is reached ONLY after _run_provider_chain() exhausted every
+    # configured provider.
+    #
+    # In the default configuration the chain is:
+    #
+    #   Gemini → Groq → OpenAI → Ollama → Rule-based Offline Fallback
+    #
+    # Therefore JSONDecodeError from Gemini can NEVER jump directly here.
+    # -------------------------------------------------------------------------
+    logger.error(
+        "[AI Agent Error] Semua provider AI gagal/ditolak. "
+        "Menggunakan Local Rule-based Engine sebagai fallback terakhir."
+    )
+
+    analysis, exposures = _finalize_analysis(
+        [],
+        services,
+        findings,
+        lang,
+    )
+
+    fallback_result = {
+        "provider_used": (
+            "Local Rule-based Engine "
+            "(Offline Fallback)"
+        ),
+        "is_from_cache": False,
+        "analysis": analysis,
+        "exposures": exposures,
+        "dsr_template": load_local_dsr_template(
             email,
-            parsed_data,
+            services,
             phone,
-            lang=lang,
-            tenant_id=tenant_id,
-        )
+            lang,
+        ),
+        "input_fp": fingerprint,
+    }
 
-        elapsed = time.monotonic() - start_time
-        logger.info("AI Audit Selesai (%s) dalam %.2f detik.", provider_used, elapsed)
-        return parsed_data
+    elapsed = time.monotonic() - start_time
 
-    except Exception as exc:
-        logger.error("[AI Agent Error] Output AI ditolak/gagal: %s", type(exc).__name__)
+    logger.info(
+        "AI Audit Fallback Selesai dalam %.2f detik.",
+        elapsed,
+    )
 
-        # Offline fallback: every service is "unknown", then raised only when deterministic breach evidence
-        # establishes a minimum risk. Unknown is never treated as Medium.
-        # Not cached, so the next run retries the models.
-        analysis, exposures = _finalize_analysis([], services, findings, lang)
-        fallback_result = {
-            "provider_used": "Local Rule-based Engine (Offline Fallback)",
-            "is_from_cache": False,
-            "analysis": analysis,
-            "exposures": exposures,
-            "dsr_template": load_local_dsr_template(email, services, phone, lang),
-            "input_fp": fingerprint,
-        }
-        elapsed = time.monotonic() - start_time
-        logger.info("AI Audit Fallback Selesai dalam %.2f detik.", elapsed)
-        return fallback_result
+    return fallback_result
 
 
 # Compatibility aliases
