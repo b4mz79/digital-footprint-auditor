@@ -271,7 +271,7 @@ def render_ai(scan_state: dict) -> None:
             # Warna/label ditentukan oleh kunci kanonik, bukan teks berbahasa tertentu.
             risk_key = normalize_risk(item.get("risk_key")) or normalize_risk(item.get("risk_level")) or "unknown"
             risk_label = t(f"risk_{risk_key}", lang=lang)
-            delete_url = item.get("delete_url", "#")
+            delete_url = item.get("delete_url", "-")
 
             st.markdown(
                 f"**{risk_icon(risk_key)} {_md_escape(item.get('service', ''))}** - "
