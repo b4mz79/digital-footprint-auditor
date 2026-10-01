@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import time
 import urllib.parse
+import weakref
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -21,7 +22,21 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
-from cache_security import save_encrypted_json, load_encrypted_json
+try:
+    from cache_security import save_encrypted_json, load_encrypted_json
+except ImportError:  # pragma: no cover - cache_security living inside the services package
+    from services.cache_security import save_encrypted_json, load_encrypted_json
+
+from utils.domains import root_domain, root_label
+from utils.envutil import (
+    env_bool as _env_bool,
+    env_choice_list,
+    env_non_negative_int as _env_non_negative_int,
+    env_positive_float as _env_positive_float,
+)
+from utils.logging_setup import get_logger, log_level
+from utils.paths import resolve_data_path
+from utils.privacy import redact_loose_phones
 from utils.translations import t
 from utils.risk import RISK_KEYS, RISK_RANK, normalize_risk
 
@@ -32,33 +47,8 @@ load_dotenv(override=False)
 # =============================================================================
 
 
-def _env_bool(name: str, default: bool = False) -> bool:
-    value = os.getenv(name)
-    if value is None:
-        return default
-    return value.strip().lower() in {"1", "true", "yes", "on"}
-
-
-def _env_non_negative_int(name: str, default: int, maximum: int) -> int:
-    try:
-        value = int(os.getenv(name, str(default)).strip())
-    except (TypeError, ValueError):
-        value = default
-    return max(0, min(value, maximum))
-
-
-def _env_positive_float(name: str, default: float, maximum: float) -> float:
-    try:
-        value = float(os.getenv(name, str(default)).strip())
-    except (TypeError, ValueError):
-        value = default
-    if value <= 0:
-        value = default
-    return min(value, maximum)
-
 CONTROL_CHARS_RE = re.compile(r"[\x00-\x1f\x7f]")
 EMAIL_RE = re.compile(r"[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
-PHONE_RE = re.compile(r"(?<!\d)\+?\d[\d\s().-]{5,18}\d(?!\d)")
 
 # Conservative post-validation guard: generic account/authentication events do not
 # establish Low/Medium/High by themselves. More specific activity can override this.
@@ -135,11 +125,14 @@ MEDIUM_ACTIVITY_RES = tuple(
     for term in MEDIUM_ACTIVITY_TERMS
 )
 
+#PHONE_RE = re.compile(r"(?<!\d)\+?\d[\d\s().-]{5,18}\d(?!\d)")
+
 DOMAIN_RE = re.compile(
     r"(?=.{1,253}$)"
     r"(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+"
     r"[A-Za-z]{2,63}"
 )
+
 SECRET_KV_RE = re.compile(
     r"(?i)\b(password|token|api[_-]?key|secret|authorization|cookie|set-cookie|access[_-]?token|refresh[_-]?token)\b"
     r"[\s:=]+[^\s,;&]+"
@@ -175,12 +168,10 @@ MAX_DSR_LENGTH = 30_000
 MAX_LOCAL_TEMPLATE_LENGTH = 30_000
 ANALYSIS_SCHEMA_VERSION = "risk-v11-evidence-floors"
 
-LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").strip().upper() or "INFO"
-LOG_LEVEL_VALUE = getattr(logging, LOG_LEVEL, logging.INFO)
+LOG_LEVEL_VALUE = log_level()
 DELAY_SECONDS = _env_non_negative_int("DELAY_SECONDS", 5, 300)
 AI_CONCURRENCY = _env_non_negative_int("AI_CONCURRENCY", 4, 16) or 1
-AI_THREAD_SEMAPHORE = asyncio.Semaphore(AI_CONCURRENCY)
-#AI_TIMEOUT_SECONDS = _env_positive_float("AI_TIMEOUT_SECONDS", 120.0, 900.0)
+_AI_SEMAPHORES: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore]" = weakref.WeakKeyDictionary()
 AI_TIMEOUT_SECONDS = _env_positive_float("AI_TIMEOUT_SECONDS", 300.0, 900.0)
 OLLAMA_TIMEOUT_SECONDS = _env_positive_float("OLLAMA_TIMEOUT_SECONDS", 900.0, 1800.0)
 MAX_LLM_OUTPUT_TOKENS = _env_non_negative_int("MAX_LLM_OUTPUT_TOKENS", 4096, 16_384) or 4096
@@ -189,80 +180,10 @@ ALLOW_REMOTE_OLLAMA = _env_bool("OLLAMA_ALLOW_REMOTE", False)
 TRUST_ENV_FOR_OLLAMA = _env_bool("OLLAMA_TRUST_ENV", False)
 
 # =============================================================================
-# Logging security
+# Logging security (shared implementation in utils/logging_setup.py)
 # =============================================================================
 
-class SensitiveDataFilter(logging.Filter):
-    """Redact secrets, PII, and URL query strings from log records."""
-
-    URL_RE = re.compile(r"https?://[^\s<>\"']+", re.IGNORECASE)
-
-    @staticmethod
-    def _mask_url(match: re.Match[str]) -> str:
-        raw = match.group(0)
-        suffix = ""
-        while raw and raw[-1] in ".,);]}>\"'":
-            suffix = raw[-1] + suffix
-            raw = raw[:-1]
-        try:
-            parsed = urlsplit(raw)
-            if parsed.scheme not in {"http", "https"} or not parsed.hostname:
-                return "[URL_REDACTED]" + suffix
-            hostname = parsed.hostname
-            port = ""
-            try:
-                if parsed.port is not None:
-                    port = f":{parsed.port}"
-            except ValueError:
-                port = ""
-            netloc = hostname + port
-            if ":" in hostname and not hostname.startswith("["):
-                netloc = f"[{hostname}]" + port
-            base = urlunsplit((parsed.scheme, netloc, parsed.path or "/", "", ""))
-            return base + ("?[QUERY_REDACTED]" if parsed.query else "") + suffix
-        except Exception:
-            return "[URL_REDACTED]" + suffix
-
-    def filter(self, record: logging.LogRecord) -> bool:
-        try:
-            msg = record.getMessage()
-            msg = self.URL_RE.sub(self._mask_url, msg)
-            msg = SECRET_KV_RE.sub(lambda m: f"{m.group(1)}=[REDACTED]", msg)
-            msg = re.sub(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]{8,}", "Bearer [REDACTED]", msg)
-            msg = EMAIL_RE.sub("[EMAIL_REDACTED]", msg)
-            msg = PHONE_RE.sub("[PHONE_REDACTED]", msg)
-            msg = CONTROL_CHARS_RE.sub(" ", msg)
-            record.msg = msg[:4000]
-            record.args = ()
-        except Exception:
-            record.msg = "[LOG_REDACTION_FAILED]"
-            record.args = ()
-        return True
-
-
-# This module does not configure the root logger. The application's entry point
-# should call logging.basicConfig()/dictConfig() once. We only harden noisy SDK loggers.
-for noisy_logger_name in (
-    "httpx",
-    "httpcore",
-    "openai",
-    "groq",
-    "google",
-    "google.genai",
-    "ddgs",
-    "googlesearch",
-    "urllib3",
-    "requests",
-):
-    logging.getLogger(noisy_logger_name).setLevel(logging.WARNING)
-
-logger = logging.getLogger("AIAgent")
-logger.setLevel(LOG_LEVEL_VALUE)
-
-# Add a filter to this logger so records emitted directly by AIAgent are redacted even
-# if the application's root handler was not configured with the same filter.
-if not any(isinstance(f, SensitiveDataFilter) for f in logger.filters):
-    logger.addFilter(SensitiveDataFilter())
+logger = get_logger("AIAgent")
 
 
 # =============================================================================
@@ -270,7 +191,7 @@ if not any(isinstance(f, SensitiveDataFilter) for f in logger.filters):
 # =============================================================================
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-CACHE_DIR = Path(os.getenv("AI_CACHE_DIR", "cache")).resolve()
+CACHE_DIR = resolve_data_path(os.getenv("AI_CACHE_DIR"), "cache")
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 if os.name == "posix":
     try:
@@ -344,7 +265,7 @@ def _redact_text_for_llm(value: object, max_len: int = MAX_SERVICE_FIELD_LENGTH)
     text = CONTROL_CHARS_RE.sub(" ", text)
     text = re.sub(r"<[^>]*>", " ", text)
     text = EMAIL_RE.sub("[EMAIL_REDACTED]", text)
-    text = PHONE_RE.sub("[PHONE_REDACTED]", text)
+    text = redact_loose_phones(text, "[PHONE_REDACTED]")
     text = SECRET_KV_RE.sub(lambda m: f"{m.group(1)}=[REDACTED]", text)
     return " ".join(text.split())[:max_len]
 
@@ -895,37 +816,6 @@ def load_local_dsr_template(email: str, found_services: list, phone: str = "", l
     )
 
 
-def _hydrate_dsr_template(template: str, email: str, phone: str, found_services: list, lang: str = "id") -> str:
-    if not isinstance(template, str) or not template.strip():
-        return load_local_dsr_template(email, found_services, phone, lang)
-
-    email = _validate_email(email)
-    phone = _validate_phone(phone)
-
-    services: list[str] = []
-    for item in found_services[:MAX_FOUND_SERVICES] if isinstance(found_services, list) else []:
-        name = item.get("service", item.get("name", "Registered Service")) if isinstance(item, dict) else str(item)
-        name = _safe_component(str(name), MAX_SERVICE_NAME)
-        if name:
-            services.append(name)
-    service_list = "\n".join(f"- {x}" for x in services) if services else "- [Service Name]"
-    subject = email.split("@", 1)[0]
-
-    # Remove exact identity if a model nevertheless reproduced it, then hydrate locally.
-    hydrated = template.replace(email, "{{EMAIL_TARGET}}")
-    if phone:
-        hydrated = hydrated.replace(phone, "{{PHONE_TARGET}}")
-        normalized_phone = re.sub(r"\D", "", phone)
-        if normalized_phone:
-            hydrated = hydrated.replace(normalized_phone, "{{PHONE_TARGET}}")
-
-    hydrated = hydrated.replace("{{EMAIL_TARGET}}", email)
-    hydrated = hydrated.replace("{{PHONE_TARGET}}", phone or "[Not provided]")
-    hydrated = hydrated.replace("{{SERVICE_LIST}}", service_list)
-    hydrated = hydrated.replace("{{DATA_SUBJECT}}", subject)
-    return hydrated[:MAX_DSR_LENGTH]
-
-
 def clean_json_string(raw: str) -> str:
     if not isinstance(raw, str):
         raise ValueError("LLM response bukan string")
@@ -1086,8 +976,19 @@ def call_openai(prompt: str, api_key: str, sys_prompt: str) -> str:
     return completion.choices[0].message.content or ""
 
 
+def _ai_semaphore() -> asyncio.Semaphore:
+    """One semaphore per event loop. A module-level Semaphore binds to the first loop that has to
+    wait on it, and the app calls asyncio.run() (a fresh loop) on every scan."""
+    loop = asyncio.get_running_loop()
+    semaphore = _AI_SEMAPHORES.get(loop)
+    if semaphore is None:
+        semaphore = asyncio.Semaphore(AI_CONCURRENCY)
+        _AI_SEMAPHORES[loop] = semaphore
+    return semaphore
+
+
 async def _call_blocking_with_timeout(func, *args) -> str:
-    async with AI_THREAD_SEMAPHORE:
+    async with _ai_semaphore():
         return await asyncio.wait_for(
             asyncio.to_thread(func, *args),
             timeout=AI_TIMEOUT_SECONDS + 5,
@@ -1203,6 +1104,80 @@ async def call_ollama_async(prompt: str, sys_prompt: str) -> str:
 
 
 # =============================================================================
+# Provider chain
+# =============================================================================
+
+_KNOWN_PROVIDERS = {"gemini", "groq", "openai", "ollama"}
+_DEFAULT_PROVIDER_ORDER = ["gemini", "groq", "openai", "ollama"]
+
+
+def _provider_order() -> list[str]:
+    """LLM_LOCAL_ONLY=true restricts to Ollama; LLM_PROVIDER_ORDER (comma separated) sets the
+    order, e.g. "ollama,gemini" to try the local model first."""
+    if _env_bool("LLM_LOCAL_ONLY", False):
+        return ["ollama"]
+    return env_choice_list("LLM_PROVIDER_ORDER", _DEFAULT_PROVIDER_ORDER, _KNOWN_PROVIDERS)
+
+
+async def _run_provider_chain(user_prompt: str, sys_prompt: str) -> tuple[str, str]:
+    """Try the configured providers in order. Returns (raw_response, provider_label);
+    ("", "None") when every provider failed or none is configured."""
+    for provider in _provider_order():
+        if provider == "gemini":
+            keys = [os.getenv("GEMINI_API_KEY", "").strip(), os.getenv("GOOGLE_API_KEY", "").strip()] + [
+                os.getenv(f"GOOGLE_API_KEY_{i}", "").strip() for i in range(1, 7)
+            ]
+            valid_keys = list(dict.fromkeys(k for k in keys if k))
+            if valid_keys:
+                logger.info("[Gemini] Terdeteksi %d API Key aktif.", len(valid_keys))
+            for idx, key in enumerate(valid_keys, 1):
+                try:
+                    logger.info("[Gemini] Mencoba eksekusi dengan Key #%d...", idx)
+                    raw = await call_gemini_async(user_prompt, key, sys_prompt)
+                    if raw:
+                        logger.info("[Gemini] Berhasil mendapatkan respons.")
+                        return raw, "Google Gemini"
+                except Exception as exc:
+                    logger.warning("[Gemini] Key #%d gagal: %s", idx, type(exc).__name__)
+
+        elif provider == "groq":
+            key = os.getenv("GROQ_API_KEY", "").strip()
+            if key:
+                try:
+                    logger.info("[Groq Cloud] Memulai eksekusi via Groq API...")
+                    raw = await call_groq_async(user_prompt, key, sys_prompt)
+                    if raw:
+                        logger.info("[Groq Cloud] Berhasil mendapatkan respons.")
+                        return raw, "Groq Cloud"
+                except Exception as exc:
+                    logger.warning("[Groq Cloud] Gagal: %s", type(exc).__name__)
+
+        elif provider == "openai":
+            key = os.getenv("OPENAI_API_KEY", "").strip()
+            if key:
+                try:
+                    logger.info("[OpenAI] Memulai eksekusi via OpenAI API...")
+                    raw = await call_openai_async(user_prompt, key, sys_prompt)
+                    if raw:
+                        logger.info("[OpenAI] Berhasil mendapatkan respons.")
+                        return raw, "OpenAI"
+                except Exception as exc:
+                    logger.warning("[OpenAI] Gagal: %s", type(exc).__name__)
+
+        elif provider == "ollama":
+            try:
+                logger.info("[Ollama Local] Memulai eksekusi lokal...")
+                raw = await call_ollama_async(user_prompt, sys_prompt)
+                if raw:
+                    logger.info("[Ollama Local] Berhasil mendapatkan respons.")
+                    return raw, "Ollama Local"
+            except Exception as exc:
+                logger.warning("[Ollama Local] Gagal: %s", type(exc).__name__)
+
+    return "", "None"
+
+
+# =============================================================================
 # Breach evidence: correlation, risk floor, exposures (deterministic, no LLM)
 # =============================================================================
 
@@ -1296,6 +1271,34 @@ def _attach_breach_evidence(services: list[dict], findings: list[dict]) -> list[
     return enriched
 
 
+def _search_url(name: str) -> str:
+    return "https://www.google.com/search?q=" + urllib.parse.quote_plus(f"how to delete {name} account")
+
+
+def _vet_delete_url(value: object, svc: dict, name: str) -> str:
+    """A model-supplied https link is kept only if its registrable domain belongs to the service
+    (same root domain as the detected domain, or the same label as the service name). Anything
+    else - including look-alikes such as shopee-login.evil.com - becomes a plain search link.
+    Plain-text instructions are passed through untouched."""
+    text = str(value or "")
+    if not text.lower().startswith("https://"):
+        # Plain-text instructions pass through, but never a bare non-https link.
+        if re.search(r"(?i)\b[a-z][a-z0-9+.-]*://", text):
+            return _search_url(name)
+        return text
+    try:
+        host = urlsplit(text).hostname or ""
+    except ValueError:
+        host = ""
+    domain = _norm(svc.get("domain"))
+    if host and domain and root_domain(host) == root_domain(domain):
+        return text
+    name_key = re.sub(r"[^a-z0-9]", "", _norm(name))
+    if host and len(name_key) >= MIN_MATCH_TOKEN_LENGTH and root_label(host) == name_key:
+        return text
+    return _search_url(name)
+
+
 def _service_evidence_text(svc: dict) -> str:
     """Build bounded evidence text from scanner fields used by the conservative risk guard."""
     parts: list[str] = []
@@ -1351,7 +1354,7 @@ def _rule_based_item(name: str, lang: str) -> dict[str, str]:
         "risk_key": "unknown",
         "risk_level": t("risk_unknown", lang=lang),
         "reason": t("unknown_reason", lang=lang),
-        "delete_url": "-",
+        "delete_url": "-", # audit by claude was `_search_url(name),`
     }
 
 
@@ -1394,6 +1397,8 @@ def _finalize_analysis(
 
         matches = _matching_findings(svc, findings)
         matched_ids.update(id(f) for f in matches)
+
+        # START IMPROVE AND AUDITED BY CHATGPT
         guarded_risk_key = _apply_conservative_unknown_guard(svc, risk_key, bool(matches))
         if guarded_risk_key != risk_key:
             risk_key = guarded_risk_key
@@ -1404,6 +1409,8 @@ def _finalize_analysis(
                 else t("unknown_reason", lang=lang)
             )
             item["delete_url"] = "-"
+        # END IMPROVE AND AUDITED BY CHATGPT
+
         if matches:
             floor = max((_finding_floor(f) for f in matches), key=lambda k: RISK_RANK[k])
             if RISK_RANK[floor] > RISK_RANK.get(risk_key, -1):
@@ -1412,6 +1419,7 @@ def _finalize_analysis(
         item["risk_key"] = risk_key
         item["risk_level"] = t(f"risk_{risk_key}", lang=lang)
         item["evidence_count"] = len(matches)
+#        item["delete_url"] = _vet_delete_url(item.get("delete_url", ""), svc, name)
         final.append(item)
 
     exposures: list[dict] = []
@@ -1456,6 +1464,7 @@ def _input_fingerprint(services: list[dict], findings: list[dict]) -> str:
     )
     blob = json.dumps([ANALYSIS_SCHEMA_VERSION, svc_part, find_part], ensure_ascii=False, separators=(",", ":"))
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
 
 # =============================================================================
 # Main orchestrator
@@ -1528,59 +1537,7 @@ async def analyze_smart_cache(
 
     sys_prompt = SYSTEM_PROMPTS.get(lang, SYSTEM_PROMPTS["id"])
     user_prompt = build_user_prompt(email, _attach_breach_evidence(services, findings), phone, lang)
-    raw_response = ""
-    provider_used = "None"
-
-    # We deliberately do not send raw target identity to cloud providers.
-    gemini_keys = [
-        os.getenv("GEMINI_API_KEY", "").strip(),
-        os.getenv("GOOGLE_API_KEY", "").strip(),
-    ] + [os.getenv(f"GOOGLE_API_KEY_{i}", "").strip() for i in range(1, 7)]
-    valid_gemini_keys = list(dict.fromkeys(k for k in gemini_keys if k))
-
-    if valid_gemini_keys:
-        logger.info("[Gemini] Terdeteksi %d API Key aktif.", len(valid_gemini_keys))
-
-    for idx, key in enumerate(valid_gemini_keys, 1):
-        try:
-            logger.info("[Gemini] Mencoba eksekusi dengan Key #%d...", idx)
-            raw_response = await call_gemini_async(user_prompt, key, sys_prompt)
-            provider_used = "Google Gemini"
-            logger.info("[Gemini] Berhasil mendapatkan respons.")
-            break
-        except Exception as exc:
-            logger.warning("[Gemini] Key #%d gagal: %s", idx, type(exc).__name__)
-
-    if not raw_response:
-        groq_key = os.getenv("GROQ_API_KEY", "").strip()
-        if groq_key:
-            try:
-                logger.info("[Groq Cloud] Memulai eksekusi via Groq API...")
-                raw_response = await call_groq_async(user_prompt, groq_key, sys_prompt)
-                provider_used = "Groq Cloud"
-                logger.info("[Groq Cloud] Berhasil mendapatkan respons.")
-            except Exception as exc:
-                logger.warning("[Groq Cloud] Gagal: %s", type(exc).__name__)
-
-    if not raw_response:
-        openai_key = os.getenv("OPENAI_API_KEY", "").strip()
-        if openai_key:
-            try:
-                logger.info("[OpenAI] Memulai eksekusi via OpenAI API...")
-                raw_response = await call_openai_async(user_prompt, openai_key, sys_prompt)
-                provider_used = "OpenAI"
-                logger.info("[OpenAI] Berhasil mendapatkan respons.")
-            except Exception as exc:
-                logger.warning("[OpenAI] Gagal: %s", type(exc).__name__)
-
-    if not raw_response:
-        try:
-            logger.info("[Ollama Local] Memulai eksekusi lokal...")
-            raw_response = await call_ollama_async(user_prompt, sys_prompt)
-            provider_used = "Ollama Local"
-            logger.info("[Ollama Local] Berhasil mendapatkan respons.")
-        except Exception as exc:
-            logger.warning("[Ollama Local] Gagal: %s", type(exc).__name__)
+    raw_response, provider_used = await _run_provider_chain(user_prompt, sys_prompt)
 
     try:
         clean_resp = clean_json_string(raw_response)

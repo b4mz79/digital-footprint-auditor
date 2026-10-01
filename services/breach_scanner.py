@@ -7,15 +7,22 @@ import asyncio
 import logging
 import hmac
 import hashlib
-import ipaddress
-import socket
-from urllib.parse import urlparse, urlsplit, urlunsplit
+from urllib.parse import urlsplit, urlunsplit
 from pathlib import Path
 
 import httpx
 from dotenv import load_dotenv
+
+try:
+    from cache_security import save_encrypted_json, load_encrypted_json
+except ImportError:  # pragma: no cover - cache_security living inside the services package
+    from services.cache_security import save_encrypted_json, load_encrypted_json
+
+from utils.envutil import env_bool as _env_bool, env_non_negative_int as _env_non_negative_int
+from utils.logging_setup import get_logger, log_level
+from utils.paths import resolve_data_path
+from utils.privacy import NUMERIC_CODE_PATTERN
 from utils.translations import t
-from cache_security import save_encrypted_json, load_encrypted_json
 
 
 # =============================================================================
@@ -25,171 +32,15 @@ from cache_security import save_encrypted_json, load_encrypted_json
 load_dotenv(override=False)
 
 
-def _env_bool(name: str, default: bool = False) -> bool:
-    value = os.getenv(name)
-    if value is None:
-        return default
-    return value.strip().lower() in {"1", "true", "yes", "on"}
-
-
-def _env_non_negative_int(name: str, default: int, maximum: int) -> int:
-    try:
-        value = int(os.getenv(name, str(default)).strip())
-    except (TypeError, ValueError):
-        value = default
-    return max(0, min(value, maximum))
-
-
-LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").strip().upper() or "INFO"
-LOG_LEVEL_VALUE = getattr(logging, LOG_LEVEL, logging.INFO)
-
-
-# =============================================================================
-# Logging redaction
-# =============================================================================
-
-class SensitiveDataFilter(logging.Filter):
-    """Redact PII, credentials and URL query strings from log records."""
-
-    _URL_RE = re.compile(r"https?://[^\s<>\"']+", re.IGNORECASE)
-    _EMAIL_RE = re.compile(
-        r"([\w.\-+%]+)((?:@|%40))([\w.\-]+)(\.\w+)",
-        re.IGNORECASE,
-    )
-    _SECRET_RE = re.compile(
-        r"(?i)\b(?:password|token|api[_-]?key|secret|authorization|cookie|set-cookie|access[_-]?token|refresh[_-]?token|rapidapi-key|key)\b"
-        r"([\s\"']*[:=][\s\"']*)[^\s,;&]+"
-    )
-    _BEARER_RE = re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]{8,}")
-    _PHONE_RE = re.compile(
-        r"(?:\+|%2B|0)\d[\d%20\s+().-]{6,18}\d\b",
-        re.IGNORECASE,
-    )
-
-    @staticmethod
-    def _sanitize_url(match: re.Match[str]) -> str:
-        raw = match.group(0)
-        trailing = ""
-        while raw and raw[-1] in ".,);]}>":
-            trailing = raw[-1] + trailing
-            raw = raw[:-1]
-
-        try:
-            parsed = urlsplit(raw)
-            if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-                return "[URL_REDACTED]" + trailing
-
-            # Never expose userinfo and never expose query strings/fragments.
-            hostname = parsed.hostname or ""
-            port = ""
-            try:
-                if parsed.port is not None:
-                    port = f":{parsed.port}"
-            except ValueError:
-                port = ""
-
-            safe_netloc = hostname
-            if ":" in hostname and not hostname.startswith("["):
-                safe_netloc = f"[{hostname}]"
-            safe_netloc += port
-
-            sanitized = urlunsplit(
-                (parsed.scheme, safe_netloc, parsed.path or "/", "", "")
-            )
-            return sanitized + "?[QUERY_REDACTED]" + trailing if parsed.query else sanitized + trailing
-        except Exception:
-            return "[URL_REDACTED]" + trailing
-
-    @staticmethod
-    def _mask_email(match: re.Match[str]) -> str:
-        username = match.group(1)
-        separator = match.group(2)
-        domain_name = match.group(3)
-        tld = match.group(4)
-        masked_user = username[:2] + "***" if len(username) > 2 else "***"
-        masked_domain = "***" + domain_name[-2:] if len(domain_name) > 2 else "***"
-        return f"{masked_user}{separator}{masked_domain}{tld}"
-
-    @staticmethod
-    def _mask_phone(match: re.Match[str]) -> str:
-        original = match.group(0)
-        clean_phone = re.sub(r"%20", "", original, flags=re.IGNORECASE)
-        clean_phone = re.sub(r"[^0-9]", "", clean_phone)
-        if not (7 <= len(clean_phone) <= 16):
-            return "[PHONE_REDACTED]"
-        return clean_phone[:3] + "***" + clean_phone[-2:]
-
-    @staticmethod
-    def _more_mask(text: str) -> str:
-        if not text:
-            return ""
-
-        masked = re.sub(
-            r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+",
-            "[EMAIL_REDACTED]",
-            text,
-        )
-        masked = re.sub(r"\+?\b\d{9,15}\b", "[PHONE_REDACTED]", masked)
-        masked = re.sub(
-            r"\b(?:\+62|62|0)[ \-]?\d{2,4}[ \-]?\d{3,4}[ \-]?\d{3,5}\b",
-            "[PHONE_REDACTED]",
-            masked,
-        )
-        masked = re.sub(r"\b\d{4,8}\b", "[NUMERIC_CODE_REDACTED]", masked)
-        masked = re.sub(
-            r"(?i)\b(otp|pin|kode|code|token|sandi|password)\b[\s:=]+[A-Za-z0-9._~+/-]{4,64}\b",
-            r"\1 [REDACTED]",
-            masked,
-        )
-        return masked
-
-    def filter(self, record: logging.LogRecord) -> bool:
-        try:
-            actual_msg = record.getMessage()
-            actual_msg = self._URL_RE.sub(self._sanitize_url, actual_msg)
-            actual_msg = self._BEARER_RE.sub("Bearer [REDACTED]", actual_msg)
-            actual_msg = self._SECRET_RE.sub("[SECRET_REDACTED]", actual_msg)
-            actual_msg = self._EMAIL_RE.sub(self._mask_email, actual_msg)
-            actual_msg = self._PHONE_RE.sub(self._mask_phone, actual_msg)
-            actual_msg = self._more_mask(actual_msg)
-            record.msg = actual_msg
-            record.args = ()
-        except Exception:
-            # Logging must never break application execution.
-            record.msg = "[LOG_MESSAGE_REDACTION_FAILED]"
-            record.args = ()
-        return True
-
-
-logging.basicConfig(
-    level=LOG_LEVEL_VALUE,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    datefmt="%H:%M:%S",
-)
-
-# HTTPX/HTTPCore request logs may contain query parameters. Do not emit them at INFO.
-for noisy_logger_name in (
-    "httpx",
-    "httpcore",
-    "ddgs",
-    "googlesearch",
-    "urllib3",
-    "requests",
-):
-    logging.getLogger(noisy_logger_name).setLevel(logging.WARNING)
-
-for handler in logging.root.handlers:
-    handler.addFilter(SensitiveDataFilter())
-
-logger = logging.getLogger("BreachScanner")
-logger.setLevel(LOG_LEVEL_VALUE)
+LOG_LEVEL_VALUE = log_level()
+logger = get_logger("BreachScanner")
 
 
 # =============================================================================
 # Files / runtime configuration
 # =============================================================================
 
-BREACH_CACHE_DIR = Path("cache/breach")
+BREACH_CACHE_DIR = resolve_data_path(os.getenv("BREACH_CACHE_DIR"), "cache/breach")
 BREACH_CACHE_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
 if os.name != "nt":
     try:
@@ -199,7 +50,7 @@ if os.name != "nt":
 
 DELAY_SECONDS = _env_non_negative_int("DELAY_SECONDS", 2, maximum=300)
 
-IGNORED_DOMAINS_FILE = Path("ignored_domains.txt")
+IGNORED_DOMAINS_FILE = resolve_data_path(os.getenv("IGNORED_DOMAINS_FILE"), "ignored_domains.txt")
 DEFAULT_IGNORED_DOMAINS = [
     "cbinsights.com",
     "zoominfo.com",
@@ -324,7 +175,7 @@ def mask_sensitive_snippet(subject_text: str) -> str:
         masked,
     )
     masked = re.sub(r"\bG-\d{4,8}\b", "G-[REDACTED]", masked, flags=re.IGNORECASE)
-    masked = re.sub(r"\b\d{4,8}\b", "[NUMERIC_CODE_REDACTED]", masked)
+    masked = NUMERIC_CODE_PATTERN.sub("[NUMERIC_CODE_REDACTED]", masked)
     masked = re.sub(
         r"(?i)\b(otp|pin|kode|code|token|sandi|password)\b[\s:=]+[A-Za-z0-9._~+/-]{4,64}\b",
         r"\1 [REDACTED]",
@@ -363,97 +214,86 @@ def safe_tenant_identity(tenant_id: str) -> str:
     ).hexdigest()
 
 
-def is_safe_external_url(url: str) -> bool:
-    """Validate a URL before an outbound fetch.
+DEFAULT_PHONE_REGION = (os.getenv("DEFAULT_PHONE_REGION", "ID").strip().upper() or "ID")[:2]
+MAX_PHONE_VARIANTS = _env_non_negative_int("PHONE_VARIANTS_MAX", 3, maximum=12) or 1
 
-    This blocks non-HTTP schemes, userinfo, and IPs in private/local/reserved ranges.
-    DNS is resolved only for validation; callers that actually fetch arbitrary URLs
-    should also use a network-layer egress policy because DNS can change after this check.
-    """
+
+def _legacy_phone_variants(clean_num: str, region: str) -> list[str]:
+    """Digit-only variants used when `phonenumbers` is unavailable or cannot parse the input.
+    The Indonesian trunk-prefix heuristic applies only when the region is ID."""
+    if region != "ID":
+        return [clean_num, "+" + clean_num]
+
+    if clean_num.startswith("62"):
+        local_num, intl_num = "0" + clean_num[2:], clean_num
+    elif clean_num.startswith("0"):
+        local_num, intl_num = clean_num, "62" + clean_num[1:]
+    else:
+        local_num, intl_num = "0" + clean_num, "62" + clean_num
+
+    variants = ["+" + intl_num, local_num, intl_num]
+    if len(local_num) >= 10:
+        rest_local, rest_intl = local_num[4:], intl_num[5:]
+        mid = len(rest_local) // 2
+        a_l, b_l = rest_local[:mid], rest_local[mid:]
+        a_i, b_i = rest_intl[:mid], rest_intl[mid:]
+        variants += [
+            f"+62 {intl_num[2:5]} {a_i} {b_i}",
+            f"{local_num[:4]} {a_l} {b_l}",
+            f"+62-{intl_num[2:5]}-{a_i}-{b_i}",
+            f"{local_num[:4]}-{a_l}-{b_l}",
+        ]
+    return variants
+
+
+def _phonenumbers_variants(phone: str, region: str) -> list[str] | None:
+    """E.164, national and international-without-plus forms first (the ones most likely to be
+    indexed), then the formatted variants. None if the library is missing or parsing fails."""
     try:
-        parsed = urlparse(url)
-        if parsed.scheme not in ("http", "https") or not parsed.hostname:
-            return False
-        if parsed.username is not None or parsed.password is not None:
-            return False
-
-        hostname = parsed.hostname.rstrip(".").lower()
-        if hostname in {
-            "localhost",
-            "localhost.localdomain",
-            "127.0.0.1",
-            "0.0.0.0",
-            "::1",
-            "169.254.169.254",
-        }:
-            return False
-
-        resolved = socket.getaddrinfo(
-            hostname,
-            parsed.port or (443 if parsed.scheme == "https" else 80),
-            type=socket.SOCK_STREAM,
-        )
-        if not resolved:
-            return False
-
-        for item in resolved:
-            ip = ipaddress.ip_address(item[4][0])
-            if (
-                ip.is_private
-                or ip.is_loopback
-                or ip.is_link_local
-                or ip.is_multicast
-                or ip.is_reserved
-                or ip.is_unspecified
-            ):
-                return False
-        return True
+        import phonenumbers
+    except ImportError:
+        return None
+    try:
+        parsed = phonenumbers.parse(phone.strip(), None if phone.strip().startswith("+") else region)
+        if not phonenumbers.is_possible_number(parsed):
+            return None
+        e164 = phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.E164)
+        national = phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.NATIONAL)
+        international = phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.INTERNATIONAL)
     except Exception:
-        return False
+        return None
+    national_digits = re.sub(r"\D", "", national)
+    # Some regions print the national form without the trunk prefix; keep it as returned.
+    return [e164, national_digits, e164.lstrip("+"), international, national]
 
 
-def normalize_phone_number(phone: str) -> list[str]:
+def normalize_phone_number(phone: str, region: str | None = None) -> list[str]:
+    """Search variants for a phone number, capped at PHONE_VARIANTS_MAX (default 3) because every
+    variant is sent to every engine."""
     _validate_phone_target(phone)
     clean_num = re.sub(r"\D", "", phone.strip())
     if not clean_num:
         return []
+    region = (region or DEFAULT_PHONE_REGION).upper()
 
-    formats: set[str] = set()
-    if clean_num.startswith("62"):
-        local_num = "0" + clean_num[2:]
-        intl_num = clean_num
-    elif clean_num.startswith("0"):
-        local_num = clean_num
-        intl_num = "62" + clean_num[1:]
-    else:
-        local_num = "0" + clean_num
-        intl_num = "62" + clean_num
+    variants = _phonenumbers_variants(phone, region)
+    if not variants:
+        # Fallback without the library. A number written with an explicit non-Indonesian "+" prefix
+        # must not receive the Indonesian trunk-prefix (0 <-> 62) rewriting.
+        legacy_region = region
+        if phone.strip().startswith("+") and not clean_num.startswith("62"):
+            legacy_region = "INTL"
+        variants = _legacy_phone_variants(clean_num, legacy_region)
+    unique = list(dict.fromkeys(v for v in variants if v))
+    return unique[:MAX_PHONE_VARIANTS]
 
-    formats.add(local_num)
-    formats.add(intl_num)
-    formats.add("+" + intl_num)
 
-    if len(local_num) >= 10:
-        prefix_local = local_num[:4]
-        prefix_intl_code = "+62"
-        prefix_intl_body = intl_num[2:5]
-
-        rest_local = local_num[4:]
-        rest_intl = intl_num[5:]
-
-        mid_len = len(rest_local) // 2
-        part1_local = rest_local[:mid_len]
-        part2_local = rest_local[mid_len:]
-
-        part1_intl = rest_intl[:mid_len]
-        part2_intl = rest_intl[mid_len:]
-
-        formats.add(f"{prefix_local} {part1_local} {part2_local}")
-        formats.add(f"{prefix_local}-{part1_local}-{part2_local}")
-        formats.add(f"{prefix_intl_code} {prefix_intl_body} {part1_intl} {part2_intl}")
-        formats.add(f"{prefix_intl_code}-{prefix_intl_body}-{part1_intl}-{part2_intl}")
-
-    return sorted(formats)
+def clean_title(text: object, max_len: int = MAX_TITLE_LENGTH) -> str:
+    """Titles come straight from search engines and may contain the target's email/phone."""
+    if not text:
+        return ""
+    cleaned = " ".join(re.sub(r"<[^<]+?>", "", html.unescape(_safe_text(text, MAX_TITLE_LENGTH))).split())
+    return mask_sensitive_snippet(cleaned)[:max_len]
 
 
 def clean_snippet(text: str, max_len: int = 220, lang: str = "id") -> str:
@@ -470,6 +310,17 @@ def clean_snippet(text: str, max_len: int = 220, lang: str = "id") -> str:
     if len(cleaned) > max_len:
         return cleaned[:max_len] + "..."
     return cleaned
+
+
+def _mask_web_finding(item: object) -> object:
+    """Central defence in depth: web-sourced titles/snippets never carry raw email/phone into
+    the UI or the cache. Database findings are structured and untouched."""
+    if not isinstance(item, dict) or item.get("kind") == "breach_db":
+        return item
+    masked = dict(item)
+    masked["title"] = clean_title(masked.get("title"))
+    masked["snippet"] = mask_sensitive_snippet(_safe_text(masked.get("snippet"), MAX_RESULT_SNIPPET_LENGTH))
+    return masked
 
 
 def _normalize_result_url(url: object) -> str:
@@ -903,7 +754,7 @@ async def scan_google_custom_search_async(
 ) -> list[dict]:
     logger.info("[Google Custom Search] Memulai scan untuk target: %s", mask_pii(target))
     url = "https://www.googleapis.com/customsearch/v1"
-    query = f'"{target}" (breach OR leak OR "database dump" OR "combolist" OR "site:pastebin.com")'
+    query = f'"{target}" (breach OR leak OR "database dump" OR "combolist" OR site:pastebin.com)'
     params = {"key": api_key, "cx": cx_id, "q": query, "num": 5}
 
     try:
@@ -1290,8 +1141,6 @@ async def scan_data_breaches(
     search_targets = [email]
     if phone:
         search_targets.extend(normalize_phone_number(phone))
-    start_time = time.monotonic()
-    logger.info("=== MEMULAI PARALLEL DATA BREACH SCAN (%d target) ===", len(search_targets))
 
     tavily_key = os.getenv("TAVILY_API_KEY", "").strip()
     google_search_key = os.getenv("GOOGLE_SEARCH_API_KEY", "").strip()
@@ -1328,6 +1177,12 @@ async def scan_data_breaches(
 
     all_findings: list[dict] = []
     active_engines: set[str] = set()
+
+    start_time = time.monotonic()
+    logger.info(
+        "=== MEMULAI PARALLEL DATA BREACH SCAN (%d target) ===",
+        len(search_targets),
+    )
 
     limits = httpx.Limits(
         max_connections=20,
@@ -1369,7 +1224,7 @@ async def scan_data_breaches(
                     remaining = MAX_TOTAL_FINDINGS - len(all_findings)
                     if remaining <= 0:
                         continue
-                    bounded_results = res[:remaining]
+                    bounded_results = [_mask_web_finding(item) for item in res[:remaining]]
                     all_findings.extend(bounded_results)
                     for item in bounded_results:
                         if isinstance(item, dict) and item.get("source"):
@@ -1381,6 +1236,12 @@ async def scan_data_breaches(
                     MAX_TOTAL_FINDINGS,
                 )
                 break
+
+    elapsed = time.monotonic() - start_time
+    logger.info(
+        "=== PARALLEL SCAN SELESAI Dalam %.2f detik ===",
+        elapsed,
+    )
 
     # Per-engine outcome. "ok" means it answered for every target queried.
     engines_report: dict[str, dict] = {}
@@ -1448,5 +1309,4 @@ async def scan_data_breaches(
             phone,
             tenant_id=tenant_id,
         )
-    logger.info("=== PARALLEL DATA BREACH SCAN SELESAI Dalam %.2f detik ===", time.monotonic() - start_time)
     return output

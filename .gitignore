@@ -4,6 +4,7 @@
 *.pem
 *.patch
 test_*.py
+.env.example-v*
 
 # Python Cache
 __pycache__/
@@ -25,4 +26,5 @@ services/scanner.py
 log.txt
 *.json
 *-v*.py
+*-v*.txt
 *.zip

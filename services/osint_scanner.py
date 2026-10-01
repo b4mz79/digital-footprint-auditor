@@ -2,28 +2,32 @@ import subprocess
 import sys
 import os
 import re
-import time
-import logging
+
 from dotenv import load_dotenv
+
+from utils.domains import display_name
+from utils.logging_setup import get_logger
+from utils.privacy import mask_email
 from utils.translations import t
 
 load_dotenv()
-LOG_LEVEL = os.getenv("LOG_LEVEL", "NOTSET").upper()
-logging.basicConfig(
-    level=getattr(logging, LOG_LEVEL, logging.NOTSET),
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    datefmt="%H:%M:%S"
-)
-logger = logging.getLogger("OSINTScanner")
+logger = get_logger("OSINTScanner")
 
 EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$")
+HOLEHE_TIMEOUT_SECONDS = 180
+ANSI_ESCAPE = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
 
-def mask_email(email_str: str) -> str:
-    """Strict PII Masking."""
-    if "@" in email_str:
-        parts = email_str.split("@")
-        return f"{parts[0][:2]}***@{parts[1].split('.')[0][:1]}***.{parts[1].split('.')[-1]}"
-    return "***"
+# Variables the child process needs to run and to verify TLS. Secrets from .env (API keys,
+# passwords) and proxy settings (which may embed credentials) are deliberately NOT forwarded.
+_SAFE_ENV_KEYS = (
+    "PATH", "SYSTEMROOT", "USERPROFILE", "HOME", "LANG", "LC_ALL",
+    "TMPDIR", "TEMP", "TMP", "SSL_CERT_FILE", "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE",
+)
+
+
+class OSINTScanError(RuntimeError):
+    """The scan could not be completed. An error must never look like 'no accounts found'."""
+
 
 def resolve_holehe_binary() -> str | None:
     python_dir = os.path.dirname(sys.executable)
@@ -38,62 +42,70 @@ def resolve_holehe_binary() -> str | None:
             return abs_path
     return None
 
+
+def _safe_env() -> dict[str, str]:
+    return {key: os.environ[key] for key in _SAFE_ENV_KEYS if os.environ.get(key)}
+
+
+def parse_holehe_output(stdout: str, lang: str = "id") -> tuple[list[dict], bool]:
+    """Returns (results, recognised) where `recognised` says whether the output looked like
+    Holehe's report at all (any [+]/[-]/[x]/[!] status line)."""
+    results: list[dict] = []
+    recognised = False
+    for line in stdout.splitlines():
+        clean_line = ANSI_ESCAPE.sub('', line).strip()
+        if clean_line[:3] in {"[+]", "[-]", "[x]", "[!]"}:
+            recognised = True
+        if "[+]" not in clean_line:
+            continue
+        parts = clean_line.replace("[+]", "").strip().split()
+        if not parts:
+            continue
+        service_domain = parts[0].lower()
+        name = display_name(service_domain) if "." in service_domain else service_domain.capitalize()
+        if name and name != "Email" and service_domain != "email":
+            logger.info(f"[OSINT] menemukan target terdaftar di layanan: {service_domain}")
+            results.append({
+                "name": name,
+                "domain": service_domain,
+                "source": t("source_osint", lang=lang),
+                "subject": t("active_account_osint", lang=lang),
+            })
+    return results, recognised
+
+
 def scan_osint_footprint(email: str, lang: str = "id") -> list[dict]:
-    start_time = time.monotonic()
-    logger.info("=== MEMULAI OSINT SCAN (%s) ===", mask_email(email))
-    results = []
+    logger.info(f"[OSINT] Scanning target: {mask_email(email)}")
     clean_email = email.strip()
 
     if not EMAIL_REGEX.match(clean_email):
-        logger.error("[OSINT Error] Format email tidak valid.")
-        logger.info("=== OSINT SCAN SELESAI Dalam %.2f detik ===", time.monotonic() - start_time)
-        return results
+        raise ValueError("Format email tidak valid.")
 
     cmd_path = resolve_holehe_binary()
     if not cmd_path:
-        logger.error("[OSINT Error] Executable 'holehe' terisolasi tidak ditemukan.")
-        logger.info("=== OSINT SCAN SELESAI Dalam %.2f detik ===", time.monotonic() - start_time)
-        return results
-
-    # FIX: Isolasi Environment Variables agar kredensial di .env tidak bocor ke child process (Holehe)
-    safe_env = {
-        "PATH": os.environ.get("PATH", ""),
-        "SYSTEMROOT": os.environ.get("SYSTEMROOT", ""), # Esensial untuk eksekusi di Windows
-        "USERPROFILE": os.environ.get("USERPROFILE", "")
-    }
+        raise OSINTScanError("Executable 'holehe' tidak ditemukan di lingkungan Python ini (pip install holehe).")
 
     try:
         process = subprocess.run(
             [cmd_path, "--only-used", "--", clean_email],
             capture_output=True,
             text=True,
-            timeout=180,
-            env=safe_env # Penerapan isolasi env
+            timeout=HOLEHE_TIMEOUT_SECONDS,
+            env=_safe_env(),
         )
-
-        ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
-        for line in process.stdout.splitlines():
-            clean_line = ansi_escape.sub('', line).strip()
-            if "[+]" in clean_line:
-                parts = clean_line.replace("[+]", "").strip().split()
-                if parts:
-                    service_domain = parts[0].lower()
-                    # Mencegah isu subdomain menjadi aneh jika dipotong mentah
-                    display_name = service_domain.split('.')[-2].capitalize() if service_domain.count('.') >= 1 else service_domain.capitalize()
-
-                    if display_name != "Email" and service_domain != "email":
-                        logger.info(f"[OSINT] menemukan target terdaftar di layanan: {service_domain}")
-                        results.append({
-                            "name": display_name,
-                            "domain": service_domain,
-                            "source": t("source_osint", lang=lang),
-                            "subject": t("active_account_osint", lang=lang)
-                        })
     except subprocess.TimeoutExpired:
         logger.warning("[OSINT Warning] Proses Holehe Timeout.")
-    except Exception as e:
-        logger.error(f"[OSINT Error] OSINT Engine crash: {e}")
-    finally:
-        logger.info("=== OSINT SCAN SELESAI Dalam %.2f detik ===", time.monotonic() - start_time)
+        raise OSINTScanError(f"Holehe melewati batas waktu {HOLEHE_TIMEOUT_SECONDS} detik.")
+    except OSError as exc:
+        logger.error(f"[OSINT Error] Holehe tidak dapat dijalankan: {type(exc).__name__}")
+        raise OSINTScanError(f"Holehe tidak dapat dijalankan: {type(exc).__name__}")
+
+    results, recognised = parse_holehe_output(process.stdout or "", lang=lang)
+
+    # A crash, or output we do not recognise, is a failed scan - not an empty result.
+    if process.returncode != 0 and not results:
+        raise OSINTScanError(f"Holehe berakhir dengan kode {process.returncode}.")
+    if not recognised and not results and (process.stdout or "").strip():
+        raise OSINTScanError("Keluaran Holehe tidak dikenali (versi Holehe mungkin berubah).")
 
     return results

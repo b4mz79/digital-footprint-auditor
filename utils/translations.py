@@ -82,7 +82,11 @@ TRANSLATIONS = {
         "evidence_note": "Bukti kebocoran ditemukan untuk layanan ini ({count} temuan); risiko minimal {level}.",
         "exposures_title": "Paparan lain yang tidak terkait akun yang terdeteksi",
         "exposure_action": "Saran: ganti kata sandi di semua tempat email/nomor ini dipakai ulang, aktifkan verifikasi dua langkah, dan waspadai phishing.",
-        "fallback_reason": "Terdeteksi dari hasil pemindaian dan memerlukan verifikasi manual."
+        "fallback_reason": "Terdeteksi dari hasil pemindaian dan memerlukan verifikasi manual.",
+        "btn_clear_cache": "Hapus cache",
+        "cache_cleared": "Cache dihapus ({count} berkas).",
+        "finding_unverified": "Sebutan web yang belum terverifikasi — buka sumbernya untuk memastikan sebelum bertindak.",
+        "env_password_loaded": "App Password dimuat dari .env (tidak ditampilkan)."
     },
     "en": {
         "page_title": "Local Digital Footprint & Privacy Auditor",
@@ -165,7 +169,11 @@ TRANSLATIONS = {
         "evidence_note": "Breach evidence found for this service ({count} finding(s)); risk is at least {level}.",
         "exposures_title": "Other exposures not tied to a detected account",
         "exposure_action": "Recommended: change the password anywhere this email/number was reused, enable two-factor authentication, and watch for phishing.",
-        "fallback_reason": "Detected by the scan and requires manual verification."
+        "fallback_reason": "Detected by the scan and requires manual verification.",
+        "btn_clear_cache": "Clear cache",
+        "cache_cleared": "Cache cleared ({count} file(s)).",
+        "finding_unverified": "Unverified web mention — open the source to confirm before acting.",
+        "env_password_loaded": "App Password loaded from .env (not shown)."
     },
     "de": {
         "page_title": "Lokaler Auditor für digitalen Fußabdruck",
@@ -248,7 +256,11 @@ TRANSLATIONS = {
         "evidence_note": "Leck-Hinweise für diesen Dienst gefunden ({count} Treffer); Risiko mindestens {level}.",
         "exposures_title": "Weitere Offenlegungen ohne Bezug zu einem erkannten Konto",
         "exposure_action": "Empfehlung: Passwort überall ändern, wo diese E-Mail/Nummer wiederverwendet wurde, Zwei-Faktor-Authentifizierung aktivieren und auf Phishing achten.",
-        "fallback_reason": "Vom Scan erkannt; manuelle Überprüfung erforderlich."
+        "fallback_reason": "Vom Scan erkannt; manuelle Überprüfung erforderlich.",
+        "btn_clear_cache": "Cache leeren",
+        "cache_cleared": "Cache geleert ({count} Datei(en)).",
+        "finding_unverified": "Nicht verifizierte Web-Erwähnung – vor weiteren Schritten die Quelle prüfen.",
+        "env_password_loaded": "App-Passwort aus .env geladen (nicht angezeigt)."
     },
     "ru": {
         "page_title": "Локальный аудитор цифрового следа",
@@ -331,7 +343,11 @@ TRANSLATIONS = {
         "evidence_note": "Для этого сервиса найдены признаки утечки (находок: {count}); риск не ниже: {level}.",
         "exposures_title": "Другие утечки, не связанные с обнаруженными аккаунтами",
         "exposure_action": "Рекомендуется: сменить пароль везде, где повторно использовались этот email/номер, включить двухфакторную аутентификацию и остерегаться фишинга.",
-        "fallback_reason": "Обнаружено при сканировании; требуется ручная проверка."
+        "fallback_reason": "Обнаружено при сканировании; требуется ручная проверка.",
+        "btn_clear_cache": "Очистить кеш",
+        "cache_cleared": "Кеш очищен (файлов: {count}).",
+        "finding_unverified": "Непроверенное упоминание в интернете — перед действиями проверьте источник.",
+        "env_password_loaded": "Пароль приложения загружен из .env (не отображается)."
     },
     "es": {
         "page_title": "Auditor de Huella Digital Local",
@@ -414,7 +430,11 @@ TRANSLATIONS = {
         "evidence_note": "Se encontraron indicios de filtración para este servicio ({count} hallazgo(s)); riesgo mínimo: {level}.",
         "exposures_title": "Otras exposiciones no vinculadas a una cuenta detectada",
         "exposure_action": "Recomendado: cambie la contraseña en todos los sitios donde reutilizó este correo/número, active la autenticación de dos factores y esté atento al phishing.",
-        "fallback_reason": "Detectado por el análisis; requiere verificación manual."
+        "fallback_reason": "Detectado por el análisis; requiere verificación manual.",
+        "btn_clear_cache": "Vaciar caché",
+        "cache_cleared": "Caché vaciada ({count} archivo(s)).",
+        "finding_unverified": "Mención web no verificada: abra la fuente para confirmarla antes de actuar.",
+        "env_password_loaded": "Contraseña de aplicación cargada desde .env (no se muestra)."
     },
     "ar": {
         "page_title": "مُدقق الأثر الرقمي المحلي",
@@ -497,7 +517,11 @@ TRANSLATIONS = {
         "evidence_note": "تم العثور على دلائل تسريب لهذه الخدمة ({count} نتيجة)؛ المخاطر على الأقل {level}.",
         "exposures_title": "تعرّضات أخرى غير مرتبطة بحساب تم اكتشافه",
         "exposure_action": "يُنصح بتغيير كلمة المرور أينما أُعيد استخدام هذا البريد/الرقم، وتفعيل المصادقة الثنائية، والحذر من التصيّد.",
-        "fallback_reason": "تم اكتشافها بواسطة الفحص وتتطلب تحققاً يدوياً."
+        "fallback_reason": "تم اكتشافها بواسطة الفحص وتتطلب تحققاً يدوياً.",
+        "btn_clear_cache": "مسح الذاكرة المؤقتة",
+        "cache_cleared": "تم مسح الذاكرة المؤقتة ({count} ملف).",
+        "finding_unverified": "إشارة غير مؤكدة على الويب — افتح المصدر للتأكد قبل اتخاذ أي إجراء.",
+        "env_password_loaded": "تم تحميل كلمة مرور التطبيق من ملف .env (غير معروضة)."
     },
     "zh": {
         "page_title": "本地数字足迹审计工具",
@@ -580,7 +604,11 @@ TRANSLATIONS = {
         "evidence_note": "已发现该服务的泄露线索（{count} 条）；风险至少为{level}。",
         "exposures_title": "与已检测账户无关的其他暴露",
         "exposure_action": "建议：在重复使用此邮箱/号码的所有地方更改密码，启用双重验证，并警惕网络钓鱼。",
-        "fallback_reason": "由扫描检测到，需要手动核实。"
+        "fallback_reason": "由扫描检测到，需要手动核实。",
+        "btn_clear_cache": "清除缓存",
+        "cache_cleared": "缓存已清除（{count} 个文件）。",
+        "finding_unverified": "未经验证的网页提及——请先打开来源核实再采取行动。",
+        "env_password_loaded": "已从 .env 加载应用专用密码（不显示）。"
     },
     "fr": {
         "page_title": "Auditeur Local d'Empreinte Numérique & Vie Privée",
@@ -663,7 +691,11 @@ TRANSLATIONS = {
         "evidence_note": "Indices de fuite trouvés pour ce service ({count} résultat(s)) ; risque au moins {level}.",
         "exposures_title": "Autres expositions non liées à un compte détecté",
         "exposure_action": "Recommandé : changez le mot de passe partout où cet e-mail/numéro a été réutilisé, activez l'authentification à deux facteurs et méfiez-vous du hameçonnage.",
-        "fallback_reason": "Détecté par l'analyse ; vérification manuelle requise."
+        "fallback_reason": "Détecté par l'analyse ; vérification manuelle requise.",
+        "btn_clear_cache": "Vider le cache",
+        "cache_cleared": "Cache vidé ({count} fichier(s)).",
+        "finding_unverified": "Mention web non vérifiée : ouvrez la source pour confirmer avant d'agir.",
+        "env_password_loaded": "Mot de passe d'application chargé depuis .env (non affiché)."
     },
     "it": {
         "page_title": "Auditor Locale dell'Impronta Digitale e della Privacy",
@@ -746,7 +778,11 @@ TRANSLATIONS = {
         "evidence_note": "Indizi di violazione trovati per questo servizio ({count} risultato/i); rischio almeno {level}.",
         "exposures_title": "Altre esposizioni non collegate a un account rilevato",
         "exposure_action": "Consigliato: cambia la password ovunque questa email/numero sia stata riutilizzata, attiva l'autenticazione a due fattori e fai attenzione al phishing.",
-        "fallback_reason": "Rilevato dalla scansione; richiede verifica manuale."
+        "fallback_reason": "Rilevato dalla scansione; richiede verifica manuale.",
+        "btn_clear_cache": "Svuota la cache",
+        "cache_cleared": "Cache svuotata ({count} file).",
+        "finding_unverified": "Menzione web non verificata: apri la fonte per confermare prima di agire.",
+        "env_password_loaded": "Password per app caricata da .env (non mostrata)."
     },
     "nl": {
         "page_title": "Lokale Digitale Voetafdruk & Privacy Auditor",
@@ -829,7 +865,11 @@ TRANSLATIONS = {
         "evidence_note": "Aanwijzingen voor een datalek gevonden voor deze dienst ({count} resultaat/resultaten); risico minimaal {level}.",
         "exposures_title": "Andere blootstellingen die niet aan een gedetecteerd account gekoppeld zijn",
         "exposure_action": "Aanbevolen: wijzig het wachtwoord overal waar dit e-mailadres/nummer hergebruikt is, schakel tweefactorauthenticatie in en let op phishing.",
-        "fallback_reason": "Gedetecteerd door de scan; handmatige controle vereist."
+        "fallback_reason": "Gedetecteerd door de scan; handmatige controle vereist.",
+        "btn_clear_cache": "Cache wissen",
+        "cache_cleared": "Cache gewist ({count} bestand(en)).",
+        "finding_unverified": "Niet-geverifieerde vermelding op het web — open de bron om te bevestigen voordat u handelt.",
+        "env_password_loaded": "App-wachtwoord geladen uit .env (niet getoond)."
     },
     "ja": {
         "page_title": "ローカルデジタルフットプリント＆プライバシー監査員",
@@ -912,7 +952,11 @@ TRANSLATIONS = {
         "evidence_note": "このサービスに関する漏洩の形跡が見つかりました（{count} 件）。リスクは少なくとも{level}です。",
         "exposures_title": "検出されたアカウントに紐づかないその他の露出",
         "exposure_action": "推奨: このメール/番号を使い回したすべての場所でパスワードを変更し、二要素認証を有効にし、フィッシングに注意してください。",
-        "fallback_reason": "スキャンで検出されました。手動での確認が必要です。"
+        "fallback_reason": "スキャンで検出されました。手動での確認が必要です。",
+        "btn_clear_cache": "キャッシュを消去",
+        "cache_cleared": "キャッシュを消去しました（{count} ファイル）。",
+        "finding_unverified": "未確認のWeb上の言及です。対応する前に情報源を開いて確認してください。",
+        "env_password_loaded": "アプリパスワードを .env から読み込みました（非表示）。"
     }
 }
 
