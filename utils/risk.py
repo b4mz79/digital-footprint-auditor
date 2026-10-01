@@ -12,7 +12,7 @@ from utils.translations import TRANSLATIONS
 
 RISK_KEYS = ("high", "medium", "low", "unknown")
 RISK_RANK = {"unknown": -1, "low": 0, "medium": 1, "high": 2}
-RISK_ICONS = {"high": "🔴", "medium": "🟡", "low": "🟢", "unknown": "🔘"}
+RISK_ICONS = {"high": "🔴", "medium": "🟡", "low": "🟢", "unknown": "⚪"}
 
 
 def _build_label_map() -> dict[str, str]:
