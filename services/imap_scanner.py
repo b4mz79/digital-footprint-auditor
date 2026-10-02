@@ -1,8 +1,10 @@
 import os
 import imaplib
 import email
-from email.header import decode_header
 import re
+import time
+from email.header import decode_header, make_header
+from email.utils import parseaddr
 
 from dotenv import load_dotenv
 
@@ -19,15 +21,39 @@ IMAP_SERVER = "imap.gmail.com"
 IMAP_TIMEOUT_SECONDS = 30
 # How many of the newest matching messages are inspected. Older registrations are missed when
 # the mailbox has more matches than this; raise it (max 2000) for a deeper, slower scan.
-DEFAULT_MAX_EMAILS = env_non_negative_int("IMAP_MAX_EMAILS", 200, 2000) or 200
+DEFAULT_MAX_EMAILS = env_non_negative_int("IMAP_MAX_EMAILS", 500, 2000) or 500
+IMAP_FETCH_BATCH_SIZE = env_non_negative_int("IMAP_FETCH_BATCH_SIZE", 50, 200) or 50
+MIN_SUBJECT_SCORE = env_non_negative_int("IMAP_MIN_SUBJECT_SCORE", 50, 100) or 50
 
-# Read-only fetch: BODY.PEEK never sets \Seen, and the mailbox is opened with EXAMINE.
+# Read-only fetch: BODY.PEEK never sets \\Seen, and the mailbox is opened with EXAMINE.
 FETCH_SPEC = "(BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE)])"
 
+# Gmail performs candidate filtering; Python applies the final weighted subject classifier.
 SUBJECT_QUERY = (
-    'subject:(welcome OR verifikasi OR konfirmasi OR registration OR "terima kasih" OR "thank you" '
-    'OR daftar OR pendaftaran OR register OR verification OR confirmation)'
+    'subject:(welcome OR "selamat datang" OR "thank you" OR "terima kasih" OR '
+    'verification OR verify OR verifikasi OR confirmation OR confirm OR konfirmasi OR '
+    'registration OR registered OR registrasi OR pendaftaran OR register OR daftar OR '
+    'activate OR activation OR aktivasi OR "account created" OR "akun dibuat" OR '
+    'joined OR joining OR "all set" OR "getting started" OR "welcome aboard")'
 )
+
+SUBJECT_PATTERNS = {
+    100: (
+        "welcome to", "selamat datang", "thanks for joining", "thank you for joining",
+        "terima kasih telah bergabung", "account created", "akun dibuat",
+    ),
+    90: (
+        "verification", "verify", "verifikasi", "confirmation", "confirm your",
+        "konfirmasi", "activate your account", "aktivasi akun", "activate account",
+    ),
+    80: (
+        "registration", "registered", "registrasi", "pendaftaran", "registered successfully",
+    ),
+    60: (
+        "welcome", "thank you", "terima kasih", "register", "daftar", "joining", "joined",
+        "getting started", "welcome aboard", "all set", "activation", "aktivasi", "activate",
+    ),
+}
 
 
 def mask_sensitive_subject(subject_text: str) -> str:
@@ -35,34 +61,25 @@ def mask_sensitive_subject(subject_text: str) -> str:
     if not subject_text:
         return ""
 
-    # 1. Masking format Email
+    # Specific patterns are masked before generic numeric codes.
     masked = re.sub(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+', '***@***', subject_text)
-    # 2. Masking Nomor Telepon Internasional/Lokal bersambung
-    masked = re.sub(r'\+?\b\d{9,15}\b', '***', masked)
-    # 3. Masking Nomor Telepon dengan pemisah spasi/strip
-    masked = re.sub(r'\b(?:\+62|62|0)[ \-]?\d{2,4}[ \-]?\d{3,4}[ \-]?\d{3,5}\b', '***', masked)
-    # 4. Masking angka 4-8 digit berdiri sendiri (tahun 19xx/20xx dipertahankan)
-    masked = NUMERIC_CODE_PATTERN.sub('***', masked)
-    # 5. Masking format Google Code
+    masked = re.sub(
+        r'(?i)\b(otp|pin|kode|code|token|sandi|password)[\s:=]+[A-Za-z0-9_-]{4,12}\b',
+        r'\1 ***',
+        masked,
+    )
     masked = re.sub(r'\bG-\d{4,8}\b', 'G-***', masked)
-    # 6. Masking string alfanumerik yang mengikuti kata kunci OTP/PIN/Code
-    masked = re.sub(r'(?i)\b(otp|pin|kode|code|token|sandi|password)[\s:=]+[A-Za-z0-9_-]{4,12}\b', r'\1 ***', masked)
-
-    return masked
+    masked = re.sub(r'\+?\b\d{9,15}\b', '***', masked)
+    masked = re.sub(r'\b(?:\+62|62|0)[ \-]?\d{2,4}[ \-]?\d{3,4}[ \-]?\d{3,5}\b', '***', masked)
+    return NUMERIC_CODE_PATTERN.sub('***', masked)
 
 
 def select_all_mail_folder(mail: imaplib.IMAP4_SSL) -> str:
     """Mencoba memilih folder All Mail / Semua Email di Gmail (read-only)."""
-    all_mail_folders = [
-        '"[Gmail]/All Mail"',
-        '"[Gmail]/Semua Email"',
-        '"[Gmail]/Semua Pesan"'
-    ]
-
-    for folder in all_mail_folders:
+    for folder in ('"[Gmail]/All Mail"', '"[Gmail]/Semua Email"', '"[Gmail]/Semua Pesan"'):
         status, _ = mail.select(folder, readonly=True)
         if status == "OK":
-            logger.info(f"[IMAP] Berhasil memilih folder: {folder}")
+            logger.info("[IMAP] Berhasil memilih folder: %s", folder)
             return folder
 
     logger.warning("[IMAP] Folder All Mail/Semua Email tidak ditemukan. Menggunakan INBOX.")
@@ -71,18 +88,13 @@ def select_all_mail_folder(mail: imaplib.IMAP4_SSL) -> str:
 
 
 def parse_sender_domain(from_header: str) -> str:
-    """Root domain pengirim, atau "" untuk penyedia email gratis dan mailer massal
+    """Root domain pengirim, atau "" untuk penyedia email gratis dan mailer massal.
     (sendgrid, amazonses, mailchimp, ...) yang bukan layanan itu sendiri."""
-    if not from_header:
+    _, address = parseaddr(from_header or "")
+    if "@" not in address:
         return ""
 
-    match = re.search(r'<([^>]+)>', from_header)
-    clean_email = match.group(1) if match else from_header.strip()
-
-    if "@" not in clean_email:
-        return ""
-
-    domain = clean_email.split("@")[-1].strip().lower().rstrip(">")
+    domain = address.rsplit("@", 1)[-1].lower().rstrip(".")
     if not domain or is_ignored_sender(domain):
         return ""
     return root_domain(domain)
@@ -92,23 +104,72 @@ def safe_decode_header(header_value: str) -> str:
     """Aman mengekstrak header email terlepas dari encoding."""
     if not header_value:
         return ""
-    decoded_parts = []
     try:
-        for content, encoding in decode_header(header_value):
-            if isinstance(content, bytes):
-                decoded_parts.append(content.decode(encoding or "utf-8", errors="ignore"))
-            elif isinstance(content, str):
-                decoded_parts.append(content)
-        return "".join(decoded_parts)
+        return str(make_header(decode_header(header_value)))
     except Exception:
         return str(header_value)
 
 
-def scan_gmail_inbox(email_address: str, app_password: str, max_emails: int | None = None, lang: str = "id") -> list[dict]:
-    logger.info(f"[IMAP] Scanning target: {mask_email(email_address)}")
+def score_subject(subject: str) -> int:
+    """Return the strongest matching registration/service subject score."""
+    normalized = " ".join(subject.casefold().split())
+    return max(
+        (score for score, patterns in SUBJECT_PATTERNS.items() if any(pattern in normalized for pattern in patterns)),
+        default=0,
+    )
+
+
+def _iter_fetched_messages(msg_data: list) -> list[email.message.Message]:
+    messages = []
+    for response_part in msg_data:
+        if not isinstance(response_part, tuple) or len(response_part) < 2:
+            continue
+        payload = response_part[1]
+        if isinstance(payload, bytes):
+            messages.append(email.message_from_bytes(payload))
+    return messages
+
+
+def _process_message(msg: email.message.Message, found_services: dict) -> bool:
+    subject_raw = safe_decode_header(msg.get("Subject", ""))
+    score = score_subject(subject_raw)
+    if score < MIN_SUBJECT_SCORE:
+        return False
+
+    domain = parse_sender_domain(safe_decode_header(msg.get("From", "")))
+    if not domain:
+        return False
+
+    subject = mask_sensitive_subject(subject_raw)[:60]
+    current = found_services.get(domain)
+    if current is None or score > current["score"]:
+        found_services[domain] = {"score": score, "subject": subject}
+    return True
+
+
+def _fetch_batch(mail: imaplib.IMAP4_SSL, uid_batch: list[bytes]) -> list[email.message.Message]:
+    if not uid_batch:
+        return []
+    uid_set = b",".join(uid_batch).decode("ascii", errors="ignore")
+    status, msg_data = mail.uid("fetch", uid_set, FETCH_SPEC)
+    if status != "OK":
+        logger.warning("[IMAP] Batch FETCH gagal untuk %d message(s).", len(uid_batch))
+        return []
+    return _iter_fetched_messages(msg_data)
+
+
+def scan_gmail_inbox(
+    email_address: str,
+    app_password: str,
+    max_emails: int | None = None,
+    lang: str = "id",
+) -> list[dict]:
+    started_at = time.perf_counter()
+    logger.info("[IMAP] Scanning target: %s", mask_email(email_address))
     max_emails = max_emails or DEFAULT_MAX_EMAILS
-    found_services = set()
-    results = []
+    max_emails = max(1, min(max_emails, 2000))
+    found_services = {}
+    candidate_count = inspected_count = matched_count = batch_count = 0
     credential = str(app_password).strip() if app_password else ""
     del app_password
 
@@ -116,39 +177,42 @@ def scan_gmail_inbox(email_address: str, app_password: str, max_emails: int | No
         with imaplib.IMAP4_SSL(IMAP_SERVER, timeout=IMAP_TIMEOUT_SECONDS) as mail:
             mail.login(email_address, credential)
             del credential
-
             select_all_mail_folder(mail)
 
             escaped_query = SUBJECT_QUERY.replace('"', '\\"')
-            status, messages = mail.search(None, 'X-GM-RAW', f'"{escaped_query}"')
-
-            if status != "OK" or not messages[0]:
+            status, messages = mail.uid("search", None, "X-GM-RAW", f'"{escaped_query}"')
+            if status != "OK" or not messages or not messages[0]:
                 return []
 
             email_ids = messages[0].split()[-max_emails:]
-            for e_id in reversed(email_ids):
-                _, msg_data = mail.fetch(e_id, FETCH_SPEC)
-                for response_part in msg_data:
-                    if isinstance(response_part, tuple):
-                        msg = email.message_from_bytes(response_part[1])
+            candidate_count = len(email_ids)
+            for start in range(0, candidate_count, IMAP_FETCH_BATCH_SIZE):
+                batch = email_ids[start:start + IMAP_FETCH_BATCH_SIZE]
+                batch_count += 1
+                fetched_messages = _fetch_batch(mail, batch)
+                inspected_count += len(fetched_messages)
+                for msg in fetched_messages:
+                    matched_count += _process_message(msg, found_services)
 
-                        subject = mask_sensitive_subject(safe_decode_header(msg.get("Subject", "")))
-                        from_header = safe_decode_header(msg.get("From", ""))
-
-                        domain = parse_sender_domain(from_header)
-                        if domain and domain not in found_services:
-                            logger.info(f"[IMAP] menemukan email sesuai filter dari layanan: {domain}")
-                            found_services.add(domain)
-                            results.append({
-                                "name": domain.split(".")[0].capitalize(),
-                                "domain": domain,
-                                "source": t("source_imap", lang=lang),
-                                "subject": subject[:60]
-                            })
-        return results
+            results = []
+            for domain, data in sorted(found_services.items()):
+                logger.info("[IMAP] Menemukan email sesuai filter dari layanan: %s", domain)
+                results.append({
+                    "name": domain.split(".")[0].capitalize(),
+                    "domain": domain,
+                    "source": t("source_imap", lang=lang),
+                    "subject": data["subject"],
+                })
+            logger.info(
+                "[IMAP] Stats: candidates=%d, headers_inspected=%d, matched=%d, services=%d, batches=%d, duration=%.2fs",
+                candidate_count, inspected_count, matched_count, len(results), batch_count, time.perf_counter() - started_at,
+            )
+            return results
     except imaplib.IMAP4.error as imap_err:
-        logger.error(f"[IMAP Error] Otentikasi/Perintah IMAP Gagal untuk [{mask_email(email_address)}]")
-        raise RuntimeError(f"Gagal otentikasi IMAP: Pastikan App Password benar & IMAP aktif di Gmail. Detail: {imap_err}")
-    except Exception as e:
-        logger.error(f"[IMAP Error] Kendala jaringan atau server: {type(e).__name__}")
-        raise RuntimeError(f"IMAP Service Error: {e}")
+        logger.error("[IMAP Error] Otentikasi/Perintah IMAP Gagal untuk [%s]", mask_email(email_address))
+        raise RuntimeError(
+            f"Gagal otentikasi IMAP: Pastikan App Password benar & IMAP aktif di Gmail. Detail: {imap_err}"
+        )
+    except Exception as exc:
+        logger.error("[IMAP Error] Kendala jaringan atau server: %s", type(exc).__name__)
+        raise RuntimeError(f"IMAP Service Error: {exc}")
