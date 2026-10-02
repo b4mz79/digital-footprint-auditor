@@ -14,6 +14,11 @@ from pathlib import Path
 import httpx
 from dotenv import load_dotenv
 
+from services.breach.models import EngineResult, EngineStatus
+from services.breach.circuit_breaker import CircuitRegistry
+from services.breach.health import HealthRegistry
+from services.breach.limiter import LimiterRegistry
+
 try:
     from cache_security import save_encrypted_json, load_encrypted_json
 except ImportError:  # pragma: no cover - cache_security living inside the services package
@@ -85,6 +90,46 @@ HTTP_RETRY_ATTEMPTS = _env_non_negative_int("HTTP_RETRY_ATTEMPTS", 3, maximum=8)
 HTTP_RETRY_BASE_SECONDS = float(os.getenv("HTTP_RETRY_BASE_SECONDS", "1.5"))
 HTTP_MAX_CONCURRENCY = _env_non_negative_int("HTTP_MAX_CONCURRENCY", 4, maximum=32)
 TRUST_ENV = _env_bool("HTTPX_TRUST_ENV", False)
+
+
+# =============================================================================
+# Breach Scanner v2 runtime control plane
+# =============================================================================
+#
+# Tujuan:
+# - mencegah retry storm
+# - menghentikan sementara engine yang terkena rate-limit
+# - menjaga provider sehat tetap berjalan
+# - membedakan:
+#
+#   "tidak ditemukan breach"
+#
+#   dengan
+#
+#   "engine gagal dianalisa"
+#
+# =============================================================================
+
+
+ENGINE_LIMITERS = LimiterRegistry()
+
+ENGINE_CIRCUITS = CircuitRegistry()
+
+ENGINE_HEALTH = HealthRegistry()
+
+
+BREACH_QUEUE_WORKERS = _env_non_negative_int(
+    "BREACH_QUEUE_WORKERS",
+    2,
+    maximum=32,
+)
+
+BREACH_ENGINE_COOLDOWN = float(
+    os.getenv(
+        "BREACH_ENGINE_COOLDOWN",
+        "60",
+    )
+)
 
 
 # SearXNG is administrator-configured, including the case of a private/self-hosted instance.
@@ -221,7 +266,7 @@ def safe_tenant_identity(tenant_id: str) -> str:
 
 
 DEFAULT_PHONE_REGION = (os.getenv("DEFAULT_PHONE_REGION", "ID").strip().upper() or "ID")[:2]
-MAX_PHONE_VARIANTS = _env_non_negative_int("PHONE_VARIANTS_MAX", 3, maximum=12) or 1
+MAX_PHONE_VARIANTS = _env_non_negative_int("PHONE_VARIANTS_MAX", 12, maximum=18) or 1
 
 
 def _legacy_phone_variants(clean_num: str, region: str) -> list[str]:
@@ -495,6 +540,154 @@ class ResponseTooLargeError(RuntimeError):
 class EngineSkipped(Exception):
     """Raised by an engine that is not configured; reported as 'skipped', not 'ok'."""
 
+async def execute_engine_v2(
+    engine_name: str,
+    coroutine_factory,
+) -> EngineResult:
+    """
+    Universal engine execution wrapper.
+
+    Semua engine:
+    - API
+    - scraper
+    - database lookup
+
+    melewati layer ini.
+    """
+
+    if not ENGINE_CIRCUITS.allow(
+        engine_name
+    ):
+
+        logger.warning(
+            "[%s] Circuit breaker OPEN",
+            engine_name,
+        )
+
+        return EngineResult(
+            engine=engine_name,
+            status=EngineStatus.CIRCUIT_OPEN,
+            error="Temporary engine cooldown",
+        )
+
+
+    if not ENGINE_LIMITERS.allow(
+        engine_name
+    ):
+
+        logger.warning(
+            "[%s] Rate limiter blocked",
+            engine_name,
+        )
+
+        return EngineResult(
+            engine=engine_name,
+            status=EngineStatus.RATE_LIMITED,
+            error="Local rate limiter",
+        )
+
+
+    started = time.monotonic()
+
+
+    try:
+        try:
+            coroutine = coroutine_factory()
+        except Exception as exc:
+            logger.exception(
+                "[%s] Engine exception",
+                engine_name,
+            )
+            return EngineResult(
+                engine=engine_name,
+                status=EngineStatus.FAILED,
+                error=type(exc).__name__,
+            )
+
+        result = await asyncio.wait_for(
+            coroutine,
+            timeout=ENGINE_TIMEOUT_SECONDS,
+        )
+        elapsed = (
+            time.monotonic()
+            -
+            started
+        )
+        ENGINE_CIRCUITS.record_success(
+            engine_name
+        )
+        ENGINE_HEALTH.record_success(
+            engine_name,
+            elapsed,
+        )
+        return EngineResult(
+            engine=engine_name,
+            status=EngineStatus.SUCCESS,
+            findings=(
+                result
+                if isinstance(result, list)
+                else []
+            ),
+            metadata={
+                "elapsed":
+                    round(
+                        elapsed,
+                        3,
+                    )
+            },
+        )
+
+    except EngineSkipped as exc:
+        return EngineResult(
+            engine=engine_name,
+            status=EngineStatus.SKIPPED,
+            error=str(exc),
+        )
+    except httpx.HTTPStatusError as exc:
+        status_code = (
+            exc.response.status_code
+            if exc.response
+            else None
+        )
+        if status_code == 429:
+            ENGINE_LIMITERS.penalize(
+                engine_name
+            )
+            return EngineResult(
+                engine=engine_name,
+                status=EngineStatus.RATE_LIMITED,
+                error="HTTP 429",
+            )
+        else:
+            ENGINE_CIRCUITS.record_failure(
+                engine_name
+            )
+            return EngineResult(
+                engine=engine_name,
+                status=EngineStatus.FAILED,
+                error=f"HTTP {status_code}",
+            )
+
+    except asyncio.TimeoutError:
+        ENGINE_CIRCUITS.record_failure(
+            engine_name
+        )
+        return EngineResult(
+            engine=engine_name,
+            status=EngineStatus.TIMEOUT,
+            error="Timeout",
+        )
+
+    except Exception as exc:
+        ENGINE_CIRCUITS.record_failure(
+            engine_name
+        )
+        return EngineResult(
+            engine=engine_name,
+            status=EngineStatus.FAILED,
+            error=type(exc).__name__,
+        )
+
 
 # Stable engine identifiers used in the scan report (not shown as finding sources).
 ENGINE_BREACHDIRECTORY = "BreachDirectory"
@@ -553,15 +746,37 @@ async def _request_limited(
     for attempt in range(HTTP_RETRY_ATTEMPTS + 1):
         try:
             async with client.stream(method, url, **kwargs) as response:
-                if response.status_code == 429 or response.status_code in {502, 503, 504}:
+                if response.status_code == 429:
                     retry_after = response.headers.get("retry-after")
+                    if retry_after and retry_after.isdigit():
+                        delay = min(float(retry_after), 60.0)
+                    else:
+                        delay = min(
+                            HTTP_RETRY_BASE_SECONDS,
+                            5.0,
+                        )
+                    logger.warning(
+                        "HTTP rate limited status=429; stop retry chain delay=%.2fs",
+                        delay,
+                    )
+                    raise httpx.HTTPStatusError(
+                        "HTTP 429 rate limited",
+                        request=response.request,
+                        response=response,
+                    )
+
+                if response.status_code in {502, 503, 504}:
                     if attempt < HTTP_RETRY_ATTEMPTS:
-                        if retry_after and retry_after.isdigit():
-                            delay = min(float(retry_after), 60.0)
-                        else:
-                            delay = min(HTTP_RETRY_BASE_SECONDS * (2 ** attempt), 30.0)
+                        delay = min(
+                            HTTP_RETRY_BASE_SECONDS * (2 ** attempt),
+                            30.0,
+                        )
                         delay += random.uniform(0, 0.5)
-                        logger.warning("HTTP throttled/transient status=%s; retry in %.2fs", response.status_code, delay)
+                        logger.warning(
+                            "HTTP transient status=%s; retry in %.2fs",
+                            response.status_code,
+                            delay,
+                        )
                         await asyncio.sleep(delay)
                         continue
 
@@ -1134,9 +1349,64 @@ def scan_breaches_ddg(target: str, lang: str = "id") -> list[dict]:
         )
         return findings
     except Exception as exc:
-        logger.warning("[DuckDuckGo] Error: %s", type(exc).__name__)
-        raise
+        logger.warning("[DuckDuckGo] Temporary failure: %s",type(exc).__name__)
+        raise EngineSkipped(ENGINE_DDG)
 
+
+async def run_engine_queue_v2(
+    plan: list[tuple[str, object]],
+) -> list[EngineResult]:
+
+    queue: asyncio.Queue = asyncio.Queue()
+
+    results: list[EngineResult] = []
+
+
+    for engine_name, coroutine_factory in plan:
+        await queue.put(
+            (
+                engine_name,
+                coroutine_factory,
+            )
+        )
+
+    async def worker():
+        while True:
+            try:
+                engine_name, coroutine_factory = await queue.get()
+            except asyncio.CancelledError:
+                break
+            try:
+                result = await execute_engine_v2(
+                    engine_name,
+                    coroutine_factory,
+                )
+                results.append(result)
+            except Exception as exc:
+                results.append(
+                    EngineResult(
+                        engine=engine_name,
+                        status=EngineStatus.FAILED,
+                        error=type(exc).__name__,
+                    )
+                )
+            finally:
+                queue.task_done()
+
+    workers = [
+        asyncio.create_task(worker())
+        for _ in range(BREACH_QUEUE_WORKERS)
+    ]
+    await queue.join()
+
+    for task in workers:
+        task.cancel()
+
+    await asyncio.gather(
+        *workers,
+        return_exceptions=True,
+    )
+    return results
 
 # =============================================================================
 # Orchestrator
@@ -1199,18 +1469,41 @@ async def scan_data_breaches(
 
     def build_plan(client: httpx.AsyncClient, target: str) -> list[tuple[str, object]]:
         plan: list[tuple[str, object]] = []
+
         if engine_enabled[ENGINE_BREACHDIRECTORY]:
-            plan.append((ENGINE_BREACHDIRECTORY, scan_breachdirectory_async(client, target, rapidapi_key)))
+            if target == email or re.fullmatch(r"\+\d{7,15}", target):
+                plan.append(
+                    (
+                        ENGINE_BREACHDIRECTORY,
+                        lambda: scan_breachdirectory_async(
+                            client,
+                            target,
+                            rapidapi_key,
+                        ),
+                    )
+                )
+
         if engine_enabled[ENGINE_GOOGLE_API]:
-            plan.append((ENGINE_GOOGLE_API, scan_google_custom_search_async(
+            plan.append((ENGINE_GOOGLE_API, lambda: scan_google_custom_search_async(
                 client, target, google_search_key, google_cx_id, lang=lang)))
-        plan.append((ENGINE_GOOGLE_SCRAPER, asyncio.to_thread(scan_googlesearch_python, target, lang=lang)))
-        plan.append((ENGINE_BING, scan_bing_scrape_async(client, target, lang=lang)))
+
+        plan.append((ENGINE_GOOGLE_SCRAPER, lambda: asyncio.to_thread(
+            scan_googlesearch_python, target, lang=lang)))
+
+        plan.append((ENGINE_BING, lambda: scan_bing_scrape_async(
+            client, target, lang=lang)))
+
         if engine_enabled[ENGINE_TAVILY]:
-            plan.append((ENGINE_TAVILY, scan_breaches_tavily_async(client, target, tavily_key, lang=lang)))
+            plan.append((ENGINE_TAVILY, lambda: scan_breaches_tavily_async(
+                client, target, tavily_key, lang=lang)))
+
         if engine_enabled[ENGINE_SEARXNG]:
-            plan.append((ENGINE_SEARXNG, scan_searxng_async(client, target, lang=lang)))
-        plan.append((ENGINE_DDG, asyncio.to_thread(scan_breaches_ddg, target, lang=lang)))
+            plan.append((ENGINE_SEARXNG, lambda: scan_searxng_async(
+                client, target, lang=lang)))
+
+        plan.append((ENGINE_DDG, lambda: asyncio.to_thread(
+            scan_breaches_ddg, target, lang=lang)))
+
         return plan
 
     all_findings: list[dict] = []
@@ -1223,11 +1516,11 @@ async def scan_data_breaches(
     )
 
     limits = httpx.Limits(
-        max_connections=20,
-        max_keepalive_connections=10,
+        max_connections=10,
+        max_keepalive_connections=5,
     )
 
-    request_semaphore = asyncio.Semaphore(HTTP_MAX_CONCURRENCY)
+    #request_semaphore = asyncio.Semaphore(HTTP_MAX_CONCURRENCY)
 
     async with httpx.AsyncClient(
         limits=limits,
@@ -1246,33 +1539,31 @@ async def scan_data_breaches(
                 await asyncio.sleep(DELAY_SECONDS)
 
             plan = build_plan(client, target)
-            async def guarded(coro):
-                async with request_semaphore:
-                    return await asyncio.wait_for(coro, timeout=ENGINE_TIMEOUT_SECONDS)
+            #async def guarded(coro):
+            #    async with request_semaphore:
+            #        return await asyncio.wait_for(coro, timeout=ENGINE_TIMEOUT_SECONDS)
 
-            results = await asyncio.gather(
-                *(guarded(coro) for _, coro in plan),
-                return_exceptions=True,
-            )
-
-            for (name, _coro), res in zip(plan, results):
-                if isinstance(res, EngineSkipped):
-                    continue
-                if isinstance(res, BaseException):
+            #results = await asyncio.gather(
+            #    *(guarded(coro) for _, coro in plan),
+            #    return_exceptions=True,
+            #)
+            engine_results = await run_engine_queue_v2(plan)
+            for engine_result in engine_results:
+                name = engine_result.engine
+                if engine_result.status != EngineStatus.SUCCESS:
                     stats[name]["failed"] += 1
-                    logger.warning("[%s] Engine gagal: %s", name, type(res).__name__)
+                    logger.warning("[%s] Engine gagal status=%s error=%s", name, engine_result.status.value, engine_result.error)
                     continue
-
                 stats[name]["ok"] += 1
-                if isinstance(res, list) and res:
-                    remaining = MAX_TOTAL_FINDINGS - len(all_findings)
-                    if remaining <= 0:
-                        continue
-                    bounded_results = [_mask_web_finding(item) for item in res[:remaining]]
-                    all_findings.extend(bounded_results)
-                    for item in bounded_results:
-                        if isinstance(item, dict) and item.get("source"):
-                            active_engines.add(str(item["source"]))
+                res = engine_result.findings
+                if not res: continue
+                remaining = (MAX_TOTAL_FINDINGS-len(all_findings))
+                if remaining <= 0: continue
+                bounded_results = [_mask_web_finding(item) for item in res[:remaining]]
+                all_findings.extend(bounded_results)
+                for item in bounded_results:
+                    if (isinstance(item, dict) and item.get("source")):
+                        active_engines.add(str(item["source"]))
 
             if len(all_findings) >= MAX_TOTAL_FINDINGS:
                 logger.warning(
