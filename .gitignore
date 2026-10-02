@@ -3,7 +3,7 @@
 .cache_key
 *.pem
 *.patch
-test_*.py
+#test_*.py
 .env.example-v*
 
 # Python Cache
@@ -16,6 +16,7 @@ venv/
 files/
 files-1/
 files-2/
+.pytest_cache/
 
 # Project Specific Caches (Data Hasil Scan Privasi)
 cache/
@@ -24,7 +25,8 @@ main.py
 services/phone_scanner.py
 services/scanner.py
 log.txt
-*.json
+#*.json
+safe_services.json
 *-v*.py
 *-v*.txt
 *.zip
