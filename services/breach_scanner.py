@@ -112,24 +112,12 @@ TRUST_ENV = _env_bool("HTTPX_TRUST_ENV", False)
 
 
 ENGINE_LIMITERS = LimiterRegistry()
-
 ENGINE_CIRCUITS = CircuitRegistry()
-
 ENGINE_HEALTH = HealthRegistry()
+_ENGINE_COOLDOWN_UNTIL: dict[str, float] = {}
 
-
-BREACH_QUEUE_WORKERS = _env_non_negative_int(
-    "BREACH_QUEUE_WORKERS",
-    2,
-    maximum=32,
-)
-
-BREACH_ENGINE_COOLDOWN = float(
-    os.getenv(
-        "BREACH_ENGINE_COOLDOWN",
-        "60",
-    )
-)
+BREACH_QUEUE_WORKERS = _env_non_negative_int("BREACH_QUEUE_WORKERS", 2, maximum=32)
+BREACH_ENGINE_COOLDOWN = float(os.getenv("BREACH_ENGINE_COOLDOWN", "60"))
 
 
 # SearXNG is administrator-configured, including the case of a private/self-hosted instance.
@@ -528,6 +516,13 @@ def save_breach_cache(
             type(exc).__name__,
         )
 
+def _engine_cooldown_remaining(engine_name: str) -> float:
+    now = time.monotonic()
+    until = _ENGINE_COOLDOWN_UNTIL.get(engine_name, 0.0)
+    if until <= now:
+        _ENGINE_COOLDOWN_UNTIL.pop(engine_name, None)
+        return 0.0
+    return until - now
 
 # =============================================================================
 # HTTP helpers
@@ -540,10 +535,7 @@ class ResponseTooLargeError(RuntimeError):
 class EngineSkipped(Exception):
     """Raised by an engine that is not configured; reported as 'skipped', not 'ok'."""
 
-async def execute_engine_v2(
-    engine_name: str,
-    coroutine_factory,
-) -> EngineResult:
+async def execute_engine_v2(engine_name: str, coroutine_factory,) -> EngineResult:
     """
     Universal engine execution wrapper.
 
@@ -555,138 +547,72 @@ async def execute_engine_v2(
     melewati layer ini.
     """
 
-    if not ENGINE_CIRCUITS.allow(
-        engine_name
-    ):
-
-        logger.warning(
-            "[%s] Circuit breaker OPEN",
-            engine_name,
+    cooldown_remaining = _engine_cooldown_remaining(engine_name)
+    if cooldown_remaining > 0:
+        logger.warning("[%s] Engine cooldown active; remaining=%.1fs", engine_name, cooldown_remaining)
+        return EngineResult(
+            engine=engine_name,
+            status=EngineStatus.RATE_LIMITED,
+            error="Engine cooldown active",
         )
 
+    if not ENGINE_CIRCUITS.allow(engine_name):
+        logger.warning("[%s] Circuit breaker OPEN", engine_name)
         return EngineResult(
             engine=engine_name,
             status=EngineStatus.CIRCUIT_OPEN,
             error="Temporary engine cooldown",
         )
 
-
-    if not ENGINE_LIMITERS.allow(
-        engine_name
-    ):
-
-        logger.warning(
-            "[%s] Rate limiter blocked",
-            engine_name,
-        )
-
+    if not ENGINE_LIMITERS.allow(engine_name):
+        logger.warning("[%s] Rate limiter blocked", engine_name)
         return EngineResult(
             engine=engine_name,
             status=EngineStatus.RATE_LIMITED,
             error="Local rate limiter",
         )
 
-
     started = time.monotonic()
-
 
     try:
         try:
             coroutine = coroutine_factory()
         except Exception as exc:
-            logger.exception(
-                "[%s] Engine exception",
-                engine_name,
-            )
-            return EngineResult(
-                engine=engine_name,
-                status=EngineStatus.FAILED,
-                error=type(exc).__name__,
-            )
-
-        result = await asyncio.wait_for(
-            coroutine,
-            timeout=ENGINE_TIMEOUT_SECONDS,
-        )
-        elapsed = (
-            time.monotonic()
-            -
-            started
-        )
-        ENGINE_CIRCUITS.record_success(
-            engine_name
-        )
-        ENGINE_HEALTH.record_success(
-            engine_name,
-            elapsed,
-        )
+            logger.exception("[%s] Engine exception", engine_name)
+            return EngineResult(engine=engine_name, status=EngineStatus.FAILED, error=type(exc).__name__)
+        result = await asyncio.wait_for(coroutine, timeout=ENGINE_TIMEOUT_SECONDS)
+        elapsed = (time.monotonic()-started)
+        ENGINE_CIRCUITS.record_success(engine_name)
+        ENGINE_HEALTH.record_success(engine_name,elapsed)
         return EngineResult(
             engine=engine_name,
             status=EngineStatus.SUCCESS,
-            findings=(
-                result
-                if isinstance(result, list)
-                else []
-            ),
-            metadata={
-                "elapsed":
-                    round(
-                        elapsed,
-                        3,
-                    )
-            },
+            findings=(result if isinstance(result, list) else []),
+            metadata={"elapsed": round(elapsed, 3)},
         )
 
     except EngineSkipped as exc:
-        return EngineResult(
-            engine=engine_name,
-            status=EngineStatus.SKIPPED,
-            error=str(exc),
-        )
+        return EngineResult(engine=engine_name, status=EngineStatus.SKIPPED, error=str(exc))
     except httpx.HTTPStatusError as exc:
-        status_code = (
-            exc.response.status_code
-            if exc.response
-            else None
-        )
+        status_code = (exc.response.status_code if exc.response else None)
         if status_code == 429:
-            ENGINE_LIMITERS.penalize(
-                engine_name
-            )
-            return EngineResult(
-                engine=engine_name,
-                status=EngineStatus.RATE_LIMITED,
-                error="HTTP 429",
-            )
+            ENGINE_LIMITERS.penalize(engine_name)
+            cooldown_seconds = max(0.0, BREACH_ENGINE_COOLDOWN)
+            if cooldown_seconds > 0:
+                _ENGINE_COOLDOWN_UNTIL[engine_name] = (time.monotonic()+cooldown_seconds)
+            logger.warning("[%s] HTTP 429; cooldown=%.1fs", engine_name, cooldown_seconds)
+            return EngineResult(engine=engine_name, status=EngineStatus.RATE_LIMITED, error="HTTP 429")
         else:
-            ENGINE_CIRCUITS.record_failure(
-                engine_name
-            )
-            return EngineResult(
-                engine=engine_name,
-                status=EngineStatus.FAILED,
-                error=f"HTTP {status_code}",
-            )
+            ENGINE_CIRCUITS.record_failure(engine_name)
+            return EngineResult(engine=engine_name, status=EngineStatus.FAILED, error=f"HTTP {status_code}")
 
     except asyncio.TimeoutError:
-        ENGINE_CIRCUITS.record_failure(
-            engine_name
-        )
-        return EngineResult(
-            engine=engine_name,
-            status=EngineStatus.TIMEOUT,
-            error="Timeout",
-        )
+        ENGINE_CIRCUITS.record_failure(engine_name)
+        return EngineResult(engine=engine_name, status=EngineStatus.TIMEOUT, error="Timeout")
 
     except Exception as exc:
-        ENGINE_CIRCUITS.record_failure(
-            engine_name
-        )
-        return EngineResult(
-            engine=engine_name,
-            status=EngineStatus.FAILED,
-            error=type(exc).__name__,
-        )
+        ENGINE_CIRCUITS.record_failure(engine_name)
+        return EngineResult(engine=engine_name, status=EngineStatus.FAILED, error=type(exc).__name__)
 
 
 # Stable engine identifiers used in the scan report (not shown as finding sources).
@@ -1349,8 +1275,11 @@ def scan_breaches_ddg(target: str, lang: str = "id") -> list[dict]:
         )
         return findings
     except Exception as exc:
-        logger.warning("[DuckDuckGo] Temporary failure: %s",type(exc).__name__)
-        raise EngineSkipped(ENGINE_DDG)
+        logger.warning(
+            "[DuckDuckGo] Temporary failure: %s",
+            type(exc).__name__,
+        )
+        raise
 
 
 async def run_engine_queue_v2(
@@ -1550,10 +1479,16 @@ async def scan_data_breaches(
             engine_results = await run_engine_queue_v2(plan)
             for engine_result in engine_results:
                 name = engine_result.engine
+
+                if engine_result.status == EngineStatus.SKIPPED:
+                    logger.warning("[%s] Engine skipped: %s", name, engine_result.error)
+                    continue
+
                 if engine_result.status != EngineStatus.SUCCESS:
                     stats[name]["failed"] += 1
                     logger.warning("[%s] Engine gagal status=%s error=%s", name, engine_result.status.value, engine_result.error)
                     continue
+
                 stats[name]["ok"] += 1
                 res = engine_result.findings
                 if not res: continue
