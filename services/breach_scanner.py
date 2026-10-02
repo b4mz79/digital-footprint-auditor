@@ -7,6 +7,7 @@ import asyncio
 import logging
 import hmac
 import hashlib
+import random
 from urllib.parse import urlsplit, urlunsplit
 from pathlib import Path
 
@@ -78,6 +79,11 @@ RESPONSE_LIMIT_HTML = 2 * 1024 * 1024
 RESPONSE_LIMIT_SEARXNG = 4 * 1024 * 1024
 RESPONSE_LIMIT_TAVILY = 3 * 1024 * 1024
 REQUEST_TIMEOUT = httpx.Timeout(12.0, connect=5.0)
+
+# HTTP resilience controls (especially for public search APIs returning 429)
+HTTP_RETRY_ATTEMPTS = _env_non_negative_int("HTTP_RETRY_ATTEMPTS", 3, maximum=8)
+HTTP_RETRY_BASE_SECONDS = float(os.getenv("HTTP_RETRY_BASE_SECONDS", "1.5"))
+HTTP_MAX_CONCURRENCY = _env_non_negative_int("HTTP_MAX_CONCURRENCY", 4, maximum=32)
 TRUST_ENV = _env_bool("HTTPX_TRUST_ENV", False)
 
 
@@ -537,11 +543,43 @@ async def _request_limited(
     raise_for_status: bool = True,
     **kwargs,
 ) -> tuple[int, dict[str, str], bytes]:
-    async with client.stream(method, url, **kwargs) as response:
-        if raise_for_status:
-            response.raise_for_status()
-        body = await _read_response_limited(response, max_bytes)
-        return response.status_code, dict(response.headers), body
+    """HTTP request wrapper with bounded retry/backoff for transient failures.
+
+    Handles rate limiting (429), temporary gateway failures, and network jitter
+    without creating aggressive retry storms. Retry delay honors Retry-After when
+    provided by the upstream service.
+    """
+    last_exc = None
+    for attempt in range(HTTP_RETRY_ATTEMPTS + 1):
+        try:
+            async with client.stream(method, url, **kwargs) as response:
+                if response.status_code == 429 or response.status_code in {502, 503, 504}:
+                    retry_after = response.headers.get("retry-after")
+                    if attempt < HTTP_RETRY_ATTEMPTS:
+                        if retry_after and retry_after.isdigit():
+                            delay = min(float(retry_after), 60.0)
+                        else:
+                            delay = min(HTTP_RETRY_BASE_SECONDS * (2 ** attempt), 30.0)
+                        delay += random.uniform(0, 0.5)
+                        logger.warning("HTTP throttled/transient status=%s; retry in %.2fs", response.status_code, delay)
+                        await asyncio.sleep(delay)
+                        continue
+
+                if raise_for_status:
+                    response.raise_for_status()
+                body = await _read_response_limited(response, max_bytes)
+                return response.status_code, dict(response.headers), body
+        except (httpx.TimeoutException, httpx.NetworkError) as exc:
+            last_exc = exc
+            if attempt < HTTP_RETRY_ATTEMPTS:
+                delay = min(HTTP_RETRY_BASE_SECONDS * (2 ** attempt), 30.0)
+                await asyncio.sleep(delay + random.uniform(0, 0.5))
+                continue
+            raise
+
+    if last_exc:
+        raise last_exc
+    raise RuntimeError("HTTP request failed after retry policy.")
 
 
 async def _request_json_limited(
@@ -1189,6 +1227,8 @@ async def scan_data_breaches(
         max_keepalive_connections=10,
     )
 
+    request_semaphore = asyncio.Semaphore(HTTP_MAX_CONCURRENCY)
+
     async with httpx.AsyncClient(
         limits=limits,
         timeout=REQUEST_TIMEOUT,
@@ -1206,8 +1246,12 @@ async def scan_data_breaches(
                 await asyncio.sleep(DELAY_SECONDS)
 
             plan = build_plan(client, target)
+            async def guarded(coro):
+                async with request_semaphore:
+                    return await asyncio.wait_for(coro, timeout=ENGINE_TIMEOUT_SECONDS)
+
             results = await asyncio.gather(
-                *(asyncio.wait_for(coro, timeout=ENGINE_TIMEOUT_SECONDS) for _, coro in plan),
+                *(guarded(coro) for _, coro in plan),
                 return_exceptions=True,
             )
 
