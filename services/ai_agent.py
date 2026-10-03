@@ -964,7 +964,7 @@ def _build_ollama_fast_system_prompt(lang: str) -> str:
 
 def _extract_ollama_block(prompt: str, open_tag: str, close_tag: str) -> Any:
     pattern = re.compile(
-        rf"{re.escape(open_tag)}\\s*(.*?)\\s*{re.escape(close_tag)}",
+        rf"{re.escape(open_tag)}\s*(.*?)\s*{re.escape(close_tag)}",
         re.DOTALL,
     )
     match = pattern.search(prompt)
