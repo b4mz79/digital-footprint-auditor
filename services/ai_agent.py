@@ -879,9 +879,9 @@ def _validate_ollama_url(value: str) -> str:
 
 def _compact_ollama_prompt(prompt: str) -> str:
     """Reduce local-model prefill cost without changing the cloud provider prompt."""
-    max_chars = _env_non_negative_int("OLLAMA_MAX_PROMPT_CHARS", 24_000) or 24_000
-    max_services = _env_non_negative_int("OLLAMA_MAX_SERVICES", 20) or 20
-    max_evidence = _env_non_negative_int("OLLAMA_MAX_EVIDENCE", 30) or 30
+    max_chars = _env_non_negative_int("OLLAMA_MAX_PROMPT_CHARS", 24_000, 60_000) or 24_000
+    max_services = _env_non_negative_int("OLLAMA_MAX_SERVICES", 20, MAX_FOUND_SERVICES) or 20
+    max_evidence = _env_non_negative_int("OLLAMA_MAX_EVIDENCE", 30, MAX_EVIDENCE_RECORDS) or 30
 
     prompt = str(prompt or "")
     if len(prompt) <= max_chars:
