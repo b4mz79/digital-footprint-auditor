@@ -525,6 +525,7 @@ def build_user_prompt(
     phone: str = "",
     lang: str = "id",
     evidence_records: list | None = None,
+    scan_status: dict[str, Any] | None = None,
 ) -> str:
     lang = _validate_lang(lang)
     # Intentionally do NOT send raw email/phone to cloud LLM providers.
@@ -533,6 +534,17 @@ def build_user_prompt(
     safe_evidence = _sanitize_evidence_records(evidence_records)
     services_payload = json.dumps(safe_services, ensure_ascii=False, separators=(",", ":"))
     evidence_payload = json.dumps(safe_evidence, ensure_ascii=False, separators=(",", ":"))
+
+    status = scan_status if isinstance(scan_status, dict) else {}
+    status_payload = {
+        "breach_scan_complete": bool(status.get("breach_scan_complete", False)),
+        "failed_engines": [
+            _redact_text_for_llm(name, 128)
+            for name in status.get("failed_engines", [])
+            if name
+        ][:20],
+    }
+    status_json = json.dumps(status_payload, ensure_ascii=False, separators=(",", ":"))
 
     prompt = (
         "Perform the privacy/security analysis requested in the system instruction.\n"
@@ -1579,6 +1591,7 @@ def _input_fingerprint(
     services: list[dict],
     findings: list[dict],
     evidence_records: list | None = None,
+    scan_status: dict[str, Any] | None = None,
 ) -> str:
     """Identify every analysis input, including provenance evidence, for cache safety."""
     svc_part = sorted(
@@ -1603,8 +1616,18 @@ def _input_fingerprint(
         for item in _sanitize_evidence_records(evidence_records)
     )
 
+    status = scan_status if isinstance(scan_status, dict) else {}
+    status_part = {
+        "breach_scan_complete": bool(status.get("breach_scan_complete", False)),
+        "failed_engines": sorted(
+            str(name)
+            for name in status.get("failed_engines", [])
+            if name
+        )[:20],
+    }
+
     blob = json.dumps(
-        [ANALYSIS_SCHEMA_VERSION, svc_part, find_part, evidence_part],
+        [ANALYSIS_SCHEMA_VERSION, svc_part, find_part, evidence_part, status_part],
         ensure_ascii=False,
         separators=(",", ":"),
     )
@@ -1624,6 +1647,7 @@ async def analyze_smart_cache(
     tenant_id: str = "default",
     breach_findings: list | None = None,
     evidence_records: list | None = None,
+    scan_status: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     start_time = time.monotonic()
 
@@ -1651,8 +1675,12 @@ async def analyze_smart_cache(
         else []
     )
     evidence = _sanitize_evidence_records(evidence_records)
+    scan_status = scan_status if isinstance(scan_status, dict) else {
+        "breach_scan_complete": False,
+        "failed_engines": [],
+    }
 
-    fingerprint = _input_fingerprint(services, findings, evidence)
+    fingerprint = _input_fingerprint(services, findings, evidence, scan_status)
 
     safe_preview = _safe_component(mask_pii(email), 64)
 
@@ -1731,6 +1759,7 @@ async def analyze_smart_cache(
         phone,
         lang,
         evidence_records=evidence,
+        scan_status=scan_status,
     )
 
     # -------------------------------------------------------------------------
