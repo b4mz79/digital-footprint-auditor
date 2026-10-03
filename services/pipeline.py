@@ -230,6 +230,14 @@ def run_ai(
                 tenant_id=state["tenant_id"],
                 breach_findings=findings,
                 evidence_records=state.get("evidence", []),
+                scan_status={
+                    "breach_scan_complete": bool(state["breach"].get("complete", False)),
+                    "failed_engines": [
+                        name
+                        for name, info in state["breach"].get("engines", {}).items()
+                        if info.get("status") in {"error", "partial"}
+                    ],
+                },
             )
         )
         emit(
