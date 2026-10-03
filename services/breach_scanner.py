@@ -949,27 +949,79 @@ async def scan_breaches_tavily_async(client: httpx.AsyncClient, target: str, api
         _log_http_error("Tavily AI", exc)
         raise
 
-def scan_breaches_ddg(target: str, lang: str = "id") -> list[dict]:
-    """Blocking DuckDuckGo library executed in a worker thread."""
-    logger.info("[DuckDuckGo] Memulai scan via thread untuk target: %s", mask_pii(target))
+def _resolve_ddg_result_url(url: object) -> str:
+    """Resolve DuckDuckGo redirect links without following arbitrary result redirects."""
+    raw = _safe_text(url, MAX_RESULT_URL_LENGTH).strip()
+    if not raw:
+        return ""
     try:
-        from ddgs import DDGS
-        query = f'"{target}" (breach OR leak OR "database dump" OR "combolist")'
-        findings: list[dict] = []
-        results = list(DDGS().text(query, max_results=5))
-        for r in results[:MAX_FINDINGS_PER_ENGINE]:
-            if not isinstance(r, dict):
-                continue
-            item_url = _normalize_result_url(r.get("href", ""))
-            title = _safe_text(r.get("title", ""), MAX_TITLE_LENGTH)
-            snippet = _safe_text(r.get("body", ""), MAX_RESULT_SNIPPET_LENGTH)
-            if is_valid_finding(item_url, target=target, title=title, snippet=snippet):
-                findings.append({
-                    "source": "DuckDuckGo Search",
-                    "title": title or "DuckDuckGo Exposure Finding",
-                    "url": item_url,
-                    "snippet": clean_snippet(snippet, lang=lang),
-                })
+        parsed = urlsplit(raw)
+        if parsed.hostname and parsed.hostname.lower() in {"duckduckgo.com", "www.duckduckgo.com"}:
+            from urllib.parse import parse_qs, unquote
+            redirected = parse_qs(parsed.query).get("uddg", [""])[0]
+            if redirected:
+                return unquote(redirected)
+    except Exception:
+        pass
+    return raw
+
+
+def scan_breaches_ddg(target: str, lang: str = "id") -> list[dict]:
+    """Blocking DuckDuckGo HTML search executed in a worker thread."""
+    logger.info("[DuckDuckGo] Memulai scan via thread untuk target: %s", mask_pii(target))
+    query = f'"{target}" (breach OR leak OR "database dump" OR "combolist")'
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Referer": "https://html.duckduckgo.com/",
+    }
+    try:
+        with httpx.Client(
+            timeout=REQUEST_TIMEOUT,
+            follow_redirects=False,
+            trust_env=TRUST_ENV,
+            headers=headers,
+        ) as client:
+            response = client.post(
+                "https://html.duckduckgo.com/html/",
+                data={"q": query},
+            )
+            if response.status_code != 200:
+                logger.warning("[DuckDuckGo] HTTP status: %s", response.status_code)
+                raise RuntimeError(f"DuckDuckGo returned HTTP {response.status_code}")
+            if len(response.content) > RESPONSE_LIMIT_HTML:
+                raise ResponseTooLargeError("DuckDuckGo response exceeds configured size limit.")
+
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(response.text, "html.parser")
+            findings: list[dict] = []
+            result_items = soup.select("div.result")
+            if not result_items and re.search(r"captcha|unusual traffic|bot", response.text, re.IGNORECASE):
+                raise RuntimeError("DuckDuckGo returned a bot-check page")
+
+            for item in result_items[:MAX_FINDINGS_PER_ENGINE]:
+                title_elem = item.select_one("a.result__a")
+                if not title_elem:
+                    continue
+                title = _safe_text(title_elem.get_text(" ", strip=True), MAX_TITLE_LENGTH)
+                item_url = _normalize_result_url(_resolve_ddg_result_url(title_elem.get("href", "")))
+                snippet_elem = item.select_one(
+                    "a.result__snippet, div.result__snippet, .result__snippet"
+                )
+                snippet = _safe_text(
+                    snippet_elem.get_text(" ", strip=True) if snippet_elem else "",
+                    MAX_RESULT_SNIPPET_LENGTH,
+                )
+                if is_valid_finding(item_url, target=target, title=title, snippet=snippet):
+                    findings.append({
+                        "source": "DuckDuckGo Search",
+                        "title": title or "DuckDuckGo Exposure Finding",
+                        "url": item_url,
+                        "snippet": clean_snippet(snippet, lang=lang),
+                    })
+
         logger.info("[DuckDuckGo] Selesai. Ditemukan: %d temuan.", len(findings))
         return findings
     except Exception as exc:

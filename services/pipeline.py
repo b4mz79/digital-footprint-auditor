@@ -1,16 +1,10 @@
-"""The scan flow, independent of Streamlit.
-
-`run_scan` returns one plain dict ("scan state") that the UI keeps in st.session_state and
-re-renders on every rerun. Before this, results lived inside `if run_scan:` and vanished on the
-next interaction (a download click, a language switch). Messages are stored as keys + arguments
-so they can be re-translated when the language changes.
-"""
+"""The scan flow, independent of Streamlit."""
 from __future__ import annotations
 
 import asyncio
 import os
 import re
-from typing import Any
+from typing import Any, Callable
 
 from cache_security import clear_cache_files, purge_expired
 from services.ai_agent import CACHE_DIR as AI_CACHE_DIR, analyze_smart_cache
@@ -26,7 +20,7 @@ _TENANT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:@-]{0,127}$")
 
 
 def get_tenant_id() -> str:
-    """TENANT_ID (default "default") isolates caches when several people share one install."""
+    """TENANT_ID isolates caches when several people share one install."""
     value = os.getenv("TENANT_ID", "default").strip()
     if _TENANT_RE.fullmatch(value):
         return value
@@ -34,8 +28,20 @@ def get_tenant_id() -> str:
     return "default"
 
 
-def _event(level: str, key: str | None = None, text: str | None = None, **args: Any) -> dict[str, Any]:
-    return {"level": level, "key": key, "text": text, "args": args}
+def _event(
+    level: str,
+    key: str | None = None,
+    text: str | None = None,
+    stage: str | None = None,
+    **args: Any,
+) -> dict[str, Any]:
+    return {
+        "level": level,
+        "key": key,
+        "text": text,
+        "stage": stage,
+        "args": args,
+    }
 
 
 def run_scan(
@@ -50,6 +56,7 @@ def run_scan(
     lang: str = "id",
     tenant_id: str | None = None,
     with_ai: bool = True,
+    on_event: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     tenant_id = tenant_id or get_tenant_id()
     email = email.strip()
@@ -76,32 +83,51 @@ def run_scan(
     }
     events: list[dict[str, Any]] = state["events"]
 
+    def emit(
+        event: dict[str, Any],
+        live_data: dict[str, Any] | None = None,
+    ) -> None:
+        events.append(event)
+        if on_event:
+            if live_data is not None:
+                live_event = dict(event)
+                live_event["_live"] = live_data
+                on_event(live_event)
+            else:
+                on_event(event)
+
     # Step 1: Gmail via IMAP
     if enable_imap:
         if not gmail_app_password:
-            events.append(_event("warning", "warn_no_gmail_pass"))
+            emit(_event("warning", "warn_no_gmail_pass", stage="imap"))
         else:
-            events.append(_event("info", "info_imap_scanning"))
+            emit(_event("info", "info_imap_scanning", stage="imap"))
             try:
                 found = scan_gmail_inbox(email, gmail_app_password, lang=lang)
                 state["services"].extend(found)
-                events.append(_event("success", "success_imap", count=len(found)))
+                emit(
+                    _event("success", "success_imap", stage="imap", count=len(found)),
+                    {"services": found},
+                )
             except Exception as exc:
-                events.append(_event("error", text=f"Error IMAP: {exc}"))
+                emit(_event("error", text=f"Error IMAP: {exc}", stage="imap"))
 
-    # Step 2: OSINT (Holehe)
+    # Step 2: OSINT via Holehe
     if enable_osint:
-        events.append(_event("info", "info_osint_scanning"))
+        emit(_event("info", "info_osint_scanning", stage="osint"))
         try:
             found = scan_osint_footprint(email, lang=lang)
             state["services"].extend(found)
-            events.append(_event("success", "success_osint", count=len(found)))
+            emit(
+                _event("success", "success_osint", stage="osint", count=len(found)),
+                {"services": found},
+            )
         except Exception as exc:
-            events.append(_event("error", text=f"Error OSINT: {exc}"))
+            emit(_event("error", text=f"Error OSINT: {exc}", stage="osint"))
 
-    # Step 3: breach scan (async)
+    # Step 3: Multi-layer breach scan
     if enable_breach:
-        events.append(_event("info", "info_breach_scanning"))
+        emit(_event("info", "info_breach_scanning", stage="breach"))
         try:
             output = asyncio.run(
                 scan_data_breaches(
@@ -119,22 +145,57 @@ def run_scan(
                 engines=output.get("engines", {}),
                 complete=bool(output.get("complete", False)),
             )
+            emit(
+                _event(
+                    "info",
+                    text="Breach scan selesai.",
+                    stage="breach",
+                ),
+                {"breach": dict(state["breach"])},
+            )
         except Exception as exc:
             state["breach"]["error"] = str(exc)
-            events.append(_event("error", text=f"Error Breach Scan: {exc}"))
+            emit(_event("error", text=f"Error Breach Scan: {exc}", stage="breach"))
 
     if with_ai:
-        run_ai(state, lang, force_refresh=force_refresh)
+        run_ai(
+            state,
+            lang,
+            force_refresh=force_refresh,
+            on_event=on_event,
+        )
+
     return state
 
 
-def run_ai(state: dict[str, Any], lang: str, force_refresh: bool = False) -> dict[str, Any]:
-    """(Re)build the AI analysis for the language `lang`. Cheap when the per-language cache is
-    warm, so the UI calls it again after a language switch."""
+def run_ai(
+    state: dict[str, Any],
+    lang: str,
+    force_refresh: bool = False,
+    on_event: Callable[[dict[str, Any]], None] | None = None,
+) -> dict[str, Any]:
+    """Build or rebuild the AI analysis for the requested language."""
     findings = state["breach"]["findings"]
+
+    def emit(
+        event: dict[str, Any],
+        live_data: dict[str, Any] | None = None,
+    ) -> None:
+        state["events"].append(event)
+        if on_event:
+            if live_data is not None:
+                live_event = dict(event)
+                live_event["_live"] = live_data
+                on_event(live_event)
+            else:
+                on_event(event)
+
     if not state["services"] and not findings:
         state["ai"], state["ai_lang"] = None, lang
         return state
+
+    emit(_event("info", text="Memulai AI Privacy Audit...", stage="ai"))
+
     try:
         state["ai"] = asyncio.run(
             analyze_smart_cache(
@@ -147,16 +208,24 @@ def run_ai(state: dict[str, Any], lang: str, force_refresh: bool = False) -> dic
                 breach_findings=findings,
             )
         )
+        emit(
+            _event(
+                "success",
+                text="AI Privacy Audit selesai.",
+                stage="ai",
+            ),
+            {"ai": state["ai"]},
+        )
     except Exception as exc:
         state["ai"] = None
-        state["events"].append(_event("error", text=f"Error AI: {exc}"))
+        emit(_event("error", text=f"Error AI: {exc}", stage="ai"))
+
     state["ai_lang"] = lang
     return state
 
 
 def purge_expired_caches() -> int:
-    """Delete cache files older than CACHE_RETENTION_HOURS (default 24h; the cache TTL itself is
-    12h, so anything older can never be read again)."""
+    """Delete cache files older than CACHE_RETENTION_HOURS."""
     hours = env_non_negative_int("CACHE_RETENTION_HOURS", 24, 24 * 30) or 24
     removed = 0
     for directory in {AI_CACHE_DIR, BREACH_CACHE_DIR}:

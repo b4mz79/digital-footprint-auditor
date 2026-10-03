@@ -4,7 +4,13 @@ import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
 
-from services.pipeline import clear_all_caches, get_tenant_id, purge_expired_caches, run_ai, run_scan as run_scan_pipeline
+from services.pipeline import (
+    clear_all_caches,
+    get_tenant_id,
+    purge_expired_caches,
+    run_ai,
+    run_scan as run_scan_pipeline,
+)
 from utils.logging_setup import configure_logging
 from utils.risk import normalize_risk, risk_icon
 from utils.translations import t
@@ -12,7 +18,11 @@ from utils.translations import t
 # Load environment variables dari file .env
 load_dotenv()
 configure_logging()
-st.set_page_config(page_title="Local Digital Footprint & Privacy Auditor", page_icon="🛡️", layout="wide")
+st.set_page_config(
+    page_title="Local Digital Footprint & Privacy Auditor",
+    page_icon="🛡️",
+    layout="wide",
+)
 
 LANG_OPTIONS = {
     "English": "en",
@@ -27,7 +37,12 @@ LANG_OPTIONS = {
     "Nederlands": "nl",
     "日本語": "ja",
 }
-ENGINE_STATUS_ICONS = {"ok": "✅", "partial": "⚠️", "error": "❌", "skipped": "⏭️"}
+ENGINE_STATUS_ICONS = {
+    "ok": "✅",
+    "partial": "⚠️",
+    "error": "❌",
+    "skipped": "⏭️",
+}
 
 
 def _md_escape(text: str) -> str:
@@ -36,149 +51,30 @@ def _md_escape(text: str) -> str:
 
 
 def _finding_text(item: dict, lang: str) -> tuple[str, str]:
-    """Localized title/snippet. Database findings are rendered from structured fields
-    (the stored text is English and the cache is not language-specific)."""
+    """Localized title/snippet. Database findings are rendered from structured fields."""
     if item.get("kind") == "breach_db":
         title = (
             t("bd_title", lang=lang, name=item["dataset"])
             if item.get("dataset")
-            else t("bd_title_unknown", lang=lang, count=item.get("record_count", 0))
+            else t(
+                "bd_title_unknown",
+                lang=lang,
+                count=item.get("record_count", 0),
+            )
         )
-        return title, t("bd_password_yes" if item.get("has_password") else "bd_password_no", lang=lang)
+        return title, t(
+            "bd_password_yes" if item.get("has_password") else "bd_password_no",
+            lang=lang,
+        )
     return str(item.get("title", "")), str(item.get("snippet", ""))
 
 
 def _api_status(*keys: str) -> str:
-    return "🟢 Loaded" if all(os.getenv(key, "").strip() for key in keys) else "⚪ Off"
-
-
-# Setup Pilihan Bahasa awal di Session State
-st.session_state.setdefault("lang", "id")
-
-# Hapus cache yang sudah kedaluwarsa sekali per sesi (TTL hanya diperiksa saat cache dibaca).
-if not st.session_state.get("cache_purged"):
-    purge_expired_caches()
-    st.session_state["cache_purged"] = True
-
-# Sidebar Configuration
-with st.sidebar:
-    st.header("⚙️ Configuration / Konfigurasi")
-
-    # Cari index bahasa aktif di session state
-    current_lang_code = st.session_state.get("lang", "id")
-    options_list = list(LANG_OPTIONS)
-    default_index = next(
-        (idx for idx, code in enumerate(LANG_OPTIONS.values()) if code == current_lang_code),
-        0,
+    return (
+        "🟢 Loaded"
+        if all(os.getenv(key, "").strip() for key in keys)
+        else "⚪ Off"
     )
-
-    selected_lang_label = st.selectbox("🌐 Language / Bahasa", options=options_list, index=default_index)
-
-    # Simpan kode bahasa terpilih
-    lang = LANG_OPTIONS[selected_lang_label]
-    st.session_state["lang"] = lang
-
-    st.subheader(t("sidebar_config", lang=lang))
-
-    env_target_email = os.getenv("GMAIL_TARGET_ADDR", "")
-    target_email = st.text_input(
-        t("target_email", lang=lang),
-        value=env_target_email,
-        placeholder="email@gmail.com",
-        help=t("target_email_help", lang=lang),
-    )
-
-    env_target_phone = os.getenv("TARGET_PHONE_NUM", "")
-    target_phone = st.text_input(
-        t("target_phone", lang=lang),
-        value=env_target_phone,
-        placeholder="+6281234567890",
-        help=t("target_phone_help", lang=lang),
-    )
-
-    st.subheader(t("imap_title", lang=lang))
-    enable_imap = st.checkbox(t("enable_imap", lang=lang), value=True)
-
-    # Password dari .env dipakai di sisi server saja; nilainya tidak pernah dikirim ke browser.
-    env_gmail_pass = os.getenv("GMAIL_APP_PASSWORD", "")
-    gmail_app_password_input = st.text_input(
-        t("gmail_pass", lang=lang),
-        value="",
-        type="password",
-        help=t("gmail_pass_help", lang=lang),
-    )
-    if env_gmail_pass and not gmail_app_password_input:
-        st.caption(t("env_password_loaded", lang=lang))
-    gmail_app_password = gmail_app_password_input or env_gmail_pass
-
-    st.subheader(t("osint_title", lang=lang))
-    enable_osint = st.checkbox(t("enable_osint", lang=lang), value=True)
-    enable_breach = st.checkbox(t("enable_breach", lang=lang), value=True)
-    force_refresh_breach = st.checkbox(
-        t("force_refresh", lang=lang),
-        value=False,
-        help=t("force_refresh_help", lang=lang),
-    )
-
-    st.subheader(t("api_status_title", lang=lang))
-
-    gemini_count = sum(bool(os.getenv(f"GOOGLE_API_KEY_{i}", "").strip()) for i in range(1, 7))
-    has_groq = _api_status("GROQ_API_KEY")
-    has_openai = _api_status("OPENAI_API_KEY")
-    has_rapidapi = _api_status("RAPIDAPI_KEY")
-    has_hibp = _api_status("HIBP_API_KEY")
-    has_tavily = _api_status("TAVILY_API_KEY")
-    has_gsearch = _api_status("GOOGLE_SEARCH_API_KEY", "GOOGLE_CX_ID")
-
-    st.caption(f"• **Gemini Keys:** {gemini_count}/6 {t('keys_active', lang=lang)}")
-    st.caption(f"• **Groq API:** {has_groq}")
-    st.caption(f"• **OpenAI API:** {has_openai}")
-    st.caption(f"• **RapidAPI (BreachDB):** {has_rapidapi}")
-    st.caption(f"• **Have I Been Pwned API:** {has_hibp}")
-    st.caption(f"• **Google Custom Search:** {has_gsearch}")
-    st.caption(f"• **Tavily AI Search:** {has_tavily}")
-    st.caption("• **SearXNG & DDG:** 🟢 Active (Always Free)")
-
-    run_scan = st.button(t("btn_run", lang=lang), type="primary", width="stretch")
-
-    if st.button(t("btn_clear_cache", lang=lang), width="stretch"):
-        st.success(t("cache_cleared", lang=lang, count=clear_all_caches()))
-
-# Dashboard Main Header
-st.title(t("title", lang=lang))
-st.caption(t("caption", lang=lang))
-
-# Dashboard Logic Execution: scan sekali, simpan hasilnya di session_state.
-if run_scan:
-    if not target_email or not target_email.strip():
-        st.error(t("err_no_email", lang=lang))
-    else:
-        with st.spinner(t("spinner_processing", lang=lang)):
-            st.session_state["scan_state"] = run_scan_pipeline(
-                email=target_email,
-                phone=target_phone,
-                gmail_app_password=gmail_app_password,
-                enable_imap=enable_imap,
-                enable_osint=enable_osint,
-                enable_breach=enable_breach,
-                force_refresh=force_refresh_breach,
-                lang=lang,
-                tenant_id=get_tenant_id(),
-            )
-
-state = st.session_state.get("scan_state")
-
-# Ganti bahasa: hasil scan tetap, analisis AI (dan surat DSR) dibangun ulang dalam bahasa baru
-# (murah bila cache per-bahasa sudah ada).
-if state and state.get("ai_lang") != lang:
-    with st.spinner(t("spinner_ai", lang=lang)):
-        run_ai(state, lang)
-
-
-def render_events(scan_state: dict) -> None:
-    for event in scan_state["events"]:
-        message = event.get("text") or t(event["key"], lang=lang, **event.get("args", {}))
-        getattr(st, event["level"], st.info)(message)
 
 
 def render_breach(scan_state: dict) -> None:
@@ -190,7 +86,8 @@ def render_breach(scan_state: dict) -> None:
     engines_report = breach["engines"]
     cache_status_msg = t("cached_tag", lang=lang) if breach["cached"] else ""
     failed_engines = [
-        name for name, info in engines_report.items()
+        name
+        for name, info in engines_report.items()
         if info.get("status") in ("error", "partial")
     ]
 
@@ -238,24 +135,46 @@ def render_breach(scan_state: dict) -> None:
             for name, info in engines_report.items():
                 status = info.get("status", "error")
                 icon = ENGINE_STATUS_ICONS.get(status, "❔")
-                st.write(f"{icon} **{name}** — {t(f'engine_status_{status}', lang=lang)}")
+                st.write(
+                    f"{icon} **{name}** — "
+                    f"{t(f'engine_status_{status}', lang=lang)}"
+                )
 
     if findings:
         st.divider()
-        cache_badge = t("cache_badge_data", lang=lang) if breach["cached"] else t("cache_badge_live", lang=lang)
-        st.subheader(t("breach_details_title", lang=lang, cache_badge=cache_badge))
+        cache_badge = (
+            t("cache_badge_data", lang=lang)
+            if breach["cached"]
+            else t("cache_badge_live", lang=lang)
+        )
+        st.subheader(
+            t(
+                "breach_details_title",
+                lang=lang,
+                cache_badge=cache_badge,
+            )
+        )
 
-        with st.expander(t("expander_breach", lang=lang), expanded=True):
+        with st.expander(
+            t("expander_breach", lang=lang),
+            expanded=True,
+        ):
             for item in findings:
                 finding_title, finding_snippet = _finding_text(item, lang)
-                st.markdown(f"**[{_md_escape(finding_title)}]({item['url']})**")
+                st.markdown(
+                    f"**[{_md_escape(finding_title)}]({item['url']})**"
+                )
                 st.caption(
                     f"{t('source_label', lang=lang)}: {item['source']} | "
                     f"{t('link_label', lang=lang)}: {item['url']}"
                 )
                 st.write(finding_snippet)
+
                 if item.get("kind") != "breach_db":
-                    st.caption("⚠️ " + t("finding_unverified", lang=lang))
+                    st.caption(
+                        "⚠️ " + t("finding_unverified", lang=lang)
+                    )
+
                 st.divider()
 
 
@@ -265,16 +184,26 @@ def render_services(scan_state: dict) -> None:
         return
 
     st.divider()
-    st.subheader(t("services_count_title", lang=lang, count=len(services)))
+    st.subheader(
+        t(
+            "services_count_title",
+            lang=lang,
+            count=len(services),
+        )
+    )
 
-    df_display = pd.DataFrame(services).rename(
-        columns={
-            "name": t("col_service", lang=lang),
-            "domain": t("col_domain", lang=lang),
-            "source": t("col_source", lang=lang),
-            "subject": t("col_sample", lang=lang),
-        }
-    ).drop(columns=["service"], errors="ignore")
+    df_display = (
+        pd.DataFrame(services)
+        .rename(
+            columns={
+                "name": t("col_service", lang=lang),
+                "domain": t("col_domain", lang=lang),
+                "source": t("col_source", lang=lang),
+                "subject": t("col_sample", lang=lang),
+            }
+        )
+        .drop(columns=["service"], errors="ignore")
+    )
 
     st.dataframe(df_display, width="stretch")
 
@@ -294,14 +223,18 @@ def render_ai(scan_state: dict) -> None:
         )
     )
 
-    tab1, tab2 = st.tabs([t("tab_risk", lang=lang), t("tab_dsr", lang=lang)])
+    tab1, tab2 = st.tabs(
+        [
+            t("tab_risk", lang=lang),
+            t("tab_dsr", lang=lang),
+        ]
+    )
 
     with tab1:
         analysis_list = ai_output.get("analysis", [])
         exposures = ai_output.get("exposures", [])
 
         for item in analysis_list:
-            # Warna/label ditentukan oleh kunci kanonik, bukan teks berbahasa tertentu.
             risk_key = (
                 normalize_risk(item.get("risk_key"))
                 or normalize_risk(item.get("risk_level"))
@@ -311,10 +244,14 @@ def render_ai(scan_state: dict) -> None:
             delete_url = item.get("delete_url", "-")
 
             st.markdown(
-                f"**{risk_icon(risk_key)} {_md_escape(item.get('service', ''))}** - "
+                f"**{risk_icon(risk_key)} "
+                f"{_md_escape(item.get('service', ''))}** - "
                 f"*{t('risk_level_label', lang=lang)}: {risk_label}*"
             )
-            st.write(f"**{t('reason_label', lang=lang)}:** {item.get('reason')}")
+            st.write(
+                f"**{t('reason_label', lang=lang)}:** "
+                f"{item.get('reason')}"
+            )
 
             if item.get("evidence_count"):
                 st.caption(
@@ -328,8 +265,17 @@ def render_ai(scan_state: dict) -> None:
                 )
 
             if delete_url and delete_url != "-":
-                if isinstance(delete_url, str) and delete_url.startswith("https://"):
-                    st.markdown(t("delete_link_label", lang=lang, url=delete_url))
+                if (
+                    isinstance(delete_url, str)
+                    and delete_url.startswith("https://")
+                ):
+                    st.markdown(
+                        t(
+                            "delete_link_label",
+                            lang=lang,
+                            url=delete_url,
+                        )
+                    )
                 else:
                     st.write(f"🔗 {delete_url}")
 
@@ -339,22 +285,43 @@ def render_ai(scan_state: dict) -> None:
             st.write(t("no_risk_analysis", lang=lang))
 
         if exposures:
-            st.markdown(f"#### {t('exposures_title', lang=lang)}")
+            st.markdown(
+                f"#### {t('exposures_title', lang=lang)}"
+            )
+
             for exposure in exposures:
-                exp_key = normalize_risk(exposure.get("risk_key")) or "unknown"
-                exp_title, exp_snippet = _finding_text({"kind": "breach_db", **exposure}, lang)
+                exp_key = (
+                    normalize_risk(exposure.get("risk_key"))
+                    or "unknown"
+                )
+                exp_title, exp_snippet = _finding_text(
+                    {"kind": "breach_db", **exposure},
+                    lang,
+                )
+
                 st.markdown(
-                    f"**{risk_icon(exp_key)} {_md_escape(exp_title)}** - "
-                    f"*{t('risk_level_label', lang=lang)}: {t(f'risk_{exp_key}', lang=lang)}*"
+                    f"**{risk_icon(exp_key)} "
+                    f"{_md_escape(exp_title)}** - "
+                    f"*{t('risk_level_label', lang=lang)}: "
+                    f"{t(f'risk_{exp_key}', lang=lang)}*"
                 )
                 st.write(exp_snippet)
+
             st.info(t("exposure_action", lang=lang))
 
     with tab2:
         dsr_text = ai_output.get("dsr_template", "")
-        dsr_text = dsr_text.strip() if isinstance(dsr_text, str) else ""
+        dsr_text = (
+            dsr_text.strip()
+            if isinstance(dsr_text, str)
+            else ""
+        )
 
-        st.text_area(t("dsr_textarea_label", lang=lang), value=dsr_text, height=350)
+        st.text_area(
+            t("dsr_textarea_label", lang=lang),
+            value=dsr_text,
+            height=350,
+        )
         st.download_button(
             label=t("dsr_download_btn", lang=lang),
             data=dsr_text,
@@ -363,8 +330,290 @@ def render_ai(scan_state: dict) -> None:
         )
 
 
-if state:
-    render_events(state)
+# Setup Pilihan Bahasa awal di Session State
+st.session_state.setdefault("lang", "id")
+
+# Hapus cache yang sudah kedaluwarsa sekali per sesi.
+if not st.session_state.get("cache_purged"):
+    purge_expired_caches()
+    st.session_state["cache_purged"] = True
+
+# Sidebar Configuration
+with st.sidebar:
+    st.header("⚙️ Configuration / Konfigurasi")
+
+    current_lang_code = st.session_state.get("lang", "id")
+    options_list = list(LANG_OPTIONS)
+    default_index = next(
+        (
+            idx
+            for idx, code in enumerate(LANG_OPTIONS.values())
+            if code == current_lang_code
+        ),
+        0,
+    )
+
+    selected_lang_label = st.selectbox(
+        "🌐 Language / Bahasa",
+        options=options_list,
+        index=default_index,
+    )
+
+    lang = LANG_OPTIONS[selected_lang_label]
+    st.session_state["lang"] = lang
+
+    st.subheader(t("sidebar_config", lang=lang))
+
+    env_target_email = os.getenv("GMAIL_TARGET_ADDR", "")
+    target_email = st.text_input(
+        t("target_email", lang=lang),
+        value=env_target_email,
+        placeholder="email@gmail.com",
+        help=t("target_email_help", lang=lang),
+    )
+
+    env_target_phone = os.getenv("TARGET_PHONE_NUM", "")
+    target_phone = st.text_input(
+        t("target_phone", lang=lang),
+        value=env_target_phone,
+        placeholder="+6281234567890",
+        help=t("target_phone_help", lang=lang),
+    )
+
+    st.subheader(t("imap_title", lang=lang))
+    enable_imap = st.checkbox(
+        t("enable_imap", lang=lang),
+        value=True,
+    )
+
+    # Password dari .env dipakai di sisi server saja; nilainya tidak pernah dikirim ke browser.
+    env_gmail_pass = os.getenv("GMAIL_APP_PASSWORD", "")
+    gmail_app_password_input = st.text_input(
+        t("gmail_pass", lang=lang),
+        value="",
+        type="password",
+        help=t("gmail_pass_help", lang=lang),
+    )
+
+    if env_gmail_pass and not gmail_app_password_input:
+        st.caption(t("env_password_loaded", lang=lang))
+
+    gmail_app_password = (
+        gmail_app_password_input or env_gmail_pass
+    )
+
+    st.subheader(t("osint_title", lang=lang))
+    enable_osint = st.checkbox(
+        t("enable_osint", lang=lang),
+        value=True,
+    )
+    enable_breach = st.checkbox(
+        t("enable_breach", lang=lang),
+        value=True,
+    )
+    force_refresh_breach = st.checkbox(
+        t("force_refresh", lang=lang),
+        value=False,
+        help=t("force_refresh_help", lang=lang),
+    )
+
+    st.subheader(t("api_status_title", lang=lang))
+
+    gemini_count = sum(
+        bool(os.getenv(f"GOOGLE_API_KEY_{i}", "").strip())
+        for i in range(1, 7)
+    )
+    has_groq = _api_status("GROQ_API_KEY")
+    has_openai = _api_status("OPENAI_API_KEY")
+    has_rapidapi = _api_status("RAPIDAPI_KEY")
+    has_hibp = _api_status("HIBP_API_KEY")
+    has_tavily = _api_status("TAVILY_API_KEY")
+    has_gsearch = _api_status(
+        "GOOGLE_SEARCH_API_KEY",
+        "GOOGLE_CX_ID",
+    )
+
+    st.caption(
+        f"• **Gemini Keys:** {gemini_count}/6 "
+        f"{t('keys_active', lang=lang)}"
+    )
+    st.caption(f"• **Groq API:** {has_groq}")
+    st.caption(f"• **OpenAI API:** {has_openai}")
+    st.caption(f"• **RapidAPI (BreachDB):** {has_rapidapi}")
+    st.caption(f"• **Have I Been Pwned API:** {has_hibp}")
+    st.caption(f"• **Google Custom Search:** {has_gsearch}")
+    st.caption(f"• **Tavily AI Search:** {has_tavily}")
+    st.caption("• **SearXNG & DDG:** 🟢 Active (Always Free)")
+
+    run_scan = st.button(
+        t("btn_run", lang=lang),
+        type="primary",
+        width="stretch",
+    )
+
+    if st.button(
+        t("btn_clear_cache", lang=lang),
+        width="stretch",
+    ):
+        st.success(
+            t(
+                "cache_cleared",
+                lang=lang,
+                count=clear_all_caches(),
+            )
+        )
+
+# Dashboard Main Header
+st.title(t("title", lang=lang))
+st.caption(t("caption", lang=lang))
+
+# Dashboard Logic Execution.
+# Saat scan berjalan, hasil setiap stage langsung ditampilkan.
+scan_executed = False
+
+if run_scan:
+    if not target_email or not target_email.strip():
+        st.error(t("err_no_email", lang=lang))
+    else:
+        scan_executed = True
+
+        live_area = st.container()
+        live_state = {
+            "email": target_email.strip(),
+            "phone": target_phone.strip(),
+            "services": [],
+            "breach": {
+                "enabled": bool(enable_breach),
+                "findings": [],
+                "engine": "None",
+                "cached": False,
+                "engines": {},
+                "complete": False,
+                "error": None,
+            },
+            "ai": None,
+        }
+
+        ui_state = {
+            "ai_status": None,
+        }
+
+        def push_event(event: dict) -> None:
+            stage = event.get("stage")
+            live_data = event.get("_live", {})
+
+            # Breach selesai: tampilkan hasil breach secara langsung.
+            if stage == "breach" and "breach" in live_data:
+                live_state["breach"] = live_data["breach"]
+                with live_area:
+                    render_breach(live_state)
+                return
+
+            # AI:
+            # Event pertama hanya menampilkan services lalu status AI.
+            # Hasil AI sendiri disimpan dan baru dirender setelah pipeline selesai.
+            if stage == "ai":
+                if "ai" in live_data:
+                    live_state["ai"] = live_data["ai"]
+
+                    ai_status = ui_state.get("ai_status")
+                    if ai_status is not None:
+                        ai_status.empty()
+
+                    return
+
+                with live_area:
+                    render_services(live_state)
+
+                    ai_status = st.empty()
+                    ui_state["ai_status"] = ai_status
+
+                    message = event.get("text")
+                    if not message and event.get("key"):
+                        message = t(
+                            event["key"],
+                            lang=lang,
+                            **event.get("args", {}),
+                        )
+
+                    if message:
+                        level = event.get("level", "info")
+                        with ai_status.container():
+                            getattr(st, level, st.info)(message)
+
+                return
+
+            # Progress/status event untuk stage lain.
+            message = event.get("text")
+            if not message and event.get("key"):
+                message = t(
+                    event["key"],
+                    lang=lang,
+                    **event.get("args", {}),
+                )
+
+            if message:
+                level = event.get("level", "info")
+                with live_area:
+                    getattr(st, level, st.info)(message)
+
+            # Hasil IMAP/OSINT dikumpulkan untuk ditampilkan ketika
+            # stage AI dimulai.
+            if stage in ("imap", "osint") and "services" in live_data:
+                live_state["services"].extend(live_data["services"])
+
+        with st.spinner(t("spinner_processing", lang=lang)):
+            final_state = run_scan_pipeline(
+                email=target_email,
+                phone=target_phone,
+                gmail_app_password=gmail_app_password,
+                enable_imap=enable_imap,
+                enable_osint=enable_osint,
+                enable_breach=enable_breach,
+                force_refresh=force_refresh_breach,
+                lang=lang,
+                tenant_id=get_tenant_id(),
+                on_event=push_event,
+            )
+
+        # Simpan hasil final hanya setelah seluruh pipeline selesai.
+        st.session_state["scan_state"] = final_state
+
+        # Jangan biarkan status awal AI tetap tertinggal di UI.
+        ai_status = ui_state.get("ai_status")
+        if ai_status is not None:
+            ai_status.empty()
+
+        # Render hasil AI final setelah pipeline benar-benar return.
+        if final_state.get("ai"):
+            with live_area:
+                render_ai(final_state)
+
+        # Jika AI tidak berjalan / tidak menghasilkan output,
+        # tetap tampilkan hasil service jika belum ada hasil.
+        elif (
+            not final_state["services"]
+            and not final_state["breach"]["findings"]
+        ):
+            with live_area:
+                st.warning(t("warn_no_services", lang=lang))
+
+
+state = st.session_state.get("scan_state")
+
+# Ganti bahasa: hasil scan tetap, analisis AI dibangun ulang
+# dalam bahasa baru.
+if state and state.get("ai_lang") != lang:
+    with st.spinner(t("spinner_ai", lang=lang)):
+        run_ai(state, lang)
+
+
+# Pada rerun berikutnya (download, ganti bahasa, clear cache, dll.),
+# render ulang hasil yang tersimpan di session_state.
+#
+# Pada run scan pertama, hasil sudah ditampilkan secara live oleh callback,
+# sehingga tidak dirender ulang dan tidak terjadi duplikasi.
+if state and not scan_executed:
     render_breach(state)
 
     if not state["services"] and not state["breach"]["findings"]:

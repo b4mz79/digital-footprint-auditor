@@ -5,10 +5,14 @@
 *.patch
 #test_*.py
 .env.example-v*
+*.bak
+pandoc.exe
 
 # Python Cache
 __pycache__/
 services/__pycache__/
+services/breach/__pycache__/
+utils/__pycache__/
 *.py[cod]
 *$py.class
 .venv/
@@ -30,3 +34,5 @@ safe_services.json
 *-v*.py
 *-v*.txt
 *.zip
+build/
+dist/

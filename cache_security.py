@@ -78,6 +78,7 @@ def _get_windows_user_sid() -> str:
         text=True,
         check=True,
         timeout=5,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )
     line = result.stdout.strip()
     # CSV output is normally: "DOMAIN\\user","S-1-..."
@@ -109,6 +110,7 @@ def set_secure_file_permissions(file_path: Path) -> None:
                 text=True,
                 check=True,
                 timeout=5,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
             subprocess.run(
                 [
@@ -123,6 +125,7 @@ def set_secure_file_permissions(file_path: Path) -> None:
                 text=True,
                 check=True,
                 timeout=5,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
             return
 

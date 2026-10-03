@@ -10,7 +10,6 @@ cryptography>=42         # imported by cache_security.py (was missing from the l
 google-genai
 groq
 openai>=1.0
-ddgs
 phonenumbers>=8.13
 requests
 googlesearch-python

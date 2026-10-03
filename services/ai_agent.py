@@ -8,8 +8,8 @@ import json
 import logging
 import os
 import re
-import shutil
 import subprocess
+import shutil
 import time
 import urllib.parse
 import weakref
@@ -720,6 +720,7 @@ def _get_wsl_host_ip() -> str:
             text=True,
             check=True,
             timeout=3,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         for line in result.stdout.splitlines():
             parts = line.split()
@@ -1538,7 +1539,8 @@ async def analyze_smart_cache(
                     phone,
                     lang,
                 )
-
+            logger.info("[AICache] Memuat hasil analisis dari Local Cache.")
+            logger.info("AI Audit Selesai (%s, CACHE) dalam %.2f detik.", cached_result.get("provider_used", "Unknown"), time.monotonic() - start_time)
             return cached_result
 
     # -------------------------------------------------------------------------
