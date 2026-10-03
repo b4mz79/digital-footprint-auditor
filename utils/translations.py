@@ -55,7 +55,7 @@ TRANSLATIONS = {
         "no_risk_analysis": "Tidak ada analisis risiko yang dihasilkan.",
         "dsr_textarea_label": "Salin Draf Surat di bawah ini (Rujukan UU PDP No. 27/2022):",
         "dsr_download_btn": "📄 Download Draf Surat (.txt)",
-        "active_account_osint": "Akun Terdeteksi Aktif",
+        "active_account_osint": "Indikasi akun terdeteksi",
         "source_osint": "OSINT Checker (Holehe)",
         "source_imap": "Gmail IMAP Scan",
         "cache_badge_data": "⚡ (Data Cache)",
