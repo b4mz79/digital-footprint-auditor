@@ -884,7 +884,7 @@ async def call_ollama_async(prompt: str, sys_prompt: str) -> str:
     payload = {
         "model": model_name,
         "prompt": f"{sys_prompt}\n\n{prompt}",
-        "stream": False,
+        "stream": True,
         "format": "json",
         "options": {"num_predict": MAX_LLM_OUTPUT_TOKENS},
     }
@@ -902,14 +902,36 @@ async def call_ollama_async(prompt: str, sys_prompt: str) -> str:
         follow_redirects=False,
         trust_env=TRUST_ENV_FOR_OLLAMA,
     ) as client:
-        response = await client.post(url, json=payload)
-        response.raise_for_status()
-        if len(response.content) > 8 * 1024 * 1024:
-            raise ValueError("Ollama response terlalu besar.")
-        data = response.json()
-        if not isinstance(data, dict):
-            raise ValueError("Ollama response invalid.")
-        return str(data.get("response", ""))[:MAX_RAW_LLM_RESPONSE]
+        chunks: list[str] = []
+        total_chars = 0
+
+        async with client.stream("POST", url, json=payload) as response:
+            response.raise_for_status()
+
+            async for line in response.aiter_lines():
+                if not line:
+                    continue
+                try:
+                    data = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    raise ValueError("Ollama response invalid.") from exc
+
+                if not isinstance(data, dict):
+                    raise ValueError("Ollama response invalid.")
+
+                fragment = str(data.get("response", ""))
+                if fragment:
+                    remaining = MAX_RAW_LLM_RESPONSE - total_chars
+                    if remaining <= 0:
+                        raise ValueError("Ollama response terlalu besar.")
+                    fragment = fragment[:remaining]
+                    chunks.append(fragment)
+                    total_chars += len(fragment)
+
+                if data.get("done") is True:
+                    break
+
+        return "".join(chunks)
 
 
 # =============================================================================
