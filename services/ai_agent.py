@@ -1433,11 +1433,75 @@ def _find_analysis_item(by_name: dict[str, dict], key: str) -> dict | None:
     return None
 
 
+MAX_EVIDENCE_LINKS_PER_SERVICE = 10
+
+
+def _evidence_ids_for_service(
+    svc: dict,
+    evidence_records: list | None,
+) -> list[str]:
+    """Link analysis to evidence deterministically using service/domain lineage."""
+    if not isinstance(evidence_records, list):
+        return []
+
+    service_name = _norm(_service_name(svc))
+    service_domain = _norm(root_domain(str(svc.get("domain", "") or "")))
+    linked: list[str] = []
+    seen: set[str] = set()
+
+    for raw in evidence_records:
+        if not isinstance(raw, dict):
+            continue
+
+        evidence_id = _safe_component(str(raw.get("evidence_id", "") or ""), 128)
+        if not evidence_id or evidence_id in seen:
+            continue
+
+        evidence_domain = _norm(root_domain(str(raw.get("domain", "") or "")))
+        provenance = raw.get("provenance")
+        provenance = provenance if isinstance(provenance, dict) else {}
+        evidence_service = _norm(provenance.get("service_name"))
+
+        domain_match = bool(service_domain and evidence_domain and service_domain == evidence_domain)
+        service_match = bool(service_name and evidence_service and service_name == evidence_service)
+
+        if domain_match or service_match:
+            linked.append(evidence_id)
+            seen.add(evidence_id)
+            if len(linked) >= MAX_EVIDENCE_LINKS_PER_SERVICE:
+                break
+
+    return linked
+
+
+def _attach_evidence_lineage(
+    analysis: list[dict],
+    services: list[dict],
+    evidence_records: list | None,
+) -> list[dict]:
+    """Add deterministic evidence IDs to finalized analysis items."""
+    by_name = {_norm(_service_name(item)): item for item in services}
+    enriched: list[dict] = []
+
+    for item in analysis:
+        result = dict(item)
+        service = _norm(result.get("service"))
+        svc = by_name.get(service)
+        if svc is None:
+            result["evidence_ids"] = []
+        else:
+            result["evidence_ids"] = _evidence_ids_for_service(svc, evidence_records)
+        enriched.append(result)
+
+    return enriched
+
+
 def _finalize_analysis(
     analysis: list[dict],
     services: list[dict],
     findings: list[dict],
     lang: str,
+    evidence_records: list | None = None,
 ) -> tuple[list[dict], list[dict]]:
     """Guarantee (1) every detected service appears once, (2) breach evidence sets a minimum
     risk that the model cannot lower, (3) breach datasets not tied to a service are surfaced."""
@@ -1708,9 +1772,14 @@ async def analyze_smart_cache(
                 services,
                 findings,
                 lang,
+                evidence_records=evidence,
             )
 
-            parsed_data["analysis"] = analysis
+            parsed_data["analysis"] = _attach_evidence_lineage(
+                analysis,
+                services,
+                evidence,
+            )
             parsed_data["exposures"] = exposures
             parsed_data["provider_used"] = provider_used
             parsed_data["is_from_cache"] = False
@@ -1757,6 +1826,7 @@ async def analyze_smart_cache(
                 services,
                 findings,
                 lang,
+                evidence_records=evidence,
             )
 
             fallback_result = {
@@ -1807,6 +1877,7 @@ async def analyze_smart_cache(
         services,
         findings,
         lang,
+        evidence_records=evidence,
     )
 
     fallback_result = {
@@ -1815,7 +1886,7 @@ async def analyze_smart_cache(
             "(Offline Fallback)"
         ),
         "is_from_cache": False,
-        "analysis": analysis,
+        "analysis": _attach_evidence_lineage(analysis, services, evidence),
         "exposures": exposures,
         "dsr_template": load_local_dsr_template(
             email,
