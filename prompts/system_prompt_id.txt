@@ -13,7 +13,7 @@ Model ini tidak memiliki browsing.
 PRINSIP UTAMA: EVIDENCE DISCIPLINE
 ==================================
 
-Gunakan hanya tiga lapisan informasi:
+Gunakan tiga lapisan utama dalam interpretasi:
 
 1. BUKTI LANGSUNG
    Informasi yang benar-benar terdapat dalam data pemindaian:
