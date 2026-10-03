@@ -179,6 +179,7 @@ MAX_LLM_OUTPUT_TOKENS = _env_non_negative_int("MAX_LLM_OUTPUT_TOKENS", 4096, 16_
 EXPOSE_CACHE_PATH = _env_bool("EXPOSE_CACHE_PATH", False)
 ALLOW_REMOTE_OLLAMA = _env_bool("OLLAMA_ALLOW_REMOTE", False)
 TRUST_ENV_FOR_OLLAMA = _env_bool("OLLAMA_TRUST_ENV", False)
+CACHE_WRITE_TIMEOUT_SECONDS = _env_positive_float("AI_CACHE_WRITE_TIMEOUT_SECONDS", 15.0, 60.0)
 
 # =============================================================================
 # Logging security (shared implementation in utils/logging_setup.py)
@@ -406,6 +407,7 @@ def save_analysis_cache_ext(
     tenant_id: str = "default",
 ) -> None:
     try:
+        logger.info("[AICache] Menyimpan analysis cache...")
         cache_file = get_cache_filepath_ext(email, phone, lang, tenant_id)
         save_encrypted_json(cache_file, data, tenant_id=_validate_tenant_id(tenant_id))
         if os.name == "posix":
@@ -1791,13 +1793,26 @@ async def analyze_smart_cache(
                 lang,
             )
 
-            save_analysis_cache_ext(
-                email,
-                parsed_data,
-                phone,
-                lang=lang,
-                tenant_id=tenant_id,
-            )
+            logger.info("[AIAgent] Post-processing selesai; cache write dimulai.")
+            try:
+                await asyncio.wait_for(
+                    asyncio.to_thread(
+                        save_analysis_cache_ext,
+                        email,
+                        parsed_data,
+                        phone,
+                        lang,
+                        tenant_id,
+                    ),
+                    timeout=CACHE_WRITE_TIMEOUT_SECONDS,
+                )
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "[AICache] Cache write melewati timeout %.1fs; "
+                    "AI result tetap dikembalikan.",
+                    CACHE_WRITE_TIMEOUT_SECONDS,
+                )
+            logger.info("[AIAgent] Cache write phase selesai.")
 
             elapsed = time.monotonic() - start_time
 
