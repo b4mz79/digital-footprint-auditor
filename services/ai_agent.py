@@ -10,6 +10,7 @@ import os
 import re
 import subprocess
 import shutil
+import threading
 import time
 import urllib.parse
 import weakref
@@ -1793,26 +1794,64 @@ async def analyze_smart_cache(
                 lang,
             )
 
-            logger.info("[AIAgent] Post-processing selesai; cache write dimulai.")
-            try:
-                await asyncio.wait_for(
-                    asyncio.to_thread(
-                        save_analysis_cache_ext,
+            logger.info("[AIAgent] Post-processing: finalize analysis dimulai.")
+            analysis, exposures = _finalize_analysis(
+                parsed_data["analysis"],
+                services,
+                findings,
+                lang,
+                evidence_records=evidence,
+            )
+            logger.info(
+                "[AIAgent] Post-processing: finalize analysis selesai (%d items, %d exposures).",
+                len(analysis),
+                len(exposures),
+            )
+
+            parsed_data["analysis"] = _attach_evidence_lineage(
+                analysis,
+                services,
+                evidence,
+            )
+            logger.info("[AIAgent] Post-processing: evidence lineage selesai.")
+
+            parsed_data["exposures"] = exposures
+            parsed_data["provider_used"] = provider_used
+            parsed_data["is_from_cache"] = False
+            parsed_data["input_fp"] = fingerprint
+            parsed_data["dsr_template"] = load_local_dsr_template(
+                email,
+                services,
+                phone,
+                lang,
+            )
+            logger.info("[AIAgent] Post-processing: DSR template selesai.")
+
+            # Cache is deliberately best-effort and must never block delivery of
+            # an otherwise valid AI result. A daemon thread prevents asyncio.run()
+            # from waiting on a blocked filesystem/ACL operation during shutdown.
+            def _cache_worker() -> None:
+                try:
+                    save_analysis_cache_ext(
                         email,
                         parsed_data,
                         phone,
-                        lang,
-                        tenant_id,
-                    ),
-                    timeout=CACHE_WRITE_TIMEOUT_SECONDS,
-                )
-            except asyncio.TimeoutError:
-                logger.warning(
-                    "[AICache] Cache write melewati timeout %.1fs; "
-                    "AI result tetap dikembalikan.",
-                    CACHE_WRITE_TIMEOUT_SECONDS,
-                )
-            logger.info("[AIAgent] Cache write phase selesai.")
+                        lang=lang,
+                        tenant_id=tenant_id,
+                    )
+                    logger.info("[AICache] Background cache write selesai.")
+                except Exception as exc:
+                    logger.warning(
+                        "[AICache] Background cache write gagal: %s",
+                        type(exc).__name__,
+                    )
+
+            threading.Thread(
+                target=_cache_worker,
+                name="PrivacyAuditor-AICache",
+                daemon=True,
+            ).start()
+            logger.info("[AIAgent] Cache write dispatched; result tidak menunggu cache.")
 
             elapsed = time.monotonic() - start_time
 
