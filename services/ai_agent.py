@@ -877,13 +877,84 @@ def _validate_ollama_url(value: str) -> str:
         raise ValueError("OLLAMA_HOST tidak valid.") from exc
 
 
+def _compact_ollama_prompt(prompt: str) -> str:
+    """Reduce local-model prefill cost without changing the cloud provider prompt."""
+    max_chars = _env_non_negative_int("OLLAMA_MAX_PROMPT_CHARS", 24_000) or 24_000
+    max_services = _env_non_negative_int("OLLAMA_MAX_SERVICES", 20) or 20
+    max_evidence = _env_non_negative_int("OLLAMA_MAX_EVIDENCE", 30) or 30
+
+    prompt = str(prompt or "")
+    if len(prompt) <= max_chars:
+        return prompt
+
+    def _replace_json_block(
+        text: str,
+        open_tag: str,
+        close_tag: str,
+        max_items: int,
+    ) -> str:
+        pattern = re.compile(
+            rf"({re.escape(open_tag)}\s*)(.*?)(\s*{re.escape(close_tag)})",
+            re.DOTALL,
+        )
+        match = pattern.search(text)
+        if not match:
+            return text
+
+        try:
+            items = json.loads(match.group(2))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return text
+
+        if not isinstance(items, list):
+            return text
+
+        compact = json.dumps(
+            items[:max_items],
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        return text[:match.start(2)] + compact + text[match.end(2):]
+
+    compacted = _replace_json_block(
+        prompt,
+        "<UNTRUSTED_SCAN_DATA>",
+        "</UNTRUSTED_SCAN_DATA>",
+        max_services,
+    )
+    compacted = _replace_json_block(
+        compacted,
+        "<UNTRUSTED_EVIDENCE>",
+        "</UNTRUSTED_EVIDENCE>",
+        max_evidence,
+    )
+
+    if len(compacted) <= max_chars:
+        logger.info(
+            "[Ollama Local] Prompt compacted: %d -> %d chars.",
+            len(prompt),
+            len(compacted),
+        )
+        return compacted
+
+    capped = compacted[:max_chars]
+    logger.warning(
+        "[Ollama Local] Prompt masih besar setelah compaction: %d chars; "
+        "dipotong ke %d chars.",
+        len(compacted),
+        max_chars,
+    )
+    return capped
+
+
 async def call_ollama_async(prompt: str, sys_prompt: str) -> str:
     model_name = _safe_component(os.getenv("OLLAMA_MODEL", "qwen2.5:3b"), 200)
     base_url = _validate_ollama_url(os.getenv("OLLAMA_HOST", ""))
     url = f"{base_url}/api/generate"
+    local_prompt = _compact_ollama_prompt(prompt)
     payload = {
         "model": model_name,
-        "prompt": f"{sys_prompt}\n\n{prompt}",
+        "prompt": f"{sys_prompt}\n\n{local_prompt}",
         "stream": True,
         "format": "json",
         "options": {"num_predict": MAX_LLM_OUTPUT_TOKENS},
