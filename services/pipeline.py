@@ -222,6 +222,7 @@ def run_ai(
                 lang=lang,
                 tenant_id=state["tenant_id"],
                 breach_findings=findings,
+                evidence_records=state.get("evidence", []),
             )
         )
         emit(
