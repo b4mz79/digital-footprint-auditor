@@ -562,19 +562,26 @@ if run_scan:
             if stage in ("imap", "osint") and "services" in live_data:
                 live_state["services"].extend(live_data["services"])
 
-        with st.spinner(t("spinner_processing", lang=lang)):
-            final_state = run_scan_pipeline(
-                email=target_email,
-                phone=target_phone,
-                gmail_app_password=gmail_app_password,
-                enable_imap=enable_imap,
-                enable_osint=enable_osint,
-                enable_breach=enable_breach,
-                force_refresh=force_refresh_breach,
-                lang=lang,
-                tenant_id=get_tenant_id(),
-                on_event=push_event,
-            )
+        # Avoid wrapping the whole synchronous pipeline in st.spinner().
+        # The callback already renders live stage updates; a plain placeholder
+        # has a deterministic lifecycle and is explicitly cleared after return.
+        processing_status = st.empty()
+        processing_status.info(t("spinner_processing", lang=lang))
+
+        final_state = run_scan_pipeline(
+            email=target_email,
+            phone=target_phone,
+            gmail_app_password=gmail_app_password,
+            enable_imap=enable_imap,
+            enable_osint=enable_osint,
+            enable_breach=enable_breach,
+            force_refresh=force_refresh_breach,
+            lang=lang,
+            tenant_id=get_tenant_id(),
+            on_event=push_event,
+        )
+
+        processing_status.empty()
 
         # Simpan hasil final hanya setelah seluruh pipeline selesai.
         st.session_state["scan_state"] = final_state
