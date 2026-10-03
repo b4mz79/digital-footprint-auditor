@@ -963,7 +963,7 @@ def _build_ollama_fast_system_prompt(lang: str) -> str:
 
 
 async def call_ollama_async(prompt: str, sys_prompt: str, lang: str = "id") -> str:
-    model_name = _safe_component(os.getenv("OLLAMA_MODEL", "qwen2.5:3b"), 200)
+    model_name = _safe_component(os.getenv("OLLAMA_MODEL", "qwen2.5:1.5b-instruct"), 200)
     base_url = _validate_ollama_url(os.getenv("OLLAMA_HOST", ""))
     url = f"{base_url}/api/generate"
     local_prompt = _compact_ollama_prompt(prompt)
@@ -1030,7 +1030,7 @@ async def call_ollama_async(prompt: str, sys_prompt: str, lang: str = "id") -> s
 # =============================================================================
 
 _KNOWN_PROVIDERS = {"gemini", "groq", "openai", "ollama"}
-_DEFAULT_PROVIDER_ORDER = ["gemini", "groq", "openai"]
+_DEFAULT_PROVIDER_ORDER = ["gemini", "groq", "openai", "ollama"]
 
 
 def _provider_order() -> list[str]:
