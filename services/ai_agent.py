@@ -879,9 +879,9 @@ def _validate_ollama_url(value: str) -> str:
 
 def _compact_ollama_prompt(prompt: str) -> str:
     """Reduce local-model prefill cost without changing the cloud provider prompt."""
-    max_chars = _env_non_negative_int("OLLAMA_MAX_PROMPT_CHARS", 24_000, 60_000) or 24_000
-    max_services = _env_non_negative_int("OLLAMA_MAX_SERVICES", 20, MAX_FOUND_SERVICES) or 20
-    max_evidence = _env_non_negative_int("OLLAMA_MAX_EVIDENCE", 30, MAX_EVIDENCE_RECORDS) or 30
+    max_chars = _env_non_negative_int("OLLAMA_MAX_PROMPT_CHARS", 12_000, 60_000) or 24_000
+    max_services = _env_non_negative_int("OLLAMA_MAX_SERVICES", 12, MAX_FOUND_SERVICES) or 20
+    max_evidence = _env_non_negative_int("OLLAMA_MAX_EVIDENCE", 16, MAX_EVIDENCE_RECORDS) or 30
 
     prompt = str(prompt or "")
     if len(prompt) <= max_chars:
@@ -952,12 +952,17 @@ async def call_ollama_async(prompt: str, sys_prompt: str) -> str:
     base_url = _validate_ollama_url(os.getenv("OLLAMA_HOST", ""))
     url = f"{base_url}/api/generate"
     local_prompt = _compact_ollama_prompt(prompt)
+    ollama_num_ctx = _env_non_negative_int("OLLAMA_NUM_CTX", 8192, 32768) or 8192
+    ollama_num_predict = _env_non_negative_int("OLLAMA_NUM_PREDICT", 1024, MAX_LLM_OUTPUT_TOKENS) or 1024
     payload = {
         "model": model_name,
         "prompt": f"{sys_prompt}\n\n{local_prompt}",
         "stream": True,
         "format": "json",
-        "options": {"num_predict": MAX_LLM_OUTPUT_TOKENS},
+        "options": {
+            "num_ctx": ollama_num_ctx,
+            "num_predict": ollama_num_predict,
+        },
     }
     timeout = httpx.Timeout(
         connect=30.0,
