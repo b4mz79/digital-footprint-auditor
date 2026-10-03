@@ -136,3 +136,20 @@ def test_evidence_lineage_is_attached_deterministically() -> None:
     )
 
     assert linked[0]["evidence_ids"] == ["direct-1", "context-1"]
+
+
+def test_build_user_prompt_marks_incomplete_breach_scan() -> None:
+    prompt = ai_agent.build_user_prompt(
+        "user@example.org",
+        [{"name": "Example", "domain": "example.com", "source": "OSINT"}],
+        scan_status={
+            "breach_scan_complete": False,
+            "failed_engines": ["BreachDirectory", "DuckDuckGo"],
+        },
+    )
+
+    assert "<SCAN_STATUS>" in prompt
+    assert '"breach_scan_complete":false' in prompt
+    assert "BreachDirectory" in prompt
+    assert "DuckDuckGo" in prompt
+    assert "do not describe the absence of breach findings" in prompt
