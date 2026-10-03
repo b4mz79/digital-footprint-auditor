@@ -7,6 +7,7 @@ enriched, scored, and explained.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import re
 from typing import Any, Iterable
 
 from services.evidence.models import (
@@ -15,11 +16,16 @@ from services.evidence.models import (
     EvidenceRelation,
     make_evidence_id,
 )
-from services.evidence.security_publications import normalize_domain
-
+from utils.domains import root_domain
 
 _MAX_TEXT = 512
 _MAX_SUMMARY = 2_000
+_DOMAIN_RE = re.compile(
+    r"^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$",
+    re.IGNORECASE,
+)
+_EMAIL_RE = re.compile(r"(?i)\b[a-z0-9_.+-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+\b")
+_LONG_PHONE_RE = re.compile(r"(?<!\w)\+?[0-9][0-9 .()\-]{7,}[0-9](?!\w)")
 
 
 def _utc_now() -> str:
@@ -28,6 +34,13 @@ def _utc_now() -> str:
 
 def _text(value: Any, limit: int) -> str:
     return " ".join(str(value or "").split())[:limit]
+
+
+def _redact_text(value: Any, limit: int) -> str:
+    text = _text(value, limit)
+    text = _EMAIL_RE.sub("[EMAIL_REDACTED]", text)
+    text = _LONG_PHONE_RE.sub("[PHONE_REDACTED]", text)
+    return text[:limit]
 
 
 def _source_type(source: str) -> str:
@@ -39,14 +52,13 @@ def _source_type(source: str) -> str:
     return "scanner"
 
 
-def _is_valid_domain(domain: str) -> bool:
-    if not domain:
-        return False
-    try:
-        normalize_domain(domain)
-    except ValueError:
-        return False
-    return True
+def _normalize_observed_domain(value: Any) -> str:
+    domain = _text(value, 253).lower().rstrip(".")
+    if not domain or "@" in domain or any(ch.isspace() for ch in domain):
+        return ""
+    if not _DOMAIN_RE.fullmatch(domain):
+        return ""
+    return root_domain(domain)
 
 
 def service_findings_to_evidence(
@@ -67,14 +79,13 @@ def service_findings_to_evidence(
         if not isinstance(item, dict):
             continue
 
-        domain = _text(item.get("domain"), 253).lower().rstrip(".")
-        if not _is_valid_domain(domain):
+        domain = _normalize_observed_domain(item.get("domain"))
+        if not domain:
             continue
-        domain = normalize_domain(domain)
 
-        name = _text(item.get("name"), _MAX_TEXT) or domain
-        source = _text(item.get("source"), _MAX_TEXT) or "Unknown scanner"
-        subject = _text(item.get("subject"), _MAX_SUMMARY)
+        name = _redact_text(item.get("name"), _MAX_TEXT) or domain
+        source = _redact_text(item.get("source"), _MAX_TEXT) or "Unknown scanner"
+        subject = _redact_text(item.get("subject"), _MAX_SUMMARY)
         source_type = _source_type(source)
 
         evidence_id = make_evidence_id(
