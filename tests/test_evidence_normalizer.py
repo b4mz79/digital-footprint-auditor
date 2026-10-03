@@ -60,3 +60,23 @@ def test_invalid_service_domains_are_not_promoted_to_evidence() -> None:
     )
 
     assert records == []
+
+
+def test_service_evidence_redacts_pii_from_untrusted_text() -> None:
+    records = service_findings_to_evidence(
+        [
+            {
+                "name": "Example",
+                "domain": "example123456789.com",
+                "source": "OSINT / Holehe",
+                "subject": "Account user@example.org phone +62 812-3456-7890",
+            }
+        ]
+    )
+
+    assert len(records) == 1
+    summary = records[0].summary
+    assert "user@example.org" not in summary
+    assert "+62 812-3456-7890" not in summary
+    assert "[EMAIL_REDACTED]" in summary
+    assert "[PHONE_REDACTED]" in summary
