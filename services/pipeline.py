@@ -9,6 +9,7 @@ from typing import Any, Callable
 from cache_security import clear_cache_files, purge_expired
 from services.ai_agent import CACHE_DIR as AI_CACHE_DIR, analyze_smart_cache
 from services.breach_scanner import BREACH_CACHE_DIR, scan_data_breaches
+from services.evidence import evidence_to_dicts, service_findings_to_evidence
 from services.imap_scanner import scan_gmail_inbox
 from services.osint_scanner import scan_osint_footprint
 from utils.envutil import env_non_negative_int
@@ -69,6 +70,7 @@ def run_scan(
         "tenant_id": tenant_id,
         "events": [],
         "services": [],
+        "evidence": [],
         "breach": {
             "enabled": bool(enable_breach),
             "findings": [],
@@ -156,6 +158,20 @@ def run_scan(
         except Exception as exc:
             state["breach"]["error"] = str(exc)
             emit(_event("error", text=f"Error Breach Scan: {exc}", stage="breach"))
+
+    # Normalize scanner output into stable evidence records after all discovery stages.
+    # This is lineage only: it does not calculate risk and does not alter findings.
+    local_evidence = service_findings_to_evidence(state["services"])
+    state["evidence"] = evidence_to_dicts(local_evidence)
+    emit(
+        _event(
+            "success",
+            text="Evidence normalization selesai.",
+            stage="evidence",
+            count=len(state["evidence"]),
+        ),
+        {"evidence": list(state["evidence"])},
+    )
 
     if with_ai:
         run_ai(
