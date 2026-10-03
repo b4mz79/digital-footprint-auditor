@@ -1165,7 +1165,7 @@ async def call_ollama_async(prompt: str, sys_prompt: str, lang: str = "id") -> s
 # =============================================================================
 
 _KNOWN_PROVIDERS = {"gemini", "groq", "openai", "ollama"}
-_DEFAULT_PROVIDER_ORDER = ["gemini", "groq", "openai", "ollama"]
+_DEFAULT_PROVIDER_ORDER = ["ollama", "gemini", "groq", "openai"]
 
 
 def _provider_order() -> list[str]:
