@@ -6,7 +6,7 @@
 #test_*.py
 .env.example-v*
 *.bak
-pandoc.exe
+packaging/pandoc/pandoc.exe
 
 # Python Cache
 __pycache__/
