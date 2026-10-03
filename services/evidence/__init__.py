@@ -1,8 +1,7 @@
 """Evidence collection and enrichment primitives for Privacy Auditor.
 
-This package is intentionally independent from the scan pipeline during the
-foundation phase. It provides stable evidence records and optional enrichment
-providers without changing existing discovery engines.
+The package keeps evidence normalization/enrichment separate from risk scoring
+and AI interpretation. Existing discovery engines remain unchanged.
 """
 
 from .models import EvidenceDirectness, EvidenceRecord, EvidenceRelation
