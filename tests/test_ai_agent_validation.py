@@ -92,3 +92,47 @@ def test_input_fingerprint_changes_when_evidence_changes() -> None:
     )
 
     assert first != second
+
+
+def test_evidence_lineage_is_attached_deterministically() -> None:
+    services = [
+        {
+            "name": "Example",
+            "domain": "sub.example.com",
+        }
+    ]
+    evidence = [
+        {
+            "evidence_id": "direct-1",
+            "domain": "example.com",
+            "provenance": {
+                "service_name": "Example",
+                "assertion_scope": "service_association_only",
+            },
+        },
+        {
+            "evidence_id": "context-1",
+            "domain": "example.com",
+            "provenance": {
+                "provider": "firecrawl_search",
+                "publisher_domain": "securelist.com",
+            },
+        },
+        {
+            "evidence_id": "other-1",
+            "domain": "other.example.net",
+            "provenance": {
+                "service_name": "Other",
+            },
+        },
+    ]
+
+    analysis = [{"service": "Example", "risk_key": "unknown"}]
+
+    linked = ai_agent._attach_evidence_lineage(
+        analysis,
+        services,
+        evidence,
+    )
+
+    assert linked[0]["evidence_ids"] == ["direct-1", "context-1"]
