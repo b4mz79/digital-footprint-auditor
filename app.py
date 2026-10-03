@@ -4,6 +4,9 @@ import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
 
+# Load environment variables before importing modules that read configuration at import time.
+load_dotenv(override=False)
+
 from services.pipeline import (
     clear_all_caches,
     get_tenant_id,
@@ -15,8 +18,6 @@ from utils.logging_setup import configure_logging
 from utils.risk import normalize_risk, risk_icon
 from utils.translations import t
 
-# Load environment variables dari file .env
-load_dotenv()
 configure_logging()
 st.set_page_config(
     page_title="Local Digital Footprint & Privacy Auditor",
