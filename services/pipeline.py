@@ -181,6 +181,13 @@ def run_scan(
             on_event=on_event,
         )
 
+    logger.info(
+        "[Pipeline] run_scan selesai; mengembalikan state. services=%d evidence=%d breach=%d ai=%s",
+        len(state["services"]),
+        len(state["evidence"]),
+        len(state["breach"]["findings"]),
+        bool(state.get("ai")),
+    )
     return state
 
 
