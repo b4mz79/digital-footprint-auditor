@@ -12,6 +12,7 @@ from .security_publications import (
     SecurityPublicationError,
     normalize_domain,
 )
+from .url_verifier import URLVerification, verify_public_url
 
 __all__ = [
     "DEFAULT_SECURITY_PUBLISHERS",
@@ -20,5 +21,7 @@ __all__ = [
     "EvidenceRelation",
     "FirecrawlSecurityPublicationProvider",
     "SecurityPublicationError",
+    "URLVerification",
     "normalize_domain",
+    "verify_public_url",
 ]
