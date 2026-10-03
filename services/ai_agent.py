@@ -180,7 +180,6 @@ MAX_LLM_OUTPUT_TOKENS = _env_non_negative_int("MAX_LLM_OUTPUT_TOKENS", 4096, 16_
 EXPOSE_CACHE_PATH = _env_bool("EXPOSE_CACHE_PATH", False)
 ALLOW_REMOTE_OLLAMA = _env_bool("OLLAMA_ALLOW_REMOTE", False)
 TRUST_ENV_FOR_OLLAMA = _env_bool("OLLAMA_TRUST_ENV", False)
-CACHE_WRITE_TIMEOUT_SECONDS = _env_positive_float("AI_CACHE_WRITE_TIMEOUT_SECONDS", 15.0, 60.0)
 
 # =============================================================================
 # Logging security (shared implementation in utils/logging_setup.py)
@@ -1770,30 +1769,6 @@ async def analyze_smart_cache(
     # -------------------------------------------------------------------------
     if parsed_data is not None:
         try:
-            analysis, exposures = _finalize_analysis(
-                parsed_data["analysis"],
-                services,
-                findings,
-                lang,
-                evidence_records=evidence,
-            )
-
-            parsed_data["analysis"] = _attach_evidence_lineage(
-                analysis,
-                services,
-                evidence,
-            )
-            parsed_data["exposures"] = exposures
-            parsed_data["provider_used"] = provider_used
-            parsed_data["is_from_cache"] = False
-            parsed_data["input_fp"] = fingerprint
-            parsed_data["dsr_template"] = load_local_dsr_template(
-                email,
-                services,
-                phone,
-                lang,
-            )
-
             logger.info("[AIAgent] Post-processing: finalize analysis dimulai.")
             analysis, exposures = _finalize_analysis(
                 parsed_data["analysis"],
