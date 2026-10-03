@@ -1835,7 +1835,7 @@ async def analyze_smart_cache(
                     "(Offline Fallback)"
                 ),
                 "is_from_cache": False,
-                "analysis": analysis,
+                "analysis": _attach_evidence_lineage(analysis, services, evidence),
                 "exposures": exposures,
                 "dsr_template": load_local_dsr_template(
                     email,
