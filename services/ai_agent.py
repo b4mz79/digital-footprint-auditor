@@ -1144,13 +1144,16 @@ async def call_ollama_async(prompt: str, sys_prompt: str, lang: str = "id") -> s
             except Exception as exc:
                 failed_batches += 1
                 logger.warning(
-                    "[Ollama Local] Batch %d gagal: %s.",
+                    "[Ollama Local] Batch %d gagal: %s: %s.",
                     batch_index // batch_size + 1,
                     type(exc).__name__,
+                    str(exc)[:240],
                 )
 
     if not combined:
-        raise ValueError("Ollama tidak menghasilkan analysis tervalidasi.")
+        raise ValueError(
+            f"Ollama tidak menghasilkan analysis tervalidasi ({failed_batches} batch gagal)."
+        )
 
     logger.info(
         "[Ollama Local] Batch analysis selesai: %d item tervalidasi, %d batch gagal.",
