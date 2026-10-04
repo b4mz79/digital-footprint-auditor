@@ -28,7 +28,10 @@ from services.evidence.models import (
     make_evidence_id,
 )
 from utils.domains import root_domain
+from utils.logging_setup import get_logger
 from utils.privacy import clean_web_snippet, clean_web_title
+
+logger = get_logger("FirecrawlEvidence")
 
 
 FIRECRAWL_SEARCH_URL = "https://api.firecrawl.dev/v2/search"
@@ -170,6 +173,13 @@ class FirecrawlSecurityPublicationProvider:
             SecurityPublisher(name=name, domain=domain)
             for name, domain in publishers
         )
+        logger.debug(
+            "[Firecrawl] Provider initialized; enabled=%s publishers=%d max_results=%d timeout=%.1fs",
+            self.enabled,
+            len(self.publishers),
+            self.max_results,
+            self.timeout_seconds,
+        )
 
     @property
     def enabled(self) -> bool:
@@ -194,6 +204,11 @@ class FirecrawlSecurityPublicationProvider:
             "Content-Type": "application/json",
         }
 
+        logger.info(
+            "[Firecrawl] Searching publisher=%s domain=%s",
+            publisher.name,
+            domain,
+        )
         try:
             response = await client.post(
                 FIRECRAWL_SEARCH_URL,
@@ -202,6 +217,12 @@ class FirecrawlSecurityPublicationProvider:
                 timeout=self.timeout_seconds,
             )
         except httpx.HTTPError as exc:
+            logger.warning(
+                "[Firecrawl] Request failed publisher=%s domain=%s error=%s",
+                publisher.name,
+                domain,
+                type(exc).__name__,
+            )
             raise SecurityPublicationError(
                 f"{publisher.name}: {type(exc).__name__}"
             ) from exc
@@ -210,6 +231,12 @@ class FirecrawlSecurityPublicationProvider:
             raise SecurityPublicationError(f"{publisher.name}: response too large.")
 
         if response.status_code >= 400:
+            logger.warning(
+                "[Firecrawl] HTTP failure publisher=%s domain=%s status=%d",
+                publisher.name,
+                domain,
+                response.status_code,
+            )
             raise SecurityPublicationError(
                 f"{publisher.name}: HTTP {response.status_code}"
             )
@@ -232,6 +259,12 @@ class FirecrawlSecurityPublicationProvider:
 
         evidence: list[EvidenceRecord] = []
         observed_at = _utc_now()
+        logger.info(
+            "[Firecrawl] Response received publisher=%s domain=%s candidates=%d",
+            publisher.name,
+            domain,
+            len(items),
+        )
 
         for item in items[: self.max_results]:
             if not isinstance(item, dict):
@@ -291,12 +324,19 @@ class FirecrawlSecurityPublicationProvider:
                 )
             )
 
+        logger.info(
+            "[Firecrawl] Publisher completed publisher=%s domain=%s accepted=%d",
+            publisher.name,
+            domain,
+            len(evidence),
+        )
         return evidence
 
     async def search_domain(self, domain: str) -> list[EvidenceRecord]:
         """Search all configured publishers concurrently for one domain."""
         normalized = normalize_domain(domain)
         if not self.enabled:
+            logger.info("[Firecrawl] Disabled; domain=%s skipped.", normalized)
             return []
 
         owns_client = self._client is None
@@ -318,10 +358,18 @@ class FirecrawlSecurityPublicationProvider:
                 await client.aclose()
 
         evidence: list[EvidenceRecord] = []
+        failed = 0
         for result in results:
             if isinstance(result, SecurityPublicationError):
+                failed += 1
+                logger.warning("[Firecrawl] Publisher enrichment failed: %s", result)
                 continue
             if isinstance(result, Exception):
+                failed += 1
+                logger.warning(
+                    "[Firecrawl] Publisher enrichment failed: %s",
+                    type(result).__name__,
+                )
                 continue
             evidence.extend(result)
 
@@ -329,4 +377,11 @@ class FirecrawlSecurityPublicationProvider:
         unique: dict[str, EvidenceRecord] = {}
         for item in evidence:
             unique[item.evidence_id] = item
-        return list(unique.values())
+        output = list(unique.values())
+        logger.info(
+            "[Firecrawl] Domain completed domain=%s accepted=%d failed_publishers=%d",
+            normalized,
+            len(output),
+            failed,
+        )
+        return output
