@@ -746,7 +746,10 @@ async def test_background_cache_write_does_not_overwrite_newer_result(monkeypatc
         }
     ]
     saved: list[dict] = []
-    clock = iter([200.0, 100.0])
+    def fake_time() -> float:
+        # The test controls generation ordering, not the number of internal
+        # time.time() calls made by the production path or its dependencies.
+        return 200.0 if not saved else 100.0
 
     class ImmediateThread:
         def __init__(self, target, **kwargs):
@@ -783,7 +786,7 @@ async def test_background_cache_write_does_not_overwrite_newer_result(monkeypatc
     monkeypatch.setattr(ai_agent, "get_cache_filepath_ext", lambda *args, **kwargs: "ignored")
     monkeypatch.setattr(ai_agent, "load_encrypted_json", fake_load_encrypted_json)
     monkeypatch.setattr(ai_agent, "save_analysis_cache_ext", fake_save)
-    monkeypatch.setattr(ai_agent.time, "time", lambda: next(clock))
+    monkeypatch.setattr(ai_agent.time, "time", fake_time)
     monkeypatch.setattr(ai_agent.threading, "Thread", ImmediateThread)
 
     first = await ai_agent.analyze_smart_cache(
