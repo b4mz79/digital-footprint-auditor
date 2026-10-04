@@ -9,6 +9,7 @@ def test_pipeline_import() -> None:
 
 
 def test_pipeline_exposes_normalized_evidence(monkeypatch) -> None:
+    monkeypatch.setenv("FIRECRAWL_API_KEY", "")
     monkeypatch.setattr(
         pipeline,
         "scan_osint_footprint",
@@ -40,6 +41,7 @@ def test_pipeline_exposes_normalized_evidence(monkeypatch) -> None:
 
 
 def test_pipeline_forwards_evidence_to_ai(monkeypatch) -> None:
+    monkeypatch.setenv("FIRECRAWL_API_KEY", "")
     captured: dict = {}
 
     monkeypatch.setattr(
