@@ -46,9 +46,13 @@ DEFAULT_COOLDOWN_SECONDS = 60.0
 MAX_RESPONSE_BYTES = 1_000_000
 MAX_TITLE_LENGTH = 512
 MAX_SUMMARY_LENGTH = 2_000
-CONTEXTUAL_FILTER_BEFORE_FILE = "contextual_filter_before.json"
-CONTEXTUAL_FILTER_AFTER_FILE = "contextual_filter_after.json"
-CONTEXTUAL_FILTER_DUMP_SCHEMA_VERSION = "contextual-filter-dump-v1"
+CONTEXTUAL_FILTER_DUMP_FILE = "contextual_filter_dump.md"
+CONTEXTUAL_FILTER_DUMP_SCHEMA_VERSION = "contextual-filter-dump-v2"
+CONTEXTUAL_FILTER_NAME = "security_publication_context_v2"
+
+PAGE_TYPE_REJECT_PATTERNS = (r"/(?:category|categories|author|authors|tag|tags|topic|topics|archive|archives|search)(?:/|$)", r"/page/\\d+(?:/|$)", r"[?&](?:page|paged|offset)=\\d+")
+PAGE_TITLE_REJECT_PATTERNS = (r"^category(?:\\s*[:|]|$)", r"^author(?:\\s*[:|]|$)", r"^(?:tag|topic|archive|search)(?:\\s*[:|]|$)", r"\\bpage\\s+\\d+\\b")
+NON_ARTICLE_PATH_PATTERNS = (r"/(?:questions?|q|answers?)(?:/|$)", r"/(?:store|products?|apps?)(?:/|$)")
 
 SECURITY_QUERY_TERMS = (
     "security",
@@ -173,22 +177,57 @@ def _build_query(domain: str) -> str:
     return f'"{domain}" ({terms})'
 
 
-def _contextual_relevance(
-    domain: str,
-    *,
-    url: str,
-    title: str,
-    summary: str,
-) -> bool:
-    """Accept only results with both target-domain and security-context signals."""
-    domain_pattern = re.compile(rf"(?<![a-z0-9-]){re.escape(domain)}(?![a-z0-9-])")
-    security_pattern = re.compile(
-        r"(?<![a-z0-9])(?:"
-        + "|".join(re.escape(term.casefold()) for term in SECURITY_QUERY_TERMS)
-        + r")(?![a-z0-9])"
-    )
-    searchable = " ".join((url, title, summary)).casefold()
-    return bool(domain_pattern.search(searchable) and security_pattern.search(searchable))
+def _domain_aliases(domain: str) -> tuple[str, ...]:
+    normalized = domain.casefold().strip(".")
+    labels = normalized.split(".")
+    registrable = labels[-2] if len(labels) >= 2 else normalized
+    aliases = {normalized, registrable}
+    aliases.update(token for token in re.split(r"[-_]+", registrable) if len(token) >= 3)
+    return tuple(sorted(aliases, key=lambda value: (-len(value), value)))
+
+def _contains_term(text: str, terms: Iterable[str]) -> bool:
+    folded = text.casefold()
+    return any(re.search(rf"(?<![a-z0-9]){re.escape(term.casefold())}(?![a-z0-9])", folded) for term in terms)
+
+def _page_type(url: str, title: str) -> str:
+    safe = _safe_url(url)
+    parsed = urlsplit(safe) if safe else None
+    path = (parsed.path if parsed else "").casefold()
+    query = (parsed.query if parsed else "").casefold()
+    title_folded = title.casefold().strip()
+    for pattern in PAGE_TYPE_REJECT_PATTERNS:
+        if re.search(pattern, path) or re.search(pattern, query): return "navigation"
+    for pattern in PAGE_TITLE_REJECT_PATTERNS:
+        if re.search(pattern, title_folded): return "navigation"
+    for pattern in NON_ARTICLE_PATH_PATTERNS:
+        if re.search(pattern, path): return "non_article"
+    return "article"
+
+def _target_subject_signal(domain: str, *, title: str, summary: str) -> tuple[bool, str, str]:
+    aliases = _domain_aliases(domain)
+    if _contains_term(title, aliases): return True, "title_alias", "strong"
+    if _contains_term(summary, (domain,)): return True, "summary_domain", "medium"
+    if _contains_term(summary, aliases): return True, "summary_alias", "weak"
+    return False, "none", "none"
+
+def _security_near_target(domain: str, title: str, summary: str) -> bool:
+    aliases = _domain_aliases(domain)
+    pattern = "|".join(re.escape(alias.casefold()) for alias in aliases)
+    for text2 in (title, summary):
+        folded = text2.casefold()
+        for match in re.finditer(pattern, folded):
+            if _contains_term(folded[max(0, match.start()-140):match.end()+180], SECURITY_QUERY_TERMS): return True
+    return False
+
+def _contextual_relevance(domain: str, *, url: str, title: str, summary: str) -> tuple[bool, dict[str, str | bool]]:
+    page_type = _page_type(url, title)
+    if page_type != "article": return False, {"page_type": page_type, "target": "none", "target_strength": "none", "security": False, "reason": f"{page_type}_page"}
+    target, target_signal, target_strength = _target_subject_signal(domain, title=title, summary=summary)
+    security = _contains_term(" ".join((title, summary)), SECURITY_QUERY_TERMS)
+    if not target: return False, {"page_type": page_type, "target": "none", "target_strength": "none", "security": security, "reason": "target_not_subject"}
+    if target_strength == "weak" and not _security_near_target(domain, title, summary): return False, {"page_type": page_type, "target": target_signal, "target_strength": target_strength, "security": security, "reason": "incidental_target_mention"}
+    if not security: return False, {"page_type": page_type, "target": target_signal, "target_strength": target_strength, "security": False, "reason": "security_context_missing"}
+    return True, {"page_type": page_type, "target": target_signal, "target_strength": target_strength, "security": True, "reason": "target_subject_security_context"}
 
 
 def _utc_now() -> str:
@@ -268,79 +307,30 @@ class FirecrawlSecurityPublicationProvider:
             self._cooldown_until = max(self._cooldown_until, time.monotonic() + self.cooldown_seconds)
 
     @staticmethod
-    def _dump_item(
-        *,
-        domain: str,
-        publisher: SecurityPublisher,
-        url: str,
-        title: str,
-        summary: str,
-        published_at: Any,
-    ) -> dict[str, Any]:
-        return {
-            "domain": domain,
-            "publisher": publisher.name,
-            "publisher_domain": publisher.domain,
-            "url": url,
-            "title": title,
-            "summary": summary,
-            "published_at": None if published_at is None else str(published_at)[:64],
-        }
+    def _dump_item(*, domain: str, publisher: SecurityPublisher, url: str, title: str, summary: str, published_at: Any, decision: str, decision_reason: str, signals: dict[str, str | bool]) -> dict[str, Any]:
+        return {"domain": domain, "publisher": publisher.name, "publisher_domain": publisher.domain, "url": url, "title": title, "summary": summary, "published_at": None if published_at is None else str(published_at)[:64], "decision": decision, "decision_reason": decision_reason, "signals": signals}
+
+    def _render_filter_dump(self) -> str:
+        before = {"schema_version": CONTEXTUAL_FILTER_DUMP_SCHEMA_VERSION, "filter": CONTEXTUAL_FILTER_NAME, "generated_at": _utc_now(), "records": self._filter_candidates}
+        after = {"schema_version": CONTEXTUAL_FILTER_DUMP_SCHEMA_VERSION, "filter": CONTEXTUAL_FILTER_NAME, "generated_at": _utc_now(), "records": self._filter_accepted}
+        return "BEFORE\n```json\n" + json.dumps(before, ensure_ascii=False, indent=2) + "\n```\n---\nAFTER\n```json\n" + json.dumps(after, ensure_ascii=False, indent=2) + "\n```\n"
 
     def _reset_filter_dumps(self) -> None:
         try:
             self._filter_dump_dir.mkdir(parents=True, exist_ok=True)
-            for filename in (
-                CONTEXTUAL_FILTER_BEFORE_FILE,
-                CONTEXTUAL_FILTER_AFTER_FILE,
-            ):
-                (self._filter_dump_dir / filename).write_text(
-                    json.dumps(
-                        {
-                            "schema_version": CONTEXTUAL_FILTER_DUMP_SCHEMA_VERSION,
-                            "filter": "security_publication_context_v1",
-                            "generated_at": _utc_now(),
-                            "records": [],
-                        },
-                        ensure_ascii=False,
-                        indent=2,
-                    ) + "\n",
-                    encoding="utf-8",
-                )
+            (self._filter_dump_dir / CONTEXTUAL_FILTER_DUMP_FILE).write_text(self._render_filter_dump(), encoding="utf-8")
         except OSError as exc:
-            logger.warning("[Firecrawl] Could not initialize contextual filter dumps: %s", exc)
+            logger.warning("[Firecrawl] Could not initialize contextual filter dump: %s", exc)
 
-    async def _record_filter_dump(
-        self,
-        *,
-        candidate: dict[str, Any],
-        accepted: bool,
-    ) -> None:
+    async def _record_filter_dump(self, *, candidate: dict[str, Any], accepted: bool) -> None:
         async with self._filter_dump_lock:
             self._filter_candidates.append(candidate)
-            if accepted:
-                self._filter_accepted.append(candidate)
+            if accepted: self._filter_accepted.append(candidate)
             try:
                 self._filter_dump_dir.mkdir(parents=True, exist_ok=True)
-                for filename, records in (
-                    (CONTEXTUAL_FILTER_BEFORE_FILE, self._filter_candidates),
-                    (CONTEXTUAL_FILTER_AFTER_FILE, self._filter_accepted),
-                ):
-                    (self._filter_dump_dir / filename).write_text(
-                        json.dumps(
-                            {
-                                "schema_version": CONTEXTUAL_FILTER_DUMP_SCHEMA_VERSION,
-                                "filter": "security_publication_context_v1",
-                                "generated_at": _utc_now(),
-                                "records": records,
-                            },
-                            ensure_ascii=False,
-                            indent=2,
-                        ) + "\n",
-                        encoding="utf-8",
-                    )
+                (self._filter_dump_dir / CONTEXTUAL_FILTER_DUMP_FILE).write_text(self._render_filter_dump(), encoding="utf-8")
             except (OSError, TypeError, ValueError) as exc:
-                logger.warning("[Firecrawl] Could not write contextual filter dumps: %s", exc)
+                logger.warning("[Firecrawl] Could not write contextual filter dump: %s", exc)
 
     async def _search_publisher(
         self,
@@ -459,20 +449,8 @@ class FirecrawlSecurityPublicationProvider:
             metadata = metadata if isinstance(metadata, dict) else {}
             published_at = metadata.get("publishedTime") or metadata.get("published_time")
 
-            candidate_dump = self._dump_item(
-                domain=domain,
-                publisher=publisher,
-                url=url,
-                title=title,
-                summary=description,
-                published_at=published_at,
-            )
-            accepted = _contextual_relevance(
-                domain,
-                url=url,
-                title=title,
-                summary=description,
-            )
+            accepted, signals = _contextual_relevance(domain, url=url, title=title, summary=description)
+            candidate_dump = self._dump_item(domain=domain, publisher=publisher, url=url, title=title, summary=description, published_at=published_at, decision="accept" if accepted else "reject", decision_reason=str(signals["reason"]), signals=signals)
             await self._record_filter_dump(
                 candidate=candidate_dump,
                 accepted=accepted,
@@ -507,7 +485,7 @@ class FirecrawlSecurityPublicationProvider:
                         "provider": "firecrawl_search",
                         "publisher_domain": publisher.domain,
                         "query_scope": "domain_only",
-                        "relevance_filter": "security_publication_context_v1",
+                        "relevance_filter": CONTEXTUAL_FILTER_NAME,
                     },
                     metadata={
                         "status": "contextual_accepted",
