@@ -18,6 +18,7 @@ import os
 import re
 from typing import Any, Iterable
 from urllib.parse import urlsplit
+import time
 
 import httpx
 
@@ -37,6 +38,8 @@ logger = get_logger("FirecrawlEvidence")
 FIRECRAWL_SEARCH_URL = "https://api.firecrawl.dev/v2/search"
 DEFAULT_TIMEOUT_SECONDS = 20.0
 DEFAULT_MAX_RESULTS = 5
+DEFAULT_MAX_CONCURRENCY = 2
+DEFAULT_COOLDOWN_SECONDS = 60.0
 MAX_RESPONSE_BYTES = 1_000_000
 MAX_TITLE_LENGTH = 512
 MAX_SUMMARY_LENGTH = 2_000
@@ -65,6 +68,10 @@ DEFAULT_SECURITY_PUBLISHERS = (
 
 class SecurityPublicationError(RuntimeError):
     """The security-publication enrichment source could not be queried."""
+
+
+class SecurityPublicationRateLimited(SecurityPublicationError):
+    """The provider is rate-limited and must pause before new requests."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,6 +163,8 @@ class FirecrawlSecurityPublicationProvider:
         max_results: int = DEFAULT_MAX_RESULTS,
         client: httpx.AsyncClient | None = None,
         publishers: Iterable[tuple[str, str]] = DEFAULT_SECURITY_PUBLISHERS,
+        max_concurrency: int = DEFAULT_MAX_CONCURRENCY,
+        cooldown_seconds: float = DEFAULT_COOLDOWN_SECONDS,
     ) -> None:
         # None means "use configured environment"; an explicit empty string
         # means "disabled". This keeps dependency injection deterministic and
@@ -169,6 +178,11 @@ class FirecrawlSecurityPublicationProvider:
         self.timeout_seconds = float(timeout_seconds)
         self.max_results = max(1, min(int(max_results), 10))
         self._client = client
+        self.max_concurrency = max(1, min(int(max_concurrency), 16))
+        self.cooldown_seconds = max(1.0, float(cooldown_seconds))
+        self._request_gate = asyncio.Semaphore(self.max_concurrency)
+        self._cooldown_until = 0.0
+        self._cooldown_lock = asyncio.Lock()
         self.publishers = tuple(
             SecurityPublisher(name=name, domain=domain)
             for name, domain in publishers
@@ -184,6 +198,15 @@ class FirecrawlSecurityPublicationProvider:
     @property
     def enabled(self) -> bool:
         return bool(self.api_key)
+
+    async def _check_cooldown(self) -> None:
+        remaining = self._cooldown_until - time.monotonic()
+        if remaining > 0:
+            raise SecurityPublicationRateLimited(f"Firecrawl cooldown active for {remaining:.1f}s")
+
+    async def _set_cooldown(self) -> None:
+        async with self._cooldown_lock:
+            self._cooldown_until = max(self._cooldown_until, time.monotonic() + self.cooldown_seconds)
 
     async def _search_publisher(
         self,
@@ -209,13 +232,16 @@ class FirecrawlSecurityPublicationProvider:
             publisher.name,
             domain,
         )
+        await self._check_cooldown()
         try:
-            response = await client.post(
-                FIRECRAWL_SEARCH_URL,
-                headers=headers,
-                json=payload,
-                timeout=self.timeout_seconds,
-            )
+            async with self._request_gate:
+                await self._check_cooldown()
+                response = await client.post(
+                    FIRECRAWL_SEARCH_URL,
+                    headers=headers,
+                    json=payload,
+                    timeout=self.timeout_seconds,
+                )
         except httpx.HTTPError as exc:
             logger.warning(
                 "[Firecrawl] Request failed publisher=%s domain=%s error=%s",
@@ -229,6 +255,16 @@ class FirecrawlSecurityPublicationProvider:
 
         if response.content and len(response.content) > MAX_RESPONSE_BYTES:
             raise SecurityPublicationError(f"{publisher.name}: response too large.")
+
+        if response.status_code == 429:
+            await self._set_cooldown()
+            logger.warning(
+                "[Firecrawl] Rate limited publisher=%s domain=%s cooldown=%.1fs",
+                publisher.name,
+                domain,
+                self.cooldown_seconds,
+            )
+            raise SecurityPublicationRateLimited(f"{publisher.name}: HTTP 429")
 
         if response.status_code >= 400:
             logger.warning(
