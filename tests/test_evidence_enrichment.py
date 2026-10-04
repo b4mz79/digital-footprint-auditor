@@ -130,6 +130,17 @@ def test_clean_web_text_removes_markup_and_masks_sensitive_values() -> None:
     assert "abcdefghijklmnop" not in snippet
     assert "alert" not in snippet
     assert "Research context" in snippet
+    assert "tracking.png" not in snippet
+
+    markdown = clean_web_snippet(
+        "![tracking image](https://example.com/pixel.png) "
+        "[security report](https://example.com/report) "
+        "## Incident",
+    )
+    assert "tracking image" in markdown
+    assert "security report" in markdown
+    assert "https://example.com" not in markdown
+    assert "##" not in markdown
 
 
 def test_clean_web_text_collapses_whitespace_and_bounds_length() -> None:
