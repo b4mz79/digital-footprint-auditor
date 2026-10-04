@@ -54,6 +54,12 @@ PAGE_TYPE_REJECT_PATTERNS = (r"/(?:category|categories|author|authors|tag|tags|t
 PAGE_TITLE_REJECT_PATTERNS = (r"^category(?:\s*[:|]|$)", r"^author(?:\s*[:|]|$)", r"^(?:tag|topic|archive|search)(?:\s*[:|]|$)", r"\bpage\s+\d+\b")
 NON_ARTICLE_PATH_PATTERNS = (r"/(?:questions?|q|answers?)(?:/|$)", r"/(?:store|products?|apps?)(?:/|$)")
 
+STRONG_SECURITY_TERMS = (
+    "phishing", "malware", "ransomware", "breach", "incident",
+    "vulnerability", "exploit", "compromised", "attack", "attacked",
+    "infected", "stolen", "exposed", "campaign",
+)
+
 SECURITY_QUERY_TERMS = (
     "security",
     "phishing",
@@ -216,7 +222,7 @@ def _security_near_target(domain: str, title: str, summary: str) -> bool:
     for text2 in (title, summary):
         folded = text2.casefold()
         for match in re.finditer(pattern, folded):
-            if _contains_term(folded[max(0, match.start()-140):match.end()+180], SECURITY_QUERY_TERMS): return True
+            if _contains_term(folded[max(0, match.start()-140):match.end()+180], STRONG_SECURITY_TERMS): return True
     return False
 
 def _contextual_relevance(domain: str, *, url: str, title: str, summary: str) -> tuple[bool, dict[str, str | bool]]:
