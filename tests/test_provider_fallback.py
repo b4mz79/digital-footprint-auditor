@@ -777,7 +777,9 @@ async def test_background_cache_write_does_not_overwrite_newer_result(monkeypatc
         return saved[-1] if saved else None
 
     def fake_save(*args, **kwargs):
-        saved.append(dict(kwargs.get("data", {})))
+        # save_analysis_cache_ext receives the cache payload positionally.
+        payload = args[1] if len(args) > 1 else kwargs.get("data", {})
+        saved.append(dict(payload))
 
     monkeypatch.setenv("PII_PEPPER_KEY", "x" * 32)
     monkeypatch.setattr(ai_agent, "_run_provider_chain", fake_chain)
