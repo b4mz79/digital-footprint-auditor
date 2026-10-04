@@ -734,3 +734,72 @@ async def test_analyze_smart_cache_all_provider_failure_uses_uncached_fallback(m
     assert result["is_from_cache"] is False
     assert result["analysis"][0]["risk_key"] == "unknown"
     assert saved == []
+
+
+@pytest.mark.asyncio
+async def test_background_cache_write_does_not_overwrite_newer_result(monkeypatch) -> None:
+    services = [
+        {
+            "name": "Example Shop",
+            "domain": "example.com",
+            "subject": "Order confirmation",
+        }
+    ]
+    saved: list[dict] = []
+    clock = iter([200.0, 100.0])
+
+    class ImmediateThread:
+        def __init__(self, target, **kwargs):
+            self.target = target
+
+        def start(self) -> None:
+            self.target()
+
+    async def fake_chain(*args, **kwargs):
+        return (
+            {
+                "analysis": [
+                    {
+                        "service": "Example Shop",
+                        "risk_level": "medium",
+                        "reason": "Order evidence.",
+                        "delete_url": "",
+                    }
+                ]
+            },
+            "Groq Cloud",
+        )
+
+    def fake_load_encrypted_json(*args, **kwargs):
+        return saved[-1] if saved else None
+
+    def fake_save(*args, **kwargs):
+        saved.append(dict(kwargs.get("data", {})))
+
+    monkeypatch.setenv("PII_PEPPER_KEY", "x" * 32)
+    monkeypatch.setattr(ai_agent, "_run_provider_chain", fake_chain)
+    monkeypatch.setattr(ai_agent, "load_analysis_cache_ext", lambda *args, **kwargs: None)
+    monkeypatch.setattr(ai_agent, "load_local_dsr_template", lambda *args, **kwargs: "")
+    monkeypatch.setattr(ai_agent, "get_cache_filepath_ext", lambda *args, **kwargs: "ignored")
+    monkeypatch.setattr(ai_agent, "load_encrypted_json", fake_load_encrypted_json)
+    monkeypatch.setattr(ai_agent, "save_analysis_cache_ext", fake_save)
+    monkeypatch.setattr(ai_agent.time, "time", lambda: next(clock))
+    monkeypatch.setattr(ai_agent.threading, "Thread", ImmediateThread)
+
+    first = await ai_agent.analyze_smart_cache(
+        "example@example.com",
+        services,
+        force_refresh=True,
+        lang="en",
+    )
+    second = await ai_agent.analyze_smart_cache(
+        "example@example.com",
+        services,
+        force_refresh=True,
+        lang="en",
+    )
+
+    assert first["provider_used"] == "Groq Cloud"
+    assert second["provider_used"] == "Groq Cloud"
+    assert len(saved) == 1
+    assert saved[0][ai_agent.CACHE_GENERATION_FIELD] == 200.0
