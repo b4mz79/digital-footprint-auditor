@@ -277,17 +277,18 @@ def _contextual_relevance(domain: str, *, url: str, title: str, summary: str) ->
             "security": security,
             "reason": "target_not_subject",
         }
-    # An explicit incidental/list-style mention is only classified as
-    # incidental after a substantive security signal exists. Otherwise the
-    # primary failure is the missing security-context floor.
-    if security and target_strength in {"weak", "medium"} and _incidental_target_mention(
+    # List-style multi-entity mentions are incidental by definition and
+    # should be classified as such even when the article has only generic
+    # security wording. This is intentionally narrower than example/reference
+    # language, which must still satisfy the substantive security floor.
+    if target_strength in {"weak", "medium"} and _incidental_target_mention(
         domain, title, summary
     ):
         return False, {
             "page_type": page_type,
             "target": target_signal,
             "target_strength": target_strength,
-            "security": True,
+            "security": security,
             "reason": "incidental_target_mention",
         }
     # Check the substantive security floor before proximity. A page that
