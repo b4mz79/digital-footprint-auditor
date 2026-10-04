@@ -231,7 +231,7 @@ def _contextual_relevance(domain: str, *, url: str, title: str, summary: str) ->
     target, target_signal, target_strength = _target_subject_signal(domain, title=title, summary=summary)
     security = _contains_term(" ".join((title, summary)), SECURITY_QUERY_TERMS)
     if not target: return False, {"page_type": page_type, "target": "none", "target_strength": "none", "security": security, "reason": "target_not_subject"}
-    if target_strength == "weak" and not _security_near_target(domain, title, summary): return False, {"page_type": page_type, "target": target_signal, "target_strength": target_strength, "security": security, "reason": "incidental_target_mention"}
+    if target_strength in {"weak", "medium"} and not _security_near_target(domain, title, summary): return False, {"page_type": page_type, "target": target_signal, "target_strength": target_strength, "security": security, "reason": "incidental_target_mention"}
     if not security: return False, {"page_type": page_type, "target": target_signal, "target_strength": target_strength, "security": False, "reason": "security_context_missing"}
     return True, {"page_type": page_type, "target": target_signal, "target_strength": target_strength, "security": True, "reason": "target_subject_security_context"}
 
