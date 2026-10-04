@@ -699,6 +699,9 @@ def validate_ai_output(parsed: Any, lang: str) -> dict[str, Any]:
 
     # Preserve only the schema fields; do not allow arbitrary model-generated properties into cache/UI.
     # (The DSR letter is always built locally from utils/dsr_<lang>.txt.)
+    if not cleaned_analysis:
+        raise ValueError("AI output.analysis tidak berisi item tervalidasi.")
+
     return {"analysis": cleaned_analysis}
 
 
@@ -2350,11 +2353,10 @@ async def analyze_smart_cache(
     # This block is reached ONLY after _run_provider_chain() exhausted every
     # configured provider.
     #
-    # In the default configuration the chain is:
-    #
-    #   Gemini → Groq → OpenAI → Ollama → Rule-based Offline Fallback
-    #
-    # Therefore JSONDecodeError from Gemini can NEVER jump directly here.
+    # The provider sequence is controlled by _provider_order(); the default
+    # currently starts with Ollama and then rotates through Gemini, Groq, and
+    # OpenAI. Therefore JSONDecodeError from any provider can NEVER jump
+    # directly here.
     # -------------------------------------------------------------------------
     logger.error(
         "[AI Agent Error] Semua provider AI gagal/ditolak. "
