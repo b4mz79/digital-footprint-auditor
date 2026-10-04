@@ -358,7 +358,9 @@ async def test_enrich_evidence_merges_contextual_records(monkeypatch) -> None:
             assert kwargs["max_results"] == 5
             assert kwargs["client"] is not None
             assert kwargs["max_concurrency"] >= 1
+            assert kwargs["requests_per_minute"] >= 1
             assert kwargs["cooldown_seconds"] >= 1
+            self.cooldown_active = False
 
         async def search_domain(self, domain):
             assert domain == "example.com"
@@ -434,4 +436,4 @@ async def test_enrich_evidence_stops_scheduling_domains_after_rate_limit(monkeyp
     )
 
     assert len(result) == 4
-    assert sorted(calls) == ["one.example", "two.example"]
+    assert sorted(calls) == ["four.example", "one.example"]
