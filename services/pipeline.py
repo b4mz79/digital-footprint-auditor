@@ -219,6 +219,12 @@ def run_ai(
 
     emit(_event("info", text="Memulai AI Privacy Audit...", stage="ai"))
 
+    def on_analysis_item(item: dict[str, Any]) -> None:
+        emit(
+            _event("info", stage="ai"),
+            {"ai_item": item},
+        )
+
     try:
         state["ai"] = asyncio.run(
             analyze_smart_cache(
@@ -238,6 +244,7 @@ def run_ai(
                         if info.get("status") in {"error", "partial"}
                     ],
                 },
+                on_analysis_item=on_analysis_item,
             )
         )
         emit(
