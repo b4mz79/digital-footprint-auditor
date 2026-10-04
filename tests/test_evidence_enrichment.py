@@ -154,24 +154,57 @@ def test_clean_web_text_collapses_whitespace_and_bounds_length() -> None:
 def test_contextual_relevance_requires_target_and_security_signals() -> None:
     from services.evidence.security_publications import _contextual_relevance
 
-    assert _contextual_relevance(
-        "example.com",
-        url="https://securelist.com/example-phishing/",
-        title="Example.com in phishing research",
-        summary="Security research context.",
+    accepted, signals = _contextual_relevance(
+        "example.com", url="https://securelist.com/example-phishing/",
+        title="Example.com in phishing research", summary="Security research context.",
     )
-    assert not _contextual_relevance(
-        "example.com",
-        url="https://securelist.com/example-update/",
-        title="Example.com product update",
-        summary="General company news.",
+    assert accepted is True
+    assert signals["reason"] == "target_subject_security_context"
+
+    accepted, signals = _contextual_relevance(
+        "example.com", url="https://securelist.com/example-update/",
+        title="Example.com product update", summary="General company news.",
     )
-    assert not _contextual_relevance(
-        "example.com",
-        url="https://securelist.com/other-phishing/",
-        title="Phishing campaign targets another company",
-        summary="Security incident research.",
+    assert accepted is False
+    assert signals["reason"] == "security_context_missing"
+
+    accepted, signals = _contextual_relevance(
+        "example.com", url="https://securelist.com/other-phishing/",
+        title="Phishing campaign targets another company", summary="Security incident research.",
     )
+    assert accepted is False
+    assert signals["reason"] == "target_not_subject"
+
+    accepted, signals = _contextual_relevance(
+        "example.com", url="https://securelist.com/category/incidents/page/25/",
+        title="Category: Incidents | Page 25 | Securelist", summary="example.com phishing security",
+    )
+    assert accepted is False
+    assert signals["reason"] == "navigation_page"
+
+    accepted, signals = _contextual_relevance(
+        "atlassian.com", url="https://welivesecurity.com/hipchat-hack/",
+        title="HipChat hack leads to password reset",
+        summary="Atlassian suffered a security breach after its HipChat service was compromised.",
+    )
+    assert accepted is True
+    assert signals["target"] == "summary_alias"
+
+    accepted, signals = _contextual_relevance(
+        "blibli.com", url="https://microsoft.com/security/article",
+        title="Microsoft Tingkatkan Upaya Perlindungan Konsumen",
+        summary="Security news mentions Blanja.com, Blibli.com and other retailers.",
+    )
+    assert accepted is False
+    assert signals["reason"] == "incidental_target_mention"
+
+    accepted, signals = _contextual_relevance(
+        "asus.com", url="https://securelist.com/operation-shadowhammer/",
+        title="Operation ShadowHammer",
+        summary="The attack compromised ASUS Live Update and was a major security incident.",
+    )
+    assert accepted is True
+    assert signals["target"] == "summary_alias"
 
 
 @pytest.mark.asyncio
@@ -226,7 +259,7 @@ async def test_firecrawl_provider_returns_contextual_evidence() -> None:
     assert record.domain == "example.com"
     assert record.published_at == "2025-10-10"
     assert record.provenance["query_scope"] == "domain_only"
-    assert record.provenance["relevance_filter"] == "security_publication_context_v1"
+    assert record.provenance["relevance_filter"] == "security_publication_context_v2"
     assert record.metadata["status"] == "contextual_accepted"
 
 
