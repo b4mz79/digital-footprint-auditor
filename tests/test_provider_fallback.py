@@ -124,3 +124,83 @@ def test_model_insufficient_reason_does_not_override_explicit_activity_floor() -
     assert exposures == []
     assert final[0]["risk_key"] == "high"
     assert final[0]["reason"] == ai_agent.t("fallback_reason", lang="en")
+
+
+def test_breach_floor_raises_risk_with_coherent_reason() -> None:
+    services = [
+        {
+            "name": "Example Bank",
+            "domain": "example.com",
+            "subject": "Welcome to Example Bank",
+        }
+    ]
+    findings = [
+        {
+            "kind": "breach_db",
+            "dataset": "Example Bank breach",
+            "has_password": True,
+            "record_count": 10,
+        }
+    ]
+    analysis = [
+        {
+            "service": "Example Bank",
+            "risk_key": "unknown",
+            "reason": "Insufficient evidence to determine risk.",
+            "delete_url": "",
+        }
+    ]
+
+    final, exposures = ai_agent._finalize_analysis(analysis, services, findings, "en")
+
+    assert exposures == []
+    assert final[0]["risk_key"] == "high"
+    assert final[0]["risk_level"] == ai_agent.t("risk_high", lang="en")
+    assert final[0]["risk_raised"] is True
+    assert final[0]["risk_guarded"] is True
+    assert final[0]["reason"] == ai_agent.t(
+        "evidence_note",
+        lang="en",
+        count=1,
+        level=ai_agent.t("risk_high", lang="en"),
+    )
+
+
+def test_medium_breach_floor_raises_risk_with_coherent_reason() -> None:
+    services = [
+        {
+            "name": "Example Shop",
+            "domain": "example.com",
+            "subject": "Welcome to Example Shop",
+        }
+    ]
+    findings = [
+        {
+            "kind": "breach_db",
+            "dataset": "Example Shop breach",
+            "has_password": False,
+            "record_count": 10,
+        }
+    ]
+    analysis = [
+        {
+            "service": "Example Shop",
+            "risk_key": "unknown",
+            "reason": "Insufficient evidence to determine risk.",
+            "delete_url": "",
+        }
+    ]
+
+    final, exposures = ai_agent._finalize_analysis(analysis, services, findings, "en")
+
+    assert exposures == []
+    assert final[0]["risk_key"] == "medium"
+    assert final[0]["risk_level"] == ai_agent.t("risk_medium", lang="en")
+    assert final[0]["risk_raised"] is True
+    assert final[0]["risk_guarded"] is True
+    assert final[0]["reason"] == ai_agent.t(
+        "evidence_note",
+        lang="en",
+        count=1,
+        level=ai_agent.t("risk_medium", lang="en"),
+    )
