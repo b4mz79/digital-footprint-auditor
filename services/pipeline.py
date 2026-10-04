@@ -170,6 +170,18 @@ def run_scan(
 
     # Enrichment is downstream of normalization and upstream of AI.
     # It only augments evidence; it never changes scanner findings or calculates risk.
+    emit(
+        _event(
+            "info",
+            text=(
+                "Memulai Evidence & Enrichment..."
+                if os.getenv("FIRECRAWL_API_KEY", "").strip()
+                else "Evidence & Enrichment dilewati: Firecrawl API tidak dikonfigurasi."
+            ),
+            stage="evidence_start",
+        ),
+    )
+
     try:
         enriched_evidence = asyncio.run(enrich_evidence(local_evidence))
     except Exception as exc:
