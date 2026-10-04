@@ -178,12 +178,22 @@ def run_scan(
         enriched_evidence = local_evidence
 
     state["evidence"] = evidence_to_dicts(enriched_evidence)
+    contextual_count = sum(
+        1
+        for item in state["evidence"]
+        if item.get("relation") == "security_publication"
+    )
     emit(
         _event(
             "success",
-            text="Evidence normalization & enrichment selesai.",
+            text=(
+                "Evidence normalization & enrichment selesai. "
+                f"Total={len(state['evidence'])}; "
+                f"contextual={contextual_count}."
+            ),
             stage="evidence",
             count=len(state["evidence"]),
+            contextual_count=contextual_count,
         ),
         {"evidence": list(state["evidence"])},
     )
