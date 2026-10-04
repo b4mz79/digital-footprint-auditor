@@ -50,8 +50,8 @@ CONTEXTUAL_FILTER_DUMP_FILE = "contextual_filter_dump.md"
 CONTEXTUAL_FILTER_DUMP_SCHEMA_VERSION = "contextual-filter-dump-v2"
 CONTEXTUAL_FILTER_NAME = "security_publication_context_v2"
 
-PAGE_TYPE_REJECT_PATTERNS = (r"/(?:category|categories|author|authors|tag|tags|topic|topics|archive|archives|search)(?:/|$)", r"/page/\\d+(?:/|$)", r"[?&](?:page|paged|offset)=\\d+")
-PAGE_TITLE_REJECT_PATTERNS = (r"^category(?:\\s*[:|]|$)", r"^author(?:\\s*[:|]|$)", r"^(?:tag|topic|archive|search)(?:\\s*[:|]|$)", r"\\bpage\\s+\\d+\\b")
+PAGE_TYPE_REJECT_PATTERNS = (r"/(?:category|categories|author|authors|tag|tags|topic|topics|archive|archives|search)(?:/|$)", r"/page/\d+(?:/|$)", r"[?&](?:page|paged|offset)=\\d+")
+PAGE_TITLE_REJECT_PATTERNS = (r"^category(?:\s*[:|]|$)", r"^author(?:\s*[:|]|$)", r"^(?:tag|topic|archive|search)(?:\s*[:|]|$)", r"\bpage\s+\d+\b")
 NON_ARTICLE_PATH_PATTERNS = (r"/(?:questions?|q|answers?)(?:/|$)", r"/(?:store|products?|apps?)(?:/|$)")
 
 SECURITY_QUERY_TERMS = (
