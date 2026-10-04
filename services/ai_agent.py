@@ -1871,14 +1871,18 @@ def _finalize_analysis(
             guarded_risk_key = "medium"
 
         if guarded_risk_key != risk_key:
+            previous_risk_key = risk_key
             risk_key = guarded_risk_key
             item["risk_guarded"] = True
-            item["reason"] = (
-                t("unknown_generic_event_reason", lang=lang)
-                if _service_evidence_text(svc).strip()
-                else t("unknown_reason", lang=lang)
-            )
-            item["delete_url"] = "-"
+            if risk_key == "unknown":
+                item["reason"] = (
+                    t("unknown_generic_event_reason", lang=lang)
+                    if _service_evidence_text(svc).strip()
+                    else t("unknown_reason", lang=lang)
+                )
+                item["delete_url"] = "-"
+            elif risk_key == "medium" and previous_risk_key == "high":
+                item["reason"] = t("medium_activity_guard_reason", lang=lang)
         # END IMPROVE AND AUDITED BY CHATGPT
 
         if matches:
