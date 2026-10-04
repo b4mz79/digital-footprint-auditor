@@ -329,6 +329,8 @@ def load_encrypted_json(
 ) -> dict[str, Any] | None:
     """Load, authenticate, tenant-check, and optionally expire a cache token."""
     tenant_id = _validate_tenant_id(tenant_id)
+    if max_age_seconds is not None and max_age_seconds < 0:
+        raise ValueError("max_age_seconds must be >= 0 or None")
     path = Path(file_path)
 
     try:
@@ -389,7 +391,10 @@ def purge_expired(directory: Path, max_age_seconds: float, now: float | None = N
     """Delete cache files whose mtime is older than max_age_seconds. Returns the count."""
     import time
 
-    cutoff = (time.time() if now is None else now) - float(max_age_seconds)
+    max_age_seconds = float(max_age_seconds)
+    if max_age_seconds < 0:
+        raise ValueError("max_age_seconds must be >= 0")
+    cutoff = (time.time() if now is None else now) - max_age_seconds
     removed = 0
     for path in _iter_cache_files(directory):
         try:
