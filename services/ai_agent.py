@@ -1009,7 +1009,7 @@ def _ollama_batch_prompt(
     )
 
 
-async def call_ollama_async(prompt: str, sys_prompt: str, lang: str = "id") -> str:
+async def call_ollama_async(prompt: str, sys_prompt: str, lang: str = "id", on_batch: Callable[[list[dict[str, Any]], list[dict[str, Any]]], None] | None = None) -> str:
     model_name = _safe_component(os.getenv("OLLAMA_MODEL", "qwen2.5:1.5b-instruct"), 200)
     base_url = _validate_ollama_url(os.getenv("OLLAMA_HOST", ""))
     url = f"{base_url}/api/generate"
@@ -1029,7 +1029,7 @@ async def call_ollama_async(prompt: str, sys_prompt: str, lang: str = "id") -> s
     if not isinstance(all_evidence, list):
         all_evidence = []
 
-    batch_size = _env_non_negative_int("OLLAMA_BATCH_SERVICES", 2, 8) or 2
+    batch_size = _env_non_negative_int("OLLAMA_BATCH_SERVICES", 1, 8) or 1
     max_evidence_per_batch = _env_non_negative_int(
         "OLLAMA_BATCH_EVIDENCE",
         2,
