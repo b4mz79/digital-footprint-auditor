@@ -293,6 +293,7 @@ class FirecrawlSecurityPublicationProvider:
         )
         self._filter_candidates: list[dict[str, Any]] = []
         self._filter_accepted: list[dict[str, Any]] = []
+        self._filter_dump_finalized = False
         self._reset_filter_dumps()
         self.publishers = tuple(
             SecurityPublisher(name=name, domain=domain)
@@ -334,21 +335,38 @@ class FirecrawlSecurityPublicationProvider:
         return "BEFORE\n```json\n" + json.dumps(before, ensure_ascii=False, indent=2) + "\n```\n---\nAFTER\n```json\n" + json.dumps(after, ensure_ascii=False, indent=2) + "\n```\n"
 
     def _reset_filter_dumps(self) -> None:
-        try:
-            self._filter_dump_dir.mkdir(parents=True, exist_ok=True)
-            (self._filter_dump_dir / CONTEXTUAL_FILTER_DUMP_FILE).write_text(self._render_filter_dump(), encoding="utf-8")
-        except OSError as exc:
-            logger.warning("[Firecrawl] Could not initialize contextual filter dump: %s", exc)
+        # Start a new in-memory run. The dump file is written only when the
+        # run is finalized, so readers never observe a partially-built dump.
+        self._filter_candidates.clear()
+        self._filter_accepted.clear()
+        self._filter_dump_finalized = False
 
     async def _record_filter_dump(self, *, candidate: dict[str, Any], accepted: bool) -> None:
         async with self._filter_dump_lock:
+            if self._filter_dump_finalized:
+                raise RuntimeError("Contextual filter dump already finalized.")
             self._filter_candidates.append(candidate)
-            if accepted: self._filter_accepted.append(candidate)
+            if accepted:
+                self._filter_accepted.append(candidate)
+
+    async def finalize_filter_dump(self) -> None:
+        """Persist one complete dump for the current enrichment run."""
+        async with self._filter_dump_lock:
+            if self._filter_dump_finalized:
+                return
             try:
                 self._filter_dump_dir.mkdir(parents=True, exist_ok=True)
-                (self._filter_dump_dir / CONTEXTUAL_FILTER_DUMP_FILE).write_text(self._render_filter_dump(), encoding="utf-8")
+                dump_path = self._filter_dump_dir / CONTEXTUAL_FILTER_DUMP_FILE
+                dump_path.write_text(self._render_filter_dump(), encoding="utf-8")
+                self._filter_dump_finalized = True
+                logger.info(
+                    "[Firecrawl] Contextual filter dump finalized; candidates=%d accepted=%d path=%s",
+                    len(self._filter_candidates),
+                    len(self._filter_accepted),
+                    dump_path,
+                )
             except (OSError, TypeError, ValueError) as exc:
-                logger.warning("[Firecrawl] Could not write contextual filter dump: %s", exc)
+                logger.warning("[Firecrawl] Could not finalize contextual filter dump: %s", exc)
 
     async def _search_publisher(
         self,
