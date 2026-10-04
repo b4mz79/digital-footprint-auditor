@@ -92,10 +92,12 @@ def test_breach_cache_schema_mismatch_is_a_cache_miss(monkeypatch) -> None:
 
 
 def test_breach_cache_current_schema_is_reusable(monkeypatch) -> None:
+    cache_file = __import__("pathlib").Path("breach-cache-test.json")
+    cache_file.write_text("placeholder", encoding="utf-8")
     monkeypatch.setattr(
         breach_scanner,
         "get_breach_cache_filepath",
-        lambda *args, **kwargs: "ignored",
+        lambda *args, **kwargs: cache_file,
     )
     cached = {
         "results": [],
