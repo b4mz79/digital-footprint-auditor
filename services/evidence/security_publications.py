@@ -14,8 +14,10 @@ import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import ipaddress
+import json
 import os
 import re
+from pathlib import Path
 from typing import Any, Iterable
 from urllib.parse import urlsplit
 import time
@@ -30,6 +32,7 @@ from services.evidence.models import (
 )
 from utils.domains import root_domain
 from utils.logging_setup import get_logger
+from utils.paths import resolve_data_path
 from utils.privacy import clean_web_snippet, clean_web_title
 
 logger = get_logger("FirecrawlEvidence")
@@ -44,6 +47,13 @@ DEFAULT_COOLDOWN_SECONDS = 60.0
 MAX_RESPONSE_BYTES = 1_000_000
 MAX_TITLE_LENGTH = 512
 MAX_SUMMARY_LENGTH = 2_000
+CONTEXTUAL_FILTER_DUMP_DIR = resolve_data_path(
+    os.getenv("EVIDENCE_CONTEXTUAL_FILTER_DUMP_DIR"),
+    "cache/evidence",
+)
+CONTEXTUAL_FILTER_BEFORE_FILE = "contextual_filter_before.json"
+CONTEXTUAL_FILTER_AFTER_FILE = "contextual_filter_after.json"
+CONTEXTUAL_FILTER_DUMP_SCHEMA_VERSION = "contextual-filter-dump-v1"
 
 SECURITY_QUERY_TERMS = (
     "security",
@@ -224,6 +234,10 @@ class FirecrawlSecurityPublicationProvider:
         self._request_rate_gate = _RequestRateGate(self.requests_per_minute)
         self._cooldown_until = 0.0
         self._cooldown_lock = asyncio.Lock()
+        self._filter_dump_lock = asyncio.Lock()
+        self._filter_candidates: list[dict[str, Any]] = []
+        self._filter_accepted: list[dict[str, Any]] = []
+        self._reset_filter_dumps()
         self.publishers = tuple(
             SecurityPublisher(name=name, domain=domain)
             for name, domain in publishers
@@ -253,6 +267,81 @@ class FirecrawlSecurityPublicationProvider:
     async def _set_cooldown(self) -> None:
         async with self._cooldown_lock:
             self._cooldown_until = max(self._cooldown_until, time.monotonic() + self.cooldown_seconds)
+
+    @staticmethod
+    def _dump_item(
+        *,
+        domain: str,
+        publisher: SecurityPublisher,
+        url: str,
+        title: str,
+        summary: str,
+        published_at: Any,
+    ) -> dict[str, Any]:
+        return {
+            "domain": domain,
+            "publisher": publisher.name,
+            "publisher_domain": publisher.domain,
+            "url": url,
+            "title": title,
+            "summary": summary,
+            "published_at": None if published_at is None else str(published_at)[:64],
+        }
+
+    def _reset_filter_dumps(self) -> None:
+        try:
+            CONTEXTUAL_FILTER_DUMP_DIR.mkdir(parents=True, exist_ok=True)
+            for filename in (
+                CONTEXTUAL_FILTER_BEFORE_FILE,
+                CONTEXTUAL_FILTER_AFTER_FILE,
+            ):
+                (CONTEXTUAL_FILTER_DUMP_DIR / filename).write_text(
+                    json.dumps(
+                        {
+                            "schema_version": CONTEXTUAL_FILTER_DUMP_SCHEMA_VERSION,
+                            "filter": "security_publication_context_v1",
+                            "generated_at": _utc_now(),
+                            "records": [],
+                        },
+                        ensure_ascii=False,
+                        indent=2,
+                    ) + "\n",
+                    encoding="utf-8",
+                )
+        except OSError as exc:
+            logger.warning("[Firecrawl] Could not initialize contextual filter dumps: %s", exc)
+
+    async def _record_filter_dump(
+        self,
+        *,
+        candidate: dict[str, Any],
+        accepted: bool,
+    ) -> None:
+        async with self._filter_dump_lock:
+            self._filter_candidates.append(candidate)
+            if accepted:
+                self._filter_accepted.append(candidate)
+            try:
+                CONTEXTUAL_FILTER_DUMP_DIR.mkdir(parents=True, exist_ok=True)
+                for filename, records in (
+                    (CONTEXTUAL_FILTER_BEFORE_FILE, self._filter_candidates),
+                    (CONTEXTUAL_FILTER_AFTER_FILE, self._filter_accepted),
+                ):
+                    (CONTEXTUAL_FILTER_DUMP_DIR / filename).write_text(
+                        json.dumps(
+                            {
+                                "schema_version": CONTEXTUAL_FILTER_DUMP_SCHEMA_VERSION,
+                                "filter": "security_publication_context_v1",
+                                "generated_at": _utc_now(),
+                                "records": records,
+                            },
+                            ensure_ascii=False,
+                            indent=2,
+                        ) + "\n",
+                        encoding="utf-8",
+                    )
+            except (OSError, TypeError, ValueError) as exc:
+                logger.warning("[Firecrawl] Could not write contextual filter dumps: %s", exc)
 
     async def _search_publisher(
         self,
@@ -369,18 +458,29 @@ class FirecrawlSecurityPublicationProvider:
 
             metadata = item.get("metadata")
             metadata = metadata if isinstance(metadata, dict) else {}
+            published_at = metadata.get("publishedTime") or metadata.get("published_time")
 
-            if not _contextual_relevance(
+            candidate_dump = self._dump_item(
+                domain=domain,
+                publisher=publisher,
+                url=url,
+                title=title,
+                summary=description,
+                published_at=published_at,
+            )
+            accepted = _contextual_relevance(
                 domain,
                 url=url,
                 title=title,
                 summary=description,
-            ):
-                continue
+            )
+            await self._record_filter_dump(
+                candidate=candidate_dump,
+                accepted=accepted,
+            )
 
-            published_at = metadata.get("publishedTime") or metadata.get("published_time")
-            if published_at is not None:
-                published_at = str(published_at)[:64]
+            if not accepted:
+                continue
 
             evidence_id = make_evidence_id(
                 source=publisher.name,
