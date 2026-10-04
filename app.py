@@ -497,6 +497,8 @@ if run_scan:
 
         ui_state = {
             "ai_status": None,
+            "ai_live_placeholder": None,
+            "ai_live_items": [],
         }
 
         def push_event(event: dict) -> None:
@@ -511,9 +513,49 @@ if run_scan:
                 return
 
             # AI:
-            # Event pertama hanya menampilkan services lalu status AI.
-            # Hasil AI sendiri disimpan dan baru dirender setelah pipeline selesai.
+            # Service AI dirender progressive: satu item selesai -> langsung tampil.
             if stage == "ai":
+                if "ai_item" in live_data:
+                    item = live_data["ai_item"]
+                    ui_state["ai_live_items"].append(item)
+
+                    placeholder = ui_state.get("ai_live_placeholder")
+                    if placeholder is not None:
+                        with placeholder.container():
+                            for live_item in ui_state["ai_live_items"]:
+                                risk_key = (
+                                    normalize_risk(live_item.get("risk_key"))
+                                    or normalize_risk(live_item.get("risk_level"))
+                                    or "unknown"
+                                )
+                                risk_label = t(f"risk_{risk_key}", lang=lang)
+                                st.markdown(
+                                    f"**{risk_icon(risk_key)} "
+                                    f"{_md_escape(live_item.get('service', ''))}** - "
+                                    f"*{t('risk_level_label', lang=lang)}: {risk_label}*"
+                                )
+                                st.write(
+                                    f"**{t('reason_label', lang=lang)}:** "
+                                    f"{live_item.get('reason', '')}"
+                                )
+                                delete_url = live_item.get("delete_url", "-")
+                                if delete_url and delete_url != "-":
+                                    if (
+                                        isinstance(delete_url, str)
+                                        and delete_url.startswith("https://")
+                                    ):
+                                        st.markdown(
+                                            t(
+                                                "delete_link_label",
+                                                lang=lang,
+                                                url=delete_url,
+                                            )
+                                        )
+                                    else:
+                                        st.write(f"🔗 {delete_url}")
+                                st.caption("---")
+                    return
+
                 if "ai" in live_data:
                     live_state["ai"] = live_data["ai"]
 
@@ -528,6 +570,9 @@ if run_scan:
 
                     ai_status = st.empty()
                     ui_state["ai_status"] = ai_status
+
+                    ai_live_placeholder = st.empty()
+                    ui_state["ai_live_placeholder"] = ai_live_placeholder
 
                     message = event.get("text")
                     if not message and event.get("key"):
@@ -592,7 +637,12 @@ if run_scan:
         if ai_status is not None:
             ai_status.empty()
 
-        # Render hasil AI final setelah pipeline benar-benar return.
+        # Hasil progressive sudah ditampilkan selama inference.
+        # Bersihkan placeholder live sebelum merender hasil final (DSR/exposures).
+        ai_live_placeholder = ui_state.get("ai_live_placeholder")
+        if ai_live_placeholder is not None:
+            ai_live_placeholder.empty()
+
         if final_state.get("ai"):
             with live_area:
                 render_ai(final_state)
