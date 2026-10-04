@@ -6,7 +6,7 @@ import pytest
 from cryptography.fernet import Fernet
 
 import cache_security
-from services import breach_scanner
+from services import ai_agent, breach_scanner, pipeline
 
 
 def test_encrypted_cache_roundtrip_is_tenant_bound(tmp_path, monkeypatch) -> None:
@@ -117,3 +117,57 @@ def test_breach_cache_current_schema_is_reusable(tmp_path, monkeypatch) -> None:
 
     assert result is not None
     assert result["is_from_cache"] is True
+
+@pytest.mark.asyncio
+async def test_explicit_cache_clear_invalidates_pending_ai_write(monkeypatch) -> None:
+    services = [{"name": "Example Shop", "domain": "example.com", "subject": "Order confirmation"}]
+    deferred_targets: list[object] = []
+    saved: list[dict] = []
+
+    class DeferredThread:
+        def __init__(self, target, **kwargs):
+            deferred_targets.append(target)
+
+        def start(self) -> None:
+            return None
+
+    async def fake_chain(*args, **kwargs):
+        return (
+            {
+                "analysis": [
+                    {
+                        "service": "Example Shop",
+                        "risk_level": "medium",
+                        "reason": "Order evidence.",
+                        "delete_url": "",
+                    }
+                ]
+            },
+            "Groq Cloud",
+        )
+
+    monkeypatch.setenv("PII_PEPPER_KEY", "x" * 32)
+    monkeypatch.setattr(ai_agent, "CACHE_INVALIDATION_GENERATION", 0)
+    monkeypatch.setattr(ai_agent, "_run_provider_chain", fake_chain)
+    monkeypatch.setattr(ai_agent, "load_analysis_cache_ext", lambda *args, **kwargs: None)
+    monkeypatch.setattr(ai_agent, "load_local_dsr_template", lambda *args, **kwargs: "")
+    monkeypatch.setattr(ai_agent, "get_cache_filepath_ext", lambda *args, **kwargs: "ignored")
+    monkeypatch.setattr(ai_agent, "load_encrypted_json", lambda *args, **kwargs: None)
+    monkeypatch.setattr(ai_agent, "save_analysis_cache_ext", lambda *args, **kwargs: saved.append(dict(args[1])))
+    monkeypatch.setattr(ai_agent.threading, "Thread", DeferredThread)
+    monkeypatch.setattr(pipeline, "clear_cache_files", lambda *args: 0)
+
+    result = await ai_agent.analyze_smart_cache(
+        "example@example.com",
+        services,
+        force_refresh=True,
+        lang="en",
+    )
+
+    assert result["provider_used"] == "Groq Cloud"
+    assert len(deferred_targets) == 1
+
+    pipeline.clear_all_caches()
+    deferred_targets[0]()
+
+    assert saved == []
