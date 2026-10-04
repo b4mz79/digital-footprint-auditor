@@ -1469,10 +1469,28 @@ async def _run_provider_chain(
                     "[Ollama Local] Memulai eksekusi lokal..."
                 )
 
+                def _on_ollama_batch(
+                    batch_analysis: list[dict[str, Any]],
+                    batch_services: list[dict[str, Any]],
+                ) -> None:
+                    if not on_analysis_item:
+                        return
+
+                    finalized_batch, _ = _finalize_analysis(
+                        batch_analysis,
+                        batch_services,
+                        findings,
+                        lang,
+                        evidence_records=evidence,
+                    )
+                    for batch_item in finalized_batch:
+                        on_analysis_item(batch_item)
+
                 raw = await call_ollama_async(
                     user_prompt,
                     sys_prompt,
                     lang,
+                    on_batch=_on_ollama_batch,
                 )
 
                 if not raw:
@@ -1948,6 +1966,7 @@ async def analyze_smart_cache(
     breach_findings: list | None = None,
     evidence_records: list | None = None,
     scan_status: dict[str, Any] | None = None,
+    on_analysis_item: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     start_time = time.monotonic()
 
