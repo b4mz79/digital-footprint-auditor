@@ -126,7 +126,8 @@ def test_model_insufficient_reason_does_not_override_explicit_activity_floor() -
     assert final[0]["reason"] == ai_agent.t("fallback_reason", lang="en")
 
 
-def test_progressive_ollama_callback_deduplicates_service_identity(monkeypatch) -> None:
+@pytest.mark.asyncio
+async def test_progressive_ollama_callback_deduplicates_service_identity(monkeypatch) -> None:
     emitted: list[dict] = []
 
     def callback(item: dict) -> None:
