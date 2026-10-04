@@ -103,6 +103,7 @@ ENGINE_HEALTH = HealthRegistry()
 _ENGINE_COOLDOWN_UNTIL: dict[str, float] = {}
 
 BREACH_QUEUE_WORKERS = _env_non_negative_int("BREACH_QUEUE_WORKERS", 2, maximum=32)
+BREACH_CACHE_SCHEMA_VERSION = 1
 BREACH_ENGINE_COOLDOWN = float(os.getenv("BREACH_ENGINE_COOLDOWN", "60"))
 
 # SearXNG is administrator-configured, including the case of a private/self-hosted instance.
@@ -381,9 +382,12 @@ def load_breach_cache(email_addr: str, phone: str = "", max_age_hours: float = 1
             tenant_id=tenant_id,
             max_age_seconds=int(max_age_hours * 3600),
         )
-        if isinstance(data, dict):
+        if isinstance(data, dict) and data.get("cache_schema_version") == BREACH_CACHE_SCHEMA_VERSION:
             data["is_from_cache"] = True
             return data
+        if isinstance(data, dict):
+            logger.info("[Breach Cache] Cache schema lama/tidak dikenal; dianggap cache miss.")
+        return None
         return None
     except Exception:
         # Cache failure must not fail the scan.
@@ -1269,6 +1273,7 @@ async def scan_data_breaches(email: str, phone: str = "", force_refresh: bool = 
         "is_from_cache": False,
         "engines": engines_report,
         "complete": complete,
+        "cache_schema_version": BREACH_CACHE_SCHEMA_VERSION,
     }
 
     # Never cache an incomplete scan: it would replay a possibly false "clean" result for 12h.
