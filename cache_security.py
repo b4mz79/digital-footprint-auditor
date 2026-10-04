@@ -370,7 +370,7 @@ def load_encrypted_json(
 # disk forever. These helpers delete cache files only (never the key file).
 # --------------------------------------------------------------------------------------
 
-CACHE_FILE_PATTERNS = ("audit_cache_*.json", "breach_cache_*.json")
+CACHE_FILE_PATTERNS = ("audit_cache_*.json", "breach_cache_*.json", "imap_cache_*.json", "osint_cache_*.json")
 
 
 def _iter_cache_files(directory: Path):
