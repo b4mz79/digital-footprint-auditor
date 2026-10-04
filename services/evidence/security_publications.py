@@ -321,12 +321,12 @@ class FirecrawlSecurityPublicationProvider:
             if accepted:
                 self._filter_accepted.append(candidate)
             try:
-                CONTEXTUAL_FILTER_DUMP_DIR.mkdir(parents=True, exist_ok=True)
+                self._filter_dump_dir.mkdir(parents=True, exist_ok=True)
                 for filename, records in (
                     (CONTEXTUAL_FILTER_BEFORE_FILE, self._filter_candidates),
                     (CONTEXTUAL_FILTER_AFTER_FILE, self._filter_accepted),
                 ):
-                    (CONTEXTUAL_FILTER_DUMP_DIR / filename).write_text(
+                    (self._filter_dump_dir / filename).write_text(
                         json.dumps(
                             {
                                 "schema_version": CONTEXTUAL_FILTER_DUMP_SCHEMA_VERSION,
