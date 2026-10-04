@@ -250,7 +250,10 @@ def _target_subject_signal(
     # e.g. "atlassiancom-jira-data-center" for "atlassian.com". Treat only
     # the compact registrable-domain form as a URL signal; do not add it to
     # title/summary matching, where this heuristic would be too permissive.
-    compact_registrable = re.sub(r"[^a-z0-9]", "", aliases[1] if len(aliases) > 1 else aliases[0])
+    normalized_domain = domain.casefold().strip(".")
+    labels = normalized_domain.split(".")
+    registrable_domain = ".".join(labels[-2:]) if len(labels) >= 2 else normalized_domain
+    compact_registrable = re.sub(r"[^a-z0-9]", "", registrable_domain)
     if compact_registrable and re.search(
         rf"(?<![a-z0-9]){re.escape(compact_registrable)}(?![a-z0-9])",
         url.casefold(),
