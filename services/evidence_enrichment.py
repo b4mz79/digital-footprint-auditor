@@ -11,6 +11,7 @@ for the enrichment operation (currently normalized domains).
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import os
 from typing import Iterable
 
@@ -24,6 +25,11 @@ from utils.envutil import env_non_negative_int, env_positive_float
 from utils.logging_setup import get_logger
 
 logger = get_logger("EvidenceEnrichment")
+
+
+def _fingerprint_domains(domains: list[str]) -> str:
+    payload = "\n".join(domains).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()[:16]
 
 
 async def enrich_evidence(
@@ -92,6 +98,11 @@ async def enrich_evidence(
         logger.info("[Evidence Enrichment] No normalized domains available; skipping.")
         return base
 
+    logger.info(
+        "[Evidence Enrichment] Input fingerprint; domains=%d domains_sha256=%s",
+        len(domains),
+        _fingerprint_domains(domains),
+    )
     logger.info(
         "[Evidence Enrichment] Firecrawl enabled; domains=%d max_results=%d timeout=%.1fs domain_concurrency=%d request_concurrency=%d requests_per_minute=%d cooldown=%.1fs",
         len(domains),
