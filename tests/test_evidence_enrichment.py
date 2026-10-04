@@ -6,6 +6,8 @@ from typing import Any
 import httpx
 import pytest
 
+from utils.privacy import clean_web_snippet, clean_web_title
+
 from services.evidence.models import (
     EvidenceDirectness,
     EvidenceRelation,
@@ -107,6 +109,33 @@ class MockTransport(httpx.AsyncBaseTransport):
             json=self.payload,
             request=request,
         )
+
+
+def test_clean_web_text_removes_markup_and_masks_sensitive_values() -> None:
+    title = clean_web_title(
+        "<b>Security &amp; incident</b> <img src='tracking.png'>",
+    )
+    snippet = clean_web_snippet(
+        "<p>Research <strong>context</strong> for user@example.com.</p>"
+        " Call +62 812-3456-7890. OTP 482913. "
+        "Bearer abcdefghijklmnop. <script>alert('x')</script>",
+    )
+
+    assert title == "Security & incident"
+    assert "<" not in snippet
+    assert ">" not in snippet
+    assert "user@example.com" not in snippet
+    assert "+62 812-3456-7890" not in snippet
+    assert "482913" not in snippet
+    assert "abcdefghijklmnop" not in snippet
+    assert "alert" not in snippet
+    assert "Research context" in snippet
+
+
+def test_clean_web_text_collapses_whitespace_and_bounds_length() -> None:
+    value = clean_web_snippet("  one\n\n <b>two</b>\t three  ", max_length=10)
+    assert value == "one two th"
+
 
 
 @pytest.mark.asyncio
