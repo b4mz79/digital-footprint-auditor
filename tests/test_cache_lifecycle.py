@@ -91,8 +91,8 @@ def test_breach_cache_schema_mismatch_is_a_cache_miss(monkeypatch) -> None:
     assert result is None
 
 
-def test_breach_cache_current_schema_is_reusable(monkeypatch) -> None:
-    cache_file = __import__("pathlib").Path("breach-cache-test.json")
+def test_breach_cache_current_schema_is_reusable(tmp_path, monkeypatch) -> None:
+    cache_file = tmp_path / "breach-cache-test.json"
     cache_file.write_text("placeholder", encoding="utf-8")
     monkeypatch.setattr(
         breach_scanner,
