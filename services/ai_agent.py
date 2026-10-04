@@ -439,6 +439,9 @@ def save_analysis_cache(email: str, data: dict, phone: str = "", lang: str = "id
 #SYSTEM_PROMPTS = {lang_code: _BASE_SYSTEM_PROMPT for lang_code in SUPPORTED_LANGS}
 
 
+CACHE_WRITE_LOCK = threading.Lock()
+CACHE_GENERATION_FIELD = "_cache_generated_at"
+
 MAX_EVIDENCE_RECORDS = 150
 MAX_EVIDENCE_FIELD_LENGTH = 2_000
 SAFE_PROVENANCE_KEYS = (
@@ -2297,15 +2300,53 @@ async def analyze_smart_cache(
             # Cache is deliberately best-effort and must never block delivery of
             # an otherwise valid AI result. A daemon thread prevents asyncio.run()
             # from waiting on a blocked filesystem/ACL operation during shutdown.
+            # Stamp the result before dispatching the background writer. When
+            # force-refresh/concurrent scans target the same cache identity, an
+            # older result must never overwrite a newer result that has already
+            # been persisted.
+            parsed_data[CACHE_GENERATION_FIELD] = time.time()
+
             def _cache_worker() -> None:
                 try:
-                    save_analysis_cache_ext(
+                    cache_file = get_cache_filepath_ext(
                         email,
-                        parsed_data,
                         phone,
-                        lang=lang,
-                        tenant_id=tenant_id,
+                        lang,
+                        tenant_id,
                     )
+                    generation = float(parsed_data[CACHE_GENERATION_FIELD])
+
+                    with CACHE_WRITE_LOCK:
+                        existing = load_encrypted_json(
+                            cache_file,
+                            tenant_id=_validate_tenant_id(tenant_id),
+                        )
+                        existing_generation = None
+                        if isinstance(existing, dict):
+                            try:
+                                existing_generation = float(
+                                    existing.get(CACHE_GENERATION_FIELD)
+                                )
+                            except (TypeError, ValueError):
+                                existing_generation = None
+
+                        if (
+                            existing_generation is not None
+                            and existing_generation > generation
+                        ):
+                            logger.info(
+                                "[AICache] Background cache write skipped: "
+                                "existing result is newer."
+                            )
+                            return
+
+                        save_analysis_cache_ext(
+                            email,
+                            parsed_data,
+                            phone,
+                            lang=lang,
+                            tenant_id=tenant_id,
+                        )
                     logger.info("[AICache] Background cache write selesai.")
                 except Exception as exc:
                     logger.warning(
