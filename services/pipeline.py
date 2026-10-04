@@ -7,7 +7,11 @@ import re
 from typing import Any, Callable
 
 from cache_security import clear_cache_files, purge_expired
-from services.ai_agent import CACHE_DIR as AI_CACHE_DIR, analyze_smart_cache
+from services.ai_agent import (
+    CACHE_DIR as AI_CACHE_DIR,
+    CACHE_WRITE_LOCK,
+    analyze_smart_cache,
+)
 from services.breach_scanner import BREACH_CACHE_DIR, scan_data_breaches
 from services.evidence import evidence_to_dicts, service_findings_to_evidence
 from services.imap_scanner import scan_gmail_inbox
@@ -277,12 +281,19 @@ def purge_expired_caches() -> int:
     """Delete cache files older than CACHE_RETENTION_HOURS."""
     hours = env_non_negative_int("CACHE_RETENTION_HOURS", 24, 24 * 30) or 24
     removed = 0
-    for directory in {AI_CACHE_DIR, BREACH_CACHE_DIR}:
-        removed += purge_expired(directory, hours * 3600)
+    # Coordinate with the AI background writer so retention cleanup cannot
+    # race a force-refresh result that is being persisted.
+    with CACHE_WRITE_LOCK:
+        for directory in {AI_CACHE_DIR, BREACH_CACHE_DIR}:
+            removed += purge_expired(directory, hours * 3600)
     if removed:
         logger.info("Cache kedaluwarsa dihapus: %d berkas.", removed)
     return removed
 
 
 def clear_all_caches() -> int:
-    return clear_cache_files(AI_CACHE_DIR, BREACH_CACHE_DIR)
+    # The AI result is persisted from a daemon thread. Wait for any in-flight
+    # write before deleting cache files, otherwise the writer could recreate
+    # a cache immediately after the user explicitly cleared it.
+    with CACHE_WRITE_LOCK:
+        return clear_cache_files(AI_CACHE_DIR, BREACH_CACHE_DIR)
