@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from services import pipeline
+from services.evidence.models import EvidenceDirectness, EvidenceRelation
 
 
 def test_pipeline_import() -> None:
@@ -101,8 +102,8 @@ def test_pipeline_passes_enriched_evidence_to_ai(monkeypatch) -> None:
                 evidence_id="context-1",
                 source="Kaspersky Securelist",
                 source_type="security_publication",
-                relation=__import__("services.evidence.models", fromlist=["EvidenceRelation"]).EvidenceRelation.SECURITY_PUBLICATION,
-                directness=__import__("services.evidence.models", fromlist=["EvidenceDirectness"]).EvidenceDirectness.CONTEXTUAL,
+                relation=EvidenceRelation.SECURITY_PUBLICATION,
+                directness=EvidenceDirectness.CONTEXTUAL,
                 confidence=0.65,
                 observed_at=base[0].observed_at,
                 published_at="2026-01-01",
