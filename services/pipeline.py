@@ -14,7 +14,7 @@ from services.ai_agent import (
 )
 import services.ai_agent as ai_agent
 from services.breach_scanner import BREACH_CACHE_DIR, scan_data_breaches
-from services.evidence import evidence_to_dicts, service_findings_to_evidence
+from services.evidence import enrich_evidence, evidence_to_dicts, service_findings_to_evidence
 from services.imap_scanner import scan_gmail_inbox
 from services.osint_scanner import scan_osint_footprint
 from utils.envutil import env_non_negative_int
@@ -167,11 +167,21 @@ def run_scan(
     # Normalize scanner output into stable evidence records after all discovery stages.
     # This is lineage only: it does not calculate risk and does not alter findings.
     local_evidence = service_findings_to_evidence(state["services"])
-    state["evidence"] = evidence_to_dicts(local_evidence)
+
+    # Enrichment is downstream of normalization and upstream of AI.
+    # It only augments evidence; it never changes scanner findings or calculates risk.
+    try:
+        enriched_evidence = asyncio.run(enrich_evidence(local_evidence))
+    except Exception as exc:
+        # Preserve normalized evidence if optional enrichment is unavailable.
+        logger.warning("[Pipeline] Evidence enrichment failed: %s", exc)
+        enriched_evidence = local_evidence
+
+    state["evidence"] = evidence_to_dicts(enriched_evidence)
     emit(
         _event(
             "success",
-            text="Evidence normalization selesai.",
+            text="Evidence normalization & enrichment selesai.",
             stage="evidence",
             count=len(state["evidence"]),
         ),
