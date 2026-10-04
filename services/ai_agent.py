@@ -1058,6 +1058,7 @@ async def call_ollama_async(
 
     combined: list[dict[str, Any]] = []
     failed_batches = 0
+    failure_callback_sent = False
 
     async with httpx.AsyncClient(
         timeout=timeout,
@@ -1155,6 +1156,9 @@ async def call_ollama_async(
                 )
             except Exception as exc:
                 failed_batches += 1
+                if combined and on_failure and not failure_callback_sent:
+                    failure_callback_sent = True
+                    on_failure()
                 logger.warning(
                     "[Ollama Local] Batch %d gagal: %s: %s.",
                     batch_index // batch_size + 1,
@@ -1260,19 +1264,16 @@ async def _run_provider_chain(
 
     Failover hierarchy:
 
-        Gemini key #1
-             ↓ failure / invalid output
-        Gemini key #2
-             ↓ failure / invalid output
-        ...
+        _provider_order()
              ↓
-        Groq
-             ↓ failure / invalid output
-        OpenAI
-             ↓ failure / invalid output
-        Ollama Local
-             ↓ failure / invalid output
+        each configured provider
+             ↓ API failure / empty response / invalid JSON / invalid schema
+        next configured provider
+             ↓
         return (None, "None")
+
+    Gemini is additionally rotated across every configured Gemini key before
+    moving to the next provider in _provider_order().
 
     The final rule-based offline fallback is intentionally NOT executed here.
     It remains the responsibility of analyze_smart_cache(), and is reached only
