@@ -1912,6 +1912,8 @@ def _finalize_analysis(
                     item["delete_url"] = "-"
                 elif risk_key == "medium":
                     item["reason"] = t("medium_activity_guard_reason", lang=lang)
+                elif risk_key == "high":
+                    item["reason"] = t("fallback_reason", lang=lang)
             elif (
                 not matches
                 and activity_floor in {"medium", "high"}
