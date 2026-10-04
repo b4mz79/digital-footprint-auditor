@@ -209,6 +209,66 @@ def render_services(scan_state: dict) -> None:
     st.dataframe(df_display, width="stretch")
 
 
+def render_evidence(scan_state: dict) -> None:
+    """Render normalized evidence and contextual enrichment without implying risk."""
+    evidence = scan_state.get("evidence") or []
+    if not evidence:
+        return
+
+    contextual = [
+        item for item in evidence
+        if item.get("relation") == "security_publication"
+    ]
+    verified = [
+        item for item in evidence
+        if item.get("relation") == "verification"
+    ]
+
+    st.divider()
+    st.subheader("🔎 Evidence & Enrichment")
+    st.caption(
+        f"{len(evidence)} evidence record(s) • "
+        f"{len(contextual)} contextual security-publication record(s) • "
+        f"{len(verified)} verification record(s)"
+    )
+
+    with st.expander("Evidence provenance / provenance bukti", expanded=False):
+        for item in evidence:
+            relation = str(item.get("relation", "unknown"))
+            directness = str(item.get("directness", "unknown"))
+            confidence = float(item.get("confidence", 0.0) or 0.0)
+
+            st.markdown(
+                f"**{_md_escape(item.get('title', 'Evidence'))}** "
+                f"— `{relation}` / `{directness}` / "
+                f"confidence `{confidence:.2f}`"
+            )
+            source = item.get("source", "")
+            source_type = item.get("source_type", "")
+            if source or source_type:
+                st.caption(
+                    f"{t('source_label', lang=lang)}: {source} "
+                    f"| type: {source_type}"
+                )
+
+            published_at = item.get("published_at")
+            observed_at = item.get("observed_at")
+            if published_at:
+                st.caption(f"Published: {published_at}")
+            if observed_at:
+                st.caption(f"Observed: {observed_at}")
+
+            summary = item.get("summary", "")
+            if summary:
+                st.write(summary)
+
+            url = item.get("url", "")
+            if isinstance(url, str) and url.startswith(("https://", "http://")):
+                st.markdown(f"🔗 [{_md_escape(url)}]({url})")
+
+            st.caption("---")
+
+
 def render_ai(scan_state: dict) -> None:
     ai_output = scan_state.get("ai")
     if not ai_output:
@@ -429,6 +489,7 @@ with st.sidebar:
     has_rapidapi = _api_status("RAPIDAPI_KEY")
     has_hibp = _api_status("HIBP_API_KEY")
     has_tavily = _api_status("TAVILY_API_KEY")
+    has_firecrawl = _api_status("FIRECRAWL_API_KEY")
     has_gsearch = _api_status(
         "GOOGLE_SEARCH_API_KEY",
         "GOOGLE_CX_ID",
@@ -444,6 +505,7 @@ with st.sidebar:
     st.caption(f"• **Have I Been Pwned API:** {has_hibp}")
     st.caption(f"• **Google Custom Search:** {has_gsearch}")
     st.caption(f"• **Tavily AI Search:** {has_tavily}")
+    st.caption(f"• **Firecrawl Evidence Enrichment:** {has_firecrawl}")
     st.caption("• **SearXNG & DDG:** 🟢 Active (Always Free)")
 
     run_scan = st.button(
@@ -483,6 +545,7 @@ if run_scan:
             "email": target_email.strip(),
             "phone": target_phone.strip(),
             "services": [],
+            "evidence": [],
             "breach": {
                 "enabled": bool(enable_breach),
                 "findings": [],
@@ -510,6 +573,12 @@ if run_scan:
                 live_state["breach"] = live_data["breach"]
                 with live_area:
                     render_breach(live_state)
+                return
+
+            if stage == "evidence" and "evidence" in live_data:
+                live_state["evidence"] = live_data["evidence"]
+                with live_area:
+                    render_evidence(live_state)
                 return
 
             # AI:
@@ -652,6 +721,7 @@ if run_scan:
 
         if final_state.get("ai"):
             with live_area:
+                render_evidence(final_state)
                 render_ai(final_state)
 
         # Jika AI tidak berjalan / tidak menghasilkan output,
@@ -680,6 +750,7 @@ if state and state.get("ai_lang") != lang:
 # sehingga tidak dirender ulang dan tidak terjadi duplikasi.
 if state and not scan_executed:
     render_breach(state)
+    render_evidence(state)
 
     if not state["services"] and not state["breach"]["findings"]:
         st.warning(t("warn_no_services", lang=lang))
