@@ -1838,51 +1838,92 @@ def _finalize_analysis(
         seen.add(key)
 
         found = _find_analysis_item(by_name, key)
+        is_rule_based = found is None
         item = dict(found) if found else _rule_based_item(name, lang)
         risk_key = item.get("risk_key") or normalize_risk(item.get("risk_level")) or "unknown"
 
         matches = _matching_findings(svc, findings)
         matched_ids.update(id(f) for f in matches)
 
-        # START IMPROVE AND AUDITED BY CHATGPT
-        guarded_risk_key = _apply_conservative_unknown_guard(svc, risk_key, bool(matches))
-
-        if not matches and risk_key == "high" and _activity_risk_floor(svc) == "unknown":
-            guarded_risk_key = "unknown"
-
-        if (
-            not matches
-            and risk_key in {"high", "medium"}
-            and _model_reason_is_unsupported(item.get("reason"))
-        ):
-            guarded_risk_key = "unknown"
-
-        # Deterministic evidence bounds model over-rating:
-        # order/application/booking/vehicle-verification evidence establishes
-        # Medium as the maximum in the absence of a breach or explicit
-        # High-activity evidence such as payment, transaction, banking auth,
-        # identity verification, or health evidence.
         activity_floor = _activity_risk_floor(svc)
-        if (
-            not matches
-            and activity_floor == "medium"
-            and guarded_risk_key == "high"
-        ):
-            guarded_risk_key = "medium"
 
-        if guarded_risk_key != risk_key:
-            previous_risk_key = risk_key
-            risk_key = guarded_risk_key
-            item["risk_guarded"] = True
-            if risk_key == "unknown":
-                item["reason"] = (
-                    t("unknown_generic_event_reason", lang=lang)
-                    if _service_evidence_text(svc).strip()
-                    else t("unknown_reason", lang=lang)
+        # A missing model item is a deterministic fallback, not a model claim.
+        # Its risk/reason must therefore be derived together from explicit evidence;
+        # otherwise an evidence floor can produce states such as "High + insufficient".
+        if is_rule_based:
+            deterministic_risk = (
+                max(
+                    (_finding_floor(f) for f in matches),
+                    key=lambda value: RISK_RANK[value],
                 )
-                item["delete_url"] = "-"
-            elif risk_key == "medium" and previous_risk_key == "high":
-                item["reason"] = t("medium_activity_guard_reason", lang=lang)
+                if matches
+                else activity_floor
+            )
+            if deterministic_risk != "unknown":
+                risk_key = deterministic_risk
+                item["risk_guarded"] = True
+                if matches:
+                    item["reason"] = t(
+                        "evidence_note",
+                        lang=lang,
+                        count=len(matches),
+                        level=t(f"risk_{risk_key}", lang=lang),
+                    )
+                elif risk_key == "medium":
+                    item["reason"] = t("medium_activity_guard_reason", lang=lang)
+                elif risk_key == "high":
+                    item["reason"] = t("fallback_reason", lang=lang)
+        else:
+            # Model output is still subordinate to deterministic evidence.
+            guarded_risk_key = _apply_conservative_unknown_guard(
+                svc,
+                risk_key,
+                bool(matches),
+            )
+
+            # Unsupported model reasoning means Unknown only when there is no
+            # explicit activity floor. Explicit evidence remains authoritative.
+            if (
+                not matches
+                and _model_reason_is_unsupported(item.get("reason"))
+                and activity_floor == "unknown"
+            ):
+                guarded_risk_key = "unknown"
+
+            # Order/application/booking/vehicle-verification evidence establishes
+            # Medium as the maximum without breach or explicit High activity.
+            if (
+                not matches
+                and activity_floor == "medium"
+                and guarded_risk_key == "high"
+            ):
+                guarded_risk_key = "medium"
+
+            if guarded_risk_key != risk_key:
+                previous_risk_key = risk_key
+                risk_key = guarded_risk_key
+                item["risk_guarded"] = True
+                if risk_key == "unknown":
+                    item["reason"] = (
+                        t("unknown_generic_event_reason", lang=lang)
+                        if _service_evidence_text(svc).strip()
+                        else t("unknown_reason", lang=lang)
+                    )
+                    item["delete_url"] = "-"
+                elif risk_key == "medium":
+                    item["reason"] = t("medium_activity_guard_reason", lang=lang)
+            elif (
+                not matches
+                and activity_floor in {"medium", "high"}
+                and _model_reason_is_unsupported(item.get("reason"))
+            ):
+                # The deterministic floor already equals the model's rating;
+                # still replace an incoherent "insufficient evidence" reason.
+                item["risk_guarded"] = True
+                if activity_floor == "medium":
+                    item["reason"] = t("medium_activity_guard_reason", lang=lang)
+                else:
+                    item["reason"] = t("fallback_reason", lang=lang)
         # END IMPROVE AND AUDITED BY CHATGPT
 
         if matches:
