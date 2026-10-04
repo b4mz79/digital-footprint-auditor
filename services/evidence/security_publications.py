@@ -245,6 +245,17 @@ def _target_subject_signal(
     # substantive security-context floor.
     if _contains_term(url, aliases):
         return True, "url_alias", "weak"
+
+    # Certification/catalog publishers may compact a domain into a URL slug,
+    # e.g. "atlassiancom-jira-data-center" for "atlassian.com". Treat only
+    # the compact registrable-domain form as a URL signal; do not add it to
+    # title/summary matching, where this heuristic would be too permissive.
+    compact_registrable = re.sub(r"[^a-z0-9]", "", aliases[1] if len(aliases) > 1 else aliases[0])
+    if compact_registrable and re.search(
+        rf"(?<![a-z0-9]){re.escape(compact_registrable)}(?![a-z0-9])",
+        url.casefold(),
+    ):
+        return True, "url_alias", "weak"
     return False, "none", "none"
 
 def _incidental_target_mention(domain: str, title: str, summary: str) -> bool:
