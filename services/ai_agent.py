@@ -1136,7 +1136,12 @@ async def call_ollama_async(prompt: str, sys_prompt: str, lang: str = "id", on_b
                 raw_batch = "".join(chunks)
                 parsed_batch = json.loads(clean_json_string(raw_batch))
                 validated_batch = validate_ai_output(parsed_batch, lang)
-                combined.extend(validated_batch["analysis"])
+                batch_analysis = validated_batch["analysis"]
+                combined.extend(batch_analysis)
+
+                if on_batch:
+                    on_batch(batch_analysis, batch)
+
                 logger.info(
                     "[Ollama Local] Batch %d selesai: %d service.",
                     batch_index // batch_size + 1,
