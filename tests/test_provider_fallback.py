@@ -427,3 +427,166 @@ async def test_empty_provider_output_rotates_to_next_provider(monkeypatch) -> No
     assert provider == "Groq Cloud"
     assert parsed is not None
     assert parsed["analysis"][0]["service"] == "Example"
+
+
+@pytest.mark.asyncio
+async def test_analyze_smart_cache_rejects_invalid_cached_payload(monkeypatch) -> None:
+    services = [
+        {"name": "Example Shop", "domain": "example.com", "subject": "Order confirmation"},
+    ]
+    findings: list[dict] = []
+    evidence: list[dict] = []
+    scan_status = {
+        "breach_scan_complete": True,
+        "failed_engines": [],
+    }
+
+    fingerprint = ai_agent._input_fingerprint(
+        services,
+        findings,
+        evidence,
+        scan_status,
+    )
+
+    # Same fingerprint, but an unusable cached analysis. This must be a
+    # cache miss rather than a successful cached result.
+    invalid_cache = {
+        "provider_used": "Groq Cloud",
+        "is_from_cache": True,
+        "input_fp": fingerprint,
+        "analysis": [],
+        "exposures": [],
+        "dsr_template": "",
+    }
+
+    provider_calls: list[int] = []
+
+    async def fake_chain(*args, **kwargs):
+        provider_calls.append(1)
+        return (
+            {
+                "analysis": [
+                    {
+                        "service": "Example Shop",
+                        "risk_key": "medium",
+                        "risk_level": "Medium",
+                        "reason": "Order evidence.",
+                        "delete_url": "",
+                    }
+                ]
+            },
+            "Groq Cloud",
+        )
+
+    monkeypatch.setattr(
+        ai_agent,
+        "load_analysis_cache_ext",
+        lambda *args, **kwargs: invalid_cache,
+    )
+    monkeypatch.setattr(
+        ai_agent,
+        "save_analysis_cache_ext",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        ai_agent,
+        "load_local_dsr_template",
+        lambda *args, **kwargs: "",
+    )
+    monkeypatch.setattr(ai_agent, "_run_provider_chain", fake_chain)
+
+    result = await ai_agent.analyze_smart_cache(
+        "example@example.com",
+        services,
+        force_refresh=False,
+        lang="en",
+        breach_findings=findings,
+        evidence_records=evidence,
+        scan_status=scan_status,
+    )
+
+    assert provider_calls == [1]
+    assert result["is_from_cache"] is False
+    assert result["provider_used"] == "Groq Cloud"
+    assert result["analysis"][0]["service"] == "Example Shop"
+
+
+@pytest.mark.asyncio
+async def test_analyze_smart_cache_rejects_cached_none_provider(monkeypatch) -> None:
+    services = [
+        {"name": "Example Shop", "domain": "example.com"},
+    ]
+    scan_status = {
+        "breach_scan_complete": True,
+        "failed_engines": [],
+    }
+    fingerprint = ai_agent._input_fingerprint(
+        services,
+        [],
+        [],
+        scan_status,
+    )
+
+    invalid_cache = {
+        "provider_used": "None",
+        "is_from_cache": True,
+        "input_fp": fingerprint,
+        "analysis": [
+            {
+                "service": "Example Shop",
+                "risk_level": "Unknown",
+                "reason": "Insufficient evidence.",
+                "delete_url": "",
+            }
+        ],
+        "exposures": [],
+        "dsr_template": "",
+    }
+
+    provider_calls: list[int] = []
+
+    async def fake_chain(*args, **kwargs):
+        provider_calls.append(1)
+        return (
+            {
+                "analysis": [
+                    {
+                        "service": "Example Shop",
+                        "risk_key": "unknown",
+                        "risk_level": "Unknown",
+                        "reason": "Insufficient evidence.",
+                        "delete_url": "",
+                    }
+                ]
+            },
+            "Google Gemini",
+        )
+
+    monkeypatch.setattr(
+        ai_agent,
+        "load_analysis_cache_ext",
+        lambda *args, **kwargs: invalid_cache,
+    )
+    monkeypatch.setattr(
+        ai_agent,
+        "save_analysis_cache_ext",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        ai_agent,
+        "load_local_dsr_template",
+        lambda *args, **kwargs: "",
+    )
+    monkeypatch.setattr(ai_agent, "_run_provider_chain", fake_chain)
+
+    result = await ai_agent.analyze_smart_cache(
+        "example@example.com",
+        services,
+        force_refresh=False,
+        lang="en",
+        scan_status=scan_status,
+    )
+
+    assert provider_calls == [1]
+    assert result["is_from_cache"] is False
+    assert result["provider_used"] == "Google Gemini"
