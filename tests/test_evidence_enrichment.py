@@ -191,6 +191,15 @@ def test_contextual_relevance_requires_target_and_security_signals() -> None:
     assert signals["reason"] == "navigation_page"
 
     accepted, signals = _contextual_relevance(
+        "example.com",
+        url="https://securelist.com/incidents?offset=25",
+        title="Security incidents",
+        summary="example.com phishing incident",
+    )
+    assert accepted is False
+    assert signals["reason"] == "navigation_page"
+
+    accepted, signals = _contextual_relevance(
         "atlassian.com", url="https://welivesecurity.com/hipchat-hack/",
         title="HipChat hack leads to password reset",
         summary="Atlassian suffered a security breach after its HipChat service was compromised.",
