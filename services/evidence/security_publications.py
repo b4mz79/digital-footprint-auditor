@@ -153,7 +153,15 @@ class FirecrawlSecurityPublicationProvider:
         client: httpx.AsyncClient | None = None,
         publishers: Iterable[tuple[str, str]] = DEFAULT_SECURITY_PUBLISHERS,
     ) -> None:
-        self.api_key = (api_key or os.getenv("FIRECRAWL_API_KEY", "")).strip()
+        # None means "use configured environment"; an explicit empty string
+        # means "disabled". This keeps dependency injection deterministic and
+        # prevents a caller from accidentally re-enabling the provider.
+        configured_key = (
+            os.getenv("FIRECRAWL_API_KEY", "")
+            if api_key is None
+            else api_key
+        )
+        self.api_key = str(configured_key or "").strip()
         self.timeout_seconds = float(timeout_seconds)
         self.max_results = max(1, min(int(max_results), 10))
         self._client = client
