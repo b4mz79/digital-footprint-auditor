@@ -187,3 +187,60 @@ async def test_firecrawl_provider_swallows_provider_failure() -> None:
         await client.aclose()
 
     assert records == []
+
+
+@pytest.mark.asyncio
+async def test_enrich_evidence_merges_contextual_records(monkeypatch) -> None:
+    from services.evidence import enrichment
+    from services.evidence.models import EvidenceDirectness, EvidenceRelation, EvidenceRecord
+
+    base = EvidenceRecord(
+        evidence_id="base-1",
+        source="OSINT / Holehe",
+        source_type="osint",
+        relation=EvidenceRelation.TARGET_RESOURCE,
+        directness=EvidenceDirectness.DIRECT,
+        confidence=0.80,
+        observed_at="2026-01-01T00:00:00+00:00",
+        published_at=None,
+        domain="example.com",
+        url="",
+        title="Target-associated service: Example",
+        summary="Observed service association.",
+    )
+
+    class FakeProvider:
+        def __init__(self, **kwargs):
+            assert kwargs["api_key"] == "test-key"
+            assert kwargs["max_results"] == 5
+
+        async def search_domain(self, domain):
+            assert domain == "example.com"
+            return [
+                EvidenceRecord(
+                    evidence_id="context-1",
+                    source="Kaspersky Securelist",
+                    source_type="security_publication",
+                    relation=EvidenceRelation.SECURITY_PUBLICATION,
+                    directness=EvidenceDirectness.CONTEXTUAL,
+                    confidence=0.65,
+                    observed_at="2026-01-01T00:00:00+00:00",
+                    published_at="2025-12-01",
+                    domain=domain,
+                    url="https://securelist.com/example",
+                    title="Example security context",
+                    summary="Context only.",
+                )
+            ]
+
+    monkeypatch.setattr(enrichment, "FirecrawlSecurityPublicationProvider", FakeProvider)
+
+    result = await enrichment.enrich_evidence(
+        [base],
+        firecrawl_api_key="test-key",
+    )
+
+    assert len(result) == 2
+    assert result[0].evidence_id == "base-1"
+    assert result[1].relation is EvidenceRelation.SECURITY_PUBLICATION
+    assert result[1].directness is EvidenceDirectness.CONTEXTUAL
