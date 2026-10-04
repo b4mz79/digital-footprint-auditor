@@ -590,3 +590,71 @@ async def test_analyze_smart_cache_rejects_cached_none_provider(monkeypatch) -> 
     assert provider_calls == [1]
     assert result["is_from_cache"] is False
     assert result["provider_used"] == "Google Gemini"
+
+
+@pytest.mark.asyncio
+async def test_gemini_invalid_output_rotates_to_next_key(monkeypatch) -> None:
+    calls: list[str] = []
+
+    async def fake_gemini(prompt, key, sys_prompt):
+        calls.append(key)
+        if key == "key-1":
+            return '{"analysis":[]}'
+        return '{"analysis":[{"service":"Example","risk_level":"unknown","reason":"Insufficient evidence.","delete_url":""}]}'
+
+    monkeypatch.setenv("GEMINI_API_KEY", "key-1")
+    monkeypatch.setenv("GOOGLE_API_KEY", "key-2")
+    for index in range(1, 7):
+        monkeypatch.delenv(f"GOOGLE_API_KEY_{index}", raising=False)
+
+    monkeypatch.setattr(ai_agent, "call_gemini_async", fake_gemini)
+    monkeypatch.setattr(
+        ai_agent,
+        "_provider_order",
+        lambda: ["gemini", "groq"],
+    )
+
+    parsed, provider = await ai_agent._run_provider_chain(
+        "prompt",
+        "system",
+        "en",
+    )
+
+    assert calls == ["key-1", "key-2"]
+    assert provider == "Google Gemini"
+    assert parsed is not None
+    assert parsed["analysis"][0]["service"] == "Example"
+
+
+@pytest.mark.asyncio
+async def test_gemini_transport_failure_rotates_to_next_key(monkeypatch) -> None:
+    calls: list[str] = []
+
+    async def fake_gemini(prompt, key, sys_prompt):
+        calls.append(key)
+        if key == "key-1":
+            raise RuntimeError("temporary Gemini failure")
+        return '{"analysis":[{"service":"Example","risk_level":"unknown","reason":"Insufficient evidence.","delete_url":""}]}'
+
+    monkeypatch.setenv("GEMINI_API_KEY", "key-1")
+    monkeypatch.setenv("GOOGLE_API_KEY", "key-2")
+    for index in range(1, 7):
+        monkeypatch.delenv(f"GOOGLE_API_KEY_{index}", raising=False)
+
+    monkeypatch.setattr(ai_agent, "call_gemini_async", fake_gemini)
+    monkeypatch.setattr(
+        ai_agent,
+        "_provider_order",
+        lambda: ["gemini", "groq"],
+    )
+
+    parsed, provider = await ai_agent._run_provider_chain(
+        "prompt",
+        "system",
+        "en",
+    )
+
+    assert calls == ["key-1", "key-2"]
+    assert provider == "Google Gemini"
+    assert parsed is not None
+    assert parsed["analysis"][0]["service"] == "Example"
