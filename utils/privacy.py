@@ -41,7 +41,7 @@ _CREDENTIAL_PATTERN = re.compile(
 )
 _MARKDOWN_IMAGE_PATTERN = re.compile(r"!\[([^\]]*)\]\([^)]*\)")
 _MARKDOWN_LINK_PATTERN = re.compile(r"\[([^\]]+)\]\([^)]*\)")
-_MARKDOWN_DECORATION_PATTERN = re.compile(r"(?m)^\s{0,3}#{1,6}\s+|[*_~`]+")
+_MARKDOWN_DECORATION_PATTERN = re.compile(r"#{1,6}\s+|[*_~`]+")
 _WHITESPACE_PATTERN = re.compile(r"\s+")
 
 
