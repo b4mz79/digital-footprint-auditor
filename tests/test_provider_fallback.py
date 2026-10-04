@@ -37,6 +37,7 @@ def test_finalize_caps_order_high_without_high_activity() -> None:
     assert exposures == []
     assert final[0]["risk_key"] == "medium"
     assert final[0]["risk_level"] == ai_agent.t("risk_medium", lang="en")
+    assert final[0]["reason"] == ai_agent.t("medium_activity_guard_reason", lang="en")
 
 
 @pytest.mark.asyncio
