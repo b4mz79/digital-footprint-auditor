@@ -264,6 +264,76 @@ async def test_firecrawl_429_enters_cooldown_without_retry_storm() -> None:
 
 
 @pytest.mark.asyncio
+async def test_firecrawl_provider_applies_configured_request_spacing() -> None:
+    calls: list[float] = []
+
+    class SuccessTransport(httpx.AsyncBaseTransport):
+        async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+            import time
+            calls.append(time.monotonic())
+            return httpx.Response(
+                200,
+                json={"success": True, "data": {"web": []}},
+                request=request,
+            )
+
+    client = httpx.AsyncClient(transport=SuccessTransport())
+    provider = FirecrawlSecurityPublicationProvider(
+        api_key="test-key",
+        client=client,
+        publishers=(("Kaspersky Securelist", "securelist.com"),),
+        max_concurrency=2,
+        requests_per_minute=1200,
+    )
+
+    try:
+        await provider.search_domain("example.com")
+        await provider.search_domain("example.org")
+    finally:
+        await client.aclose()
+
+    assert len(calls) == 2
+    assert calls[1] - calls[0] >= 0.045
+
+
+@pytest.mark.asyncio
+async def test_enrich_evidence_passes_configured_request_rate(monkeypatch) -> None:
+    captured: dict[str, int] = {}
+
+    class FakeProvider:
+        def __init__(self, **kwargs):
+            captured["requests_per_minute"] = kwargs["requests_per_minute"]
+            self.cooldown_active = False
+
+        async def search_domain(self, domain):
+            return []
+
+    import services.evidence_enrichment as enrichment
+    monkeypatch.setattr(enrichment, "FirecrawlSecurityPublicationProvider", FakeProvider)
+    monkeypatch.setenv("FIRECRAWL_REQUESTS_PER_MINUTE", "7")
+
+    base = EvidenceRecord(
+        evidence_id="base-rpm",
+        source="OSINT / Holehe",
+        source_type="osint",
+        relation=EvidenceRelation.TARGET_RESOURCE,
+        directness=EvidenceDirectness.DIRECT,
+        confidence=0.80,
+        observed_at="2026-01-01T00:00:00+00:00",
+        published_at=None,
+        domain="example.com",
+        url="",
+        title="Example",
+        summary="Observed service association.",
+    )
+
+    result = await enrich_evidence([base], firecrawl_api_key="test-key")
+
+    assert len(result) == 1
+    assert captured["requests_per_minute"] == 7
+
+
+@pytest.mark.asyncio
 async def test_enrich_evidence_merges_contextual_records(monkeypatch) -> None:
     from services.evidence.models import EvidenceDirectness, EvidenceRelation, EvidenceRecord
 
