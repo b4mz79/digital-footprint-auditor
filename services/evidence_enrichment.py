@@ -14,6 +14,8 @@ import asyncio
 import os
 from typing import Iterable
 
+import httpx
+
 from services.evidence.models import EvidenceRecord
 from services.evidence.security_publications import (
     FirecrawlSecurityPublicationProvider,
@@ -58,10 +60,20 @@ async def enrich_evidence(
         20.0,
         120.0,
     )
-    provider = FirecrawlSecurityPublicationProvider(
-        api_key=api_key,
-        max_results=max_results,
-        timeout_seconds=timeout_seconds,
+    domain_concurrency = env_non_negative_int(
+        "FIRECRAWL_DOMAIN_CONCURRENCY",
+        4,
+        16,
+    ) or 1
+    request_concurrency = env_non_negative_int(
+        "FIRECRAWL_REQUEST_CONCURRENCY",
+        2,
+        16,
+    ) or 1
+    cooldown_seconds = env_positive_float(
+        "FIRECRAWL_COOLDOWN_SECONDS",
+        60.0,
+        3600.0,
     )
 
     domains = sorted(
@@ -76,16 +88,38 @@ async def enrich_evidence(
         return base
 
     logger.info(
-        "[Evidence Enrichment] Firecrawl enabled; domains=%d max_results=%d timeout=%.1fs",
+        "[Evidence Enrichment] Firecrawl enabled; domains=%d max_results=%d timeout=%.1fs domain_concurrency=%d request_concurrency=%d cooldown=%.1fs",
         len(domains),
         max_results,
         timeout_seconds,
+        domain_concurrency,
+        request_concurrency,
+        cooldown_seconds,
     )
 
-    results = await asyncio.gather(
-        *(provider.search_domain(domain) for domain in domains),
-        return_exceptions=True,
-    )
+    domain_gate = asyncio.Semaphore(domain_concurrency)
+
+    async with httpx.AsyncClient(
+        follow_redirects=False,
+        headers={"User-Agent": "PrivacyAuditor/Evidence"},
+    ) as client:
+        provider = FirecrawlSecurityPublicationProvider(
+            api_key=api_key,
+            max_results=max_results,
+            timeout_seconds=timeout_seconds,
+            client=client,
+            max_concurrency=request_concurrency,
+            cooldown_seconds=cooldown_seconds,
+        )
+
+        async def enrich_domain(domain: str):
+            async with domain_gate:
+                return await provider.search_domain(domain)
+
+        results = await asyncio.gather(
+            *(enrich_domain(domain) for domain in domains),
+            return_exceptions=True,
+        )
 
     merged: dict[str, EvidenceRecord] = {
         record.evidence_id: record for record in base
