@@ -395,7 +395,12 @@ class FirecrawlSecurityPublicationProvider:
 
         evidence: list[EvidenceRecord] = []
         failed = 0
+        rate_limited = 0
         for result in results:
+            if isinstance(result, SecurityPublicationRateLimited):
+                rate_limited += 1
+                logger.warning("[Firecrawl] Publisher rate limited: %s", result)
+                continue
             if isinstance(result, SecurityPublicationError):
                 failed += 1
                 logger.warning("[Firecrawl] Publisher enrichment failed: %s", result)
@@ -415,9 +420,10 @@ class FirecrawlSecurityPublicationProvider:
             unique[item.evidence_id] = item
         output = list(unique.values())
         logger.info(
-            "[Firecrawl] Domain completed domain=%s accepted=%d failed_publishers=%d",
+            "[Firecrawl] Domain completed domain=%s accepted=%d failed_publishers=%d rate_limited=%d",
             normalized,
             len(output),
             failed,
+            rate_limited,
         )
         return output
