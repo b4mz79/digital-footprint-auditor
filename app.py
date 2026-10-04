@@ -260,7 +260,9 @@ def render_evidence(scan_state: dict) -> None:
 
             summary = item.get("summary", "")
             if summary:
-                st.write(summary)
+                # Evidence text is untrusted web content. Render it as plain
+                # text so Markdown/HTML cannot become UI artefacts.
+                st.text(str(summary))
 
             url = item.get("url", "")
             if isinstance(url, str) and url.startswith(("https://", "http://")):
@@ -570,15 +572,15 @@ if run_scan:
 
             # Breach selesai: tampilkan hasil breach secara langsung.
             if stage == "breach" and "breach" in live_data:
+                # Keep live state in sync. The final renderer below owns the
+                # completed breach block so Streamlit does not show it twice.
                 live_state["breach"] = live_data["breach"]
-                with live_area:
-                    render_breach(live_state)
                 return
 
             if stage == "evidence" and "evidence" in live_data:
+                # Keep live state in sync. The final renderer below owns the
+                # completed evidence block so Streamlit does not show it twice.
                 live_state["evidence"] = live_data["evidence"]
-                with live_area:
-                    render_evidence(live_state)
                 return
 
             # AI:
@@ -720,6 +722,9 @@ if run_scan:
             ai_live_placeholder.empty()
 
         with live_area:
+            # Completed scan results are rendered exactly once after the
+            # pipeline returns. Stage callbacks only update live_state.
+            render_breach(final_state)
             render_evidence(final_state)
 
             if final_state.get("ai"):
