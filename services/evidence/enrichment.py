@@ -14,11 +14,14 @@ import os
 from typing import Iterable
 
 from utils.envutil import env_non_negative_int, env_positive_float
+from utils.logging_setup import get_logger
 
 from services.evidence.models import EvidenceRecord
 from services.evidence.security_publications import (
     FirecrawlSecurityPublicationProvider,
 )
+
+logger = get_logger("EvidenceEnrichment")
 
 
 async def enrich_evidence(
@@ -33,6 +36,7 @@ async def enrich_evidence(
     evidence remains intact even when enrichment is disabled or unavailable.
     """
     base = list(records)
+    logger.info("[Evidence Enrichment] Starting; base_records=%d", len(base))
     api_key = (
         firecrawl_api_key
         if firecrawl_api_key is not None
@@ -40,6 +44,7 @@ async def enrich_evidence(
     ).strip()
 
     if not api_key:
+        logger.info("[Evidence Enrichment] Firecrawl disabled/not configured; skipping.")
         return base
 
     configured_max_results = env_non_negative_int(
@@ -67,7 +72,15 @@ async def enrich_evidence(
         }
     )
     if not domains:
+        logger.info("[Evidence Enrichment] No normalized domains available; skipping.")
         return base
+
+    logger.info(
+        "[Evidence Enrichment] Firecrawl enabled; domains=%d max_results=%d timeout=%.1fs",
+        len(domains),
+        max_results,
+        timeout_seconds,
+    )
 
     results = await asyncio.gather(
         *(provider.search_domain(domain) for domain in domains),
@@ -77,10 +90,27 @@ async def enrich_evidence(
     merged: dict[str, EvidenceRecord] = {
         record.evidence_id: record for record in base
     }
+    failed = 0
+    contextual_added = 0
     for result in results:
         if isinstance(result, Exception):
+            failed += 1
+            logger.warning(
+                "[Evidence Enrichment] Domain enrichment failed: %s",
+                type(result).__name__,
+            )
             continue
         for record in result:
+            if record.evidence_id not in merged:
+                contextual_added += 1
             merged[record.evidence_id] = record
 
-    return list(merged.values())
+    output = list(merged.values())
+    logger.info(
+        "[Evidence Enrichment] Completed; base=%d contextual_added=%d failed_domains=%d total=%d",
+        len(base),
+        contextual_added,
+        failed,
+        len(output),
+    )
+    return output
