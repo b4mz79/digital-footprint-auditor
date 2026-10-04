@@ -1243,6 +1243,7 @@ async def _run_provider_chain(
     sys_prompt: str,
     lang: str,
     on_ollama_batch: Callable[[list[dict[str, Any]], list[dict[str, Any]]], None] | None = None,
+    on_ollama_failure: Callable[[], None] | None = None,
 ) -> tuple[dict[str, Any] | None, str]:
     """Run the configured AI provider failover chain.
 
@@ -1492,6 +1493,7 @@ async def _run_provider_chain(
                     sys_prompt,
                     lang,
                     on_batch=on_ollama_batch,
+                    on_failure=on_ollama_failure,
                 )
 
                 if not raw:
@@ -2040,6 +2042,7 @@ async def analyze_smart_cache(
     evidence_records: list | None = None,
     scan_status: dict[str, Any] | None = None,
     on_analysis_item: Callable[[dict[str, Any]], None] | None = None,
+    on_analysis_reset: Callable[[], None] | None = None,
 ) -> dict[str, Any]:
     start_time = time.monotonic()
 
@@ -2202,6 +2205,7 @@ async def analyze_smart_cache(
         sys_prompt,
         lang,
         on_ollama_batch=_on_ollama_batch,
+        on_ollama_failure=on_analysis_reset,
     )
 
     # -------------------------------------------------------------------------
