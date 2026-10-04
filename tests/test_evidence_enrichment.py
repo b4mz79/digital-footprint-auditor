@@ -250,6 +250,8 @@ def test_contextual_relevance_requires_target_and_security_signals() -> None:
     )
     assert accepted is False
     assert signals["reason"] == "security_context_missing"
+    assert signals["target"] == "url_alias"
+    assert signals["target_strength"] == "weak"
 
 
 @pytest.mark.asyncio
