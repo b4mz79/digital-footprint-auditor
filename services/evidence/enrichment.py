@@ -13,6 +13,8 @@ import asyncio
 import os
 from typing import Iterable
 
+from utils.envutil import env_non_negative_int, env_positive_float
+
 from services.evidence.models import EvidenceRecord
 from services.evidence.security_publications import (
     FirecrawlSecurityPublicationProvider,
@@ -40,9 +42,21 @@ async def enrich_evidence(
     if not api_key:
         return base
 
+    configured_max_results = env_non_negative_int(
+        "FIRECRAWL_MAX_RESULTS",
+        firecrawl_max_results,
+        10,
+    )
+    max_results = configured_max_results or 1
+    timeout_seconds = env_positive_float(
+        "FIRECRAWL_TIMEOUT_SECONDS",
+        20.0,
+        120.0,
+    )
     provider = FirecrawlSecurityPublicationProvider(
         api_key=api_key,
-        max_results=firecrawl_max_results,
+        max_results=max_results,
+        timeout_seconds=timeout_seconds,
     )
 
     domains = sorted(
