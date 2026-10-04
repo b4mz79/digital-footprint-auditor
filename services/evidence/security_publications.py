@@ -19,7 +19,6 @@ import re
 from typing import Any, Iterable
 from urllib.parse import urlsplit
 import time
-from collections import deque
 
 import httpx
 
@@ -167,6 +166,24 @@ def _publisher_matches(url: str, publisher: SecurityPublisher) -> bool:
 def _build_query(domain: str) -> str:
     terms = " OR ".join(SECURITY_QUERY_TERMS)
     return f'"{domain}" ({terms})'
+
+
+def _contextual_relevance(
+    domain: str,
+    *,
+    url: str,
+    title: str,
+    summary: str,
+) -> bool:
+    """Accept only results with both target-domain and security-context signals."""
+    domain_pattern = re.compile(rf"(?<![a-z0-9-]){re.escape(domain)}(?![a-z0-9-])")
+    security_pattern = re.compile(
+        r"(?<![a-z0-9])(?:"
+        + "|".join(re.escape(term.casefold()) for term in SECURITY_QUERY_TERMS)
+        + r")(?![a-z0-9])"
+    )
+    searchable = " ".join((url, title, summary)).casefold()
+    return bool(domain_pattern.search(searchable) and security_pattern.search(searchable))
 
 
 def _utc_now() -> str:
@@ -353,6 +370,14 @@ class FirecrawlSecurityPublicationProvider:
             metadata = item.get("metadata")
             metadata = metadata if isinstance(metadata, dict) else {}
 
+            if not _contextual_relevance(
+                domain,
+                url=url,
+                title=title,
+                summary=description,
+            ):
+                continue
+
             published_at = metadata.get("publishedTime") or metadata.get("published_time")
             if published_at is not None:
                 published_at = str(published_at)[:64]
@@ -383,9 +408,10 @@ class FirecrawlSecurityPublicationProvider:
                         "provider": "firecrawl_search",
                         "publisher_domain": publisher.domain,
                         "query_scope": "domain_only",
+                        "relevance_filter": "security_publication_context_v1",
                     },
                     metadata={
-                        "status": "candidate_context",
+                        "status": "contextual_accepted",
                         "credits_used": body.get("creditsUsed"),
                     },
                 )
