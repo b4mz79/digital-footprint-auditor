@@ -169,6 +169,14 @@ def test_contextual_relevance_requires_target_and_security_signals() -> None:
     assert signals["reason"] == "security_context_missing"
 
     accepted, signals = _contextual_relevance(
+        "asus.com", url="https://securelist.com/asus-expert-site-manager/",
+        title="ASUS Expert Site Manager",
+        summary="Security management capability for ASUS devices.",
+    )
+    assert accepted is False
+    assert signals["reason"] == "security_context_missing"
+
+    accepted, signals = _contextual_relevance(
         "example.com", url="https://securelist.com/other-phishing/",
         title="Phishing campaign targets another company", summary="Security incident research.",
     )
@@ -205,6 +213,22 @@ def test_contextual_relevance_requires_target_and_security_signals() -> None:
     )
     assert accepted is True
     assert signals["target"] == "summary_alias"
+
+    accepted, signals = _contextual_relevance(
+        "asus.com", url="https://securelist.com/browsing-malicious-websites/36273/",
+        title="Browsing malicious websites",
+        summary="A general guide to browsing malicious websites; ASUS is mentioned as an example.",
+    )
+    assert accepted is False
+    assert signals["reason"] == "security_context_missing"
+
+    accepted, signals = _contextual_relevance(
+        "atlassian.com", url="https://learn.microsoft.com/en-us/microsoft-365-app-certification/teams/atlassiancom-jira-data-center",
+        title="Jira Data Center - Microsoft 365 App Certification",
+        summary="Security and compliance information for the application.",
+    )
+    assert accepted is False
+    assert signals["reason"] == "security_context_missing"
 
 
 @pytest.mark.asyncio
@@ -280,6 +304,7 @@ async def test_contextual_filter_dump_is_single_markdown_file(tmp_path, monkeypa
         await provider.search_domain("example.com")
     finally:
         await client.aclose()
+    await provider.finalize_filter_dump()
     dump = (tmp_path / "contextual_filter_dump.md").read_text(encoding="utf-8")
     assert dump.startswith("BEFORE\n```json\n")
     assert "\n---\nAFTER\n```json\n" in dump
