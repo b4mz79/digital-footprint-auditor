@@ -11,7 +11,6 @@ from services.pipeline import (
     clear_all_caches,
     get_tenant_id,
     purge_expired_caches,
-    run_ai,
     run_scan as run_scan_pipeline,
 )
 from utils.logging_setup import configure_logging
@@ -564,6 +563,7 @@ if run_scan:
             "ai_status": None,
             "ai_live_placeholder": None,
             "ai_live_items": [],
+            "evidence_status": None,
         }
 
         def push_event(event: dict) -> None:
@@ -577,10 +577,35 @@ if run_scan:
                 live_state["breach"] = live_data["breach"]
                 return
 
+            if stage == "evidence_start":
+                message = event.get("text") or "Memulai Evidence & Enrichment..."
+                status = ui_state.get("evidence_status")
+                if status is None:
+                    with live_area:
+                        ui_state["evidence_status"] = st.status(
+                            f"⏳ {message}",
+                            expanded=False,
+                        )
+                else:
+                    status.update(label=f"⏳ {message}", state="running")
+                return
+
             if stage == "evidence" and "evidence" in live_data:
                 # Keep live state in sync. The final renderer below owns the
                 # completed evidence block so Streamlit does not show it twice.
                 live_state["evidence"] = live_data["evidence"]
+                status = ui_state.get("evidence_status")
+                if status is not None:
+                    contextual_count = event.get("contextual_count", 0)
+                    status.update(
+                        label=(
+                            "✅ Evidence & Enrichment selesai — "
+                            f"{len(live_state['evidence'])} evidence, "
+                            f"{contextual_count} contextual"
+                        ),
+                        state="complete",
+                        expanded=False,
+                    )
                 return
 
             # AI:
