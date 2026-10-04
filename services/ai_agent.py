@@ -1156,15 +1156,28 @@ async def call_ollama_async(prompt: str, sys_prompt: str, lang: str = "id", on_b
                     str(exc)[:240],
                 )
 
+    if failed_batches:
+        # A partial Ollama result is NOT a successful provider result.
+        # Missing/invalid batches must rotate to the next provider instead of
+        # being silently converted into rule-based "unknown" items by the finalizer.
+        logger.warning(
+            "[Ollama Local] Partial batch result discarded: %d item tervalidasi, %d batch gagal.",
+            len(combined),
+            failed_batches,
+        )
+        raise ValueError(
+            f"Ollama menghasilkan output parsial ({len(combined)} item tervalidasi; "
+            f"{failed_batches} batch gagal)."
+        )
+
     if not combined:
         raise ValueError(
-            f"Ollama tidak menghasilkan analysis tervalidasi ({failed_batches} batch gagal)."
+            "Ollama tidak menghasilkan analysis tervalidasi."
         )
 
     logger.info(
-        "[Ollama Local] Batch analysis selesai: %d item tervalidasi, %d batch gagal.",
+        "[Ollama Local] Batch analysis selesai: %d item tervalidasi, 0 batch gagal.",
         len(combined),
-        failed_batches,
     )
     return json.dumps({"analysis": combined}, ensure_ascii=False)
 
@@ -1843,6 +1856,20 @@ def _finalize_analysis(
             and _model_reason_is_unsupported(item.get("reason"))
         ):
             guarded_risk_key = "unknown"
+
+        # Deterministic evidence bounds model over-rating:
+        # order/application/booking/vehicle-verification evidence establishes
+        # Medium as the maximum in the absence of a breach or explicit
+        # High-activity evidence such as payment, transaction, banking auth,
+        # identity verification, or health evidence.
+        activity_floor = _activity_risk_floor(svc)
+        if (
+            not matches
+            and activity_floor == "medium"
+            and guarded_risk_key == "high"
+        ):
+            guarded_risk_key = "medium"
+
         if guarded_risk_key != risk_key:
             risk_key = guarded_risk_key
             item["risk_guarded"] = True
