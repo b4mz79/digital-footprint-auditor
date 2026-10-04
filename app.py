@@ -702,6 +702,7 @@ if run_scan:
             force_refresh=force_refresh_breach,
             lang=lang,
             tenant_id=get_tenant_id(),
+            with_ai=False,
             on_event=push_event,
         )
 
@@ -738,11 +739,8 @@ if run_scan:
 
 state = st.session_state.get("scan_state")
 
-# Ganti bahasa: hasil scan tetap, analisis AI dibangun ulang
-# dalam bahasa baru.
-if state and state.get("ai_lang") != lang:
-    with st.spinner(t("spinner_ai", lang=lang)):
-        run_ai(state, lang)
+# AI analysis is intentionally disabled while Evidence Enrichment is being
+# validated. Do not trigger AI on language changes/reruns from the UI.
 
 
 # Pada rerun berikutnya (download, ganti bahasa, clear cache, dll.),
