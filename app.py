@@ -515,6 +515,13 @@ if run_scan:
             # AI:
             # Service AI dirender progressive: satu item selesai -> langsung tampil.
             if stage == "ai":
+                if "ai_reset" in live_data and live_data["ai_reset"]:
+                    ui_state["ai_live_items"].clear()
+                    placeholder = ui_state.get("ai_live_placeholder")
+                    if placeholder is not None:
+                        placeholder.empty()
+                    return
+
                 if "ai_item" in live_data:
                     item = live_data["ai_item"]
                     ui_state["ai_live_items"].append(item)
