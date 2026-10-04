@@ -309,3 +309,88 @@ async def test_partial_ollama_failure_resets_progressive_items(monkeypatch) -> N
     assert result["provider_used"].startswith("Local Rule-based Engine")
     assert len(emitted) == 1
     assert reset_calls == [1]
+
+
+@pytest.mark.asyncio
+async def test_ollama_partial_http_failure_invokes_reset_once(monkeypatch) -> None:
+    callbacks: list[int] = []
+    batches: list[int] = []
+
+    class FakeResponse:
+        def __init__(self, lines: list[str]) -> None:
+            self.lines = lines
+
+        def raise_for_status(self) -> None:
+            return None
+
+        async def aiter_lines(self):
+            for line in self.lines:
+                yield line
+
+    class FakeStream:
+        def __init__(self, response_or_error):
+            self.response_or_error = response_or_error
+
+        async def __aenter__(self):
+            if isinstance(self.response_or_error, Exception):
+                raise self.response_or_error
+            return self.response_or_error
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs) -> None:
+            self.calls = 0
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        def stream(self, method, url, json):
+            self.calls += 1
+            batches.append(self.calls)
+            if self.calls == 1:
+                body = json_module.dumps({
+                    "analysis": [{
+                        "service": "Example One",
+                        "risk_level": "unknown",
+                        "reason": "Insufficient evidence.",
+                        "delete_url": "",
+                    }]
+                })
+                return FakeStream(FakeResponse([
+                    json_module.dumps({"response": body, "done": True})
+                ]))
+            return FakeStream(RuntimeError("simulated Ollama transport failure"))
+
+    json_module = __import__("json")
+    monkeypatch.setattr(ai_agent.httpx, "AsyncClient", FakeClient)
+    monkeypatch.setenv("OLLAMA_BATCH_SERVICES", "1")
+    monkeypatch.setenv("OLLAMA_NUM_CTX", "2048")
+    monkeypatch.setenv("OLLAMA_NUM_PREDICT", "128")
+
+    prompt = (
+        "<UNTRUSTED_SCAN_DATA>\n"
+        '[{"name":"Example One","domain":"example.com"},'
+        '{"name":"Example Two","domain":"example.org"}]\n'
+        "</UNTRUSTED_SCAN_DATA>\n"
+        "<UNTRUSTED_EVIDENCE>\n[]\n</UNTRUSTED_EVIDENCE>"
+    )
+
+    def on_batch(analysis, services) -> None:
+        callbacks.append(1)
+
+    with pytest.raises(ValueError, match="output parsial"):
+        await ai_agent.call_ollama_async(
+            prompt,
+            "system",
+            "en",
+            on_batch=on_batch,
+            on_failure=lambda: callbacks.append(99),
+        )
+
+    assert batches == [1, 2]
+    assert callbacks == [1, 99]
