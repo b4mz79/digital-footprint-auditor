@@ -1009,7 +1009,7 @@ def _ollama_batch_prompt(
     )
 
 
-async def call_ollama_async(prompt: str, sys_prompt: str, lang: str = "id", on_batch: Callable[[list[dict[str, Any]], list[dict[str, Any]]], None] | None = None) -> str:
+async def call_ollama_async(\n    prompt: str,\n    sys_prompt: str,\n    lang: str = "id",\n    on_batch: Callable[[list[dict[str, Any]], list[dict[str, Any]]], None] | None = None,\n    on_failure: Callable[[], None] | None = None,\n) -> str:
     model_name = _safe_component(os.getenv("OLLAMA_MODEL", "qwen2.5:1.5b-instruct"), 200)
     base_url = _validate_ollama_url(os.getenv("OLLAMA_HOST", ""))
     url = f"{base_url}/api/generate"
