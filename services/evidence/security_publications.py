@@ -28,6 +28,7 @@ from services.evidence.models import (
     make_evidence_id,
 )
 from utils.domains import root_domain
+from utils.privacy import clean_web_snippet, clean_web_title
 
 
 FIRECRAWL_SEARCH_URL = "https://api.firecrawl.dev/v2/search"
@@ -240,8 +241,14 @@ class FirecrawlSecurityPublicationProvider:
             if not url or not _publisher_matches(url, publisher):
                 continue
 
-            title = str(item.get("title") or "").strip()[:MAX_TITLE_LENGTH]
-            description = str(item.get("description") or "").strip()[:MAX_SUMMARY_LENGTH]
+            title = clean_web_title(
+                item.get("title") or "",
+                max_length=MAX_TITLE_LENGTH,
+            )
+            description = clean_web_snippet(
+                item.get("description") or "",
+                max_length=MAX_SUMMARY_LENGTH,
+            )
 
             metadata = item.get("metadata")
             metadata = metadata if isinstance(metadata, dict) else {}
