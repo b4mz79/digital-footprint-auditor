@@ -253,3 +253,59 @@ def test_medium_breach_floor_raises_risk_with_coherent_reason() -> None:
         count=1,
         level=ai_agent.t("risk_medium", lang="en"),
     )
+
+
+@pytest.mark.asyncio
+async def test_provider_chain_forwards_ollama_failure_callback(monkeypatch) -> None:
+    reset_calls: list[int] = []
+
+    async def fake_ollama(*args, **kwargs):
+        assert kwargs["on_failure"] is not None
+        kwargs["on_failure"]()
+        raise ValueError("partial Ollama result")
+
+    monkeypatch.setattr(ai_agent, "call_ollama_async", fake_ollama)
+    monkeypatch.setattr(ai_agent, "_provider_order", lambda: ["ollama"])
+
+    parsed, provider = await ai_agent._run_provider_chain(
+        "prompt",
+        "system",
+        "en",
+        on_ollama_failure=lambda: reset_calls.append(1),
+    )
+
+    assert parsed is None
+    assert provider == "None"
+    assert reset_calls == [1]
+
+
+@pytest.mark.asyncio
+async def test_partial_ollama_failure_resets_progressive_items(monkeypatch) -> None:
+    emitted: list[dict] = []
+    reset_calls: list[int] = []
+
+    async def fake_chain(*args, **kwargs):
+        kwargs["on_ollama_batch"](
+            [{"service": "Example Shop", "risk_key": "medium", "reason": "Order evidence"}],
+            [{"name": "Example Shop", "domain": "example.com", "subject": "Order confirmation"}],
+        )
+        kwargs["on_ollama_failure"]()
+        return None, "None"
+
+    monkeypatch.setattr(ai_agent, "_run_provider_chain", fake_chain)
+    monkeypatch.setattr(ai_agent, "load_analysis_cache_ext", lambda *args, **kwargs: None)
+    monkeypatch.setattr(ai_agent, "save_analysis_cache_ext", lambda *args, **kwargs: None)
+    monkeypatch.setattr(ai_agent, "load_local_dsr_template", lambda *args, **kwargs: "")
+
+    result = await ai_agent.analyze_smart_cache(
+        "example@example.com",
+        [{"name": "Example Shop", "domain": "example.com", "subject": "Order confirmation"}],
+        force_refresh=True,
+        lang="en",
+        on_analysis_item=lambda item: emitted.append(item),
+        on_analysis_reset=lambda: reset_calls.append(1),
+    )
+
+    assert result["provider_used"].startswith("Local Rule-based Engine")
+    assert len(emitted) == 1
+    assert reset_calls == [1]
