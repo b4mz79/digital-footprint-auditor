@@ -1229,6 +1229,7 @@ async def _run_provider_chain(
     user_prompt: str,
     sys_prompt: str,
     lang: str,
+    on_ollama_batch: Callable[[list[dict[str, Any]], list[dict[str, Any]]], None] | None = None,
 ) -> tuple[dict[str, Any] | None, str]:
     """Run the configured AI provider failover chain.
 
@@ -1256,6 +1257,10 @@ async def _run_provider_chain(
     The final rule-based offline fallback is intentionally NOT executed here.
     It remains the responsibility of analyze_smart_cache(), and is reached only
     after every configured provider has failed.
+
+    on_ollama_batch is an optional progressive callback used only by the local
+    Ollama batch path. Keeping that callback at this layer avoids leaking
+    analyze_smart_cache() closure variables into the provider-chain scope.
     """
 
     for provider in _provider_order():
@@ -1469,28 +1474,11 @@ async def _run_provider_chain(
                     "[Ollama Local] Memulai eksekusi lokal..."
                 )
 
-                def _on_ollama_batch(
-                    batch_analysis: list[dict[str, Any]],
-                    batch_services: list[dict[str, Any]],
-                ) -> None:
-                    if not on_analysis_item:
-                        return
-
-                    finalized_batch, _ = _finalize_analysis(
-                        batch_analysis,
-                        batch_services,
-                        findings,
-                        lang,
-                        evidence_records=evidence,
-                    )
-                    for batch_item in finalized_batch:
-                        on_analysis_item(batch_item)
-
                 raw = await call_ollama_async(
                     user_prompt,
                     sys_prompt,
                     lang,
-                    on_batch=_on_ollama_batch,
+                    on_batch=on_ollama_batch,
                 )
 
                 if not raw:
@@ -1522,8 +1510,9 @@ async def _run_provider_chain(
 
             except Exception as exc:
                 logger.warning(
-                    "[Ollama Local] Gagal: %s.",
+                    "[Ollama Local] Gagal: %s: %s.",
                     type(exc).__name__,
+                    str(exc)[:240],
                 )
 
     # IMPORTANT:
@@ -2097,10 +2086,28 @@ async def analyze_smart_cache(
     #
     # The returned `parsed_data` is already validated.
     # -------------------------------------------------------------------------
+    def _on_ollama_batch(
+        batch_analysis: list[dict[str, Any]],
+        batch_services: list[dict[str, Any]],
+    ) -> None:
+        if not on_analysis_item:
+            return
+
+        finalized_batch, _ = _finalize_analysis(
+            batch_analysis,
+            batch_services,
+            findings,
+            lang,
+            evidence_records=evidence,
+        )
+        for batch_item in finalized_batch:
+            on_analysis_item(batch_item)
+
     parsed_data, provider_used = await _run_provider_chain(
         user_prompt,
         sys_prompt,
         lang,
+        on_ollama_batch=_on_ollama_batch,
     )
 
     # -------------------------------------------------------------------------
