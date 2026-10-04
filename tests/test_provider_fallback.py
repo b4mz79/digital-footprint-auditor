@@ -394,3 +394,36 @@ async def test_ollama_partial_http_failure_invokes_reset_once(monkeypatch) -> No
 
     assert batches == [1, 2]
     assert callbacks == [1, 99]
+
+
+def test_validate_ai_output_rejects_empty_analysis() -> None:
+    with pytest.raises(ValueError, match="tidak berisi item tervalidasi"):
+        ai_agent.validate_ai_output({"analysis": []}, "en")
+
+
+@pytest.mark.asyncio
+async def test_empty_provider_output_rotates_to_next_provider(monkeypatch) -> None:
+    async def fake_gemini(*args, **kwargs):
+        return '{"analysis":[]}'
+
+    async def fake_groq(*args, **kwargs):
+        return '{"analysis":[{"service":"Example","risk_level":"unknown","reason":"Insufficient evidence.","delete_url":""}]}'
+
+    monkeypatch.setattr(ai_agent, "call_gemini_async", fake_gemini)
+    monkeypatch.setattr(ai_agent, "call_groq_async", fake_groq)
+    monkeypatch.setattr(
+        ai_agent,
+        "_provider_order",
+        lambda: ["gemini", "groq"],
+    )
+    monkeypatch.setenv("GEMINI_API_KEY", "key-1")
+
+    parsed, provider = await ai_agent._run_provider_chain(
+        "prompt",
+        "system",
+        "en",
+    )
+
+    assert provider == "Groq Cloud"
+    assert parsed is not None
+    assert parsed["analysis"][0]["service"] == "Example"
