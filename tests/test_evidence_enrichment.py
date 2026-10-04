@@ -232,6 +232,38 @@ async def test_firecrawl_provider_swallows_provider_failure() -> None:
 
 
 @pytest.mark.asyncio
+async def test_firecrawl_429_enters_cooldown_without_retry_storm() -> None:
+    calls = 0
+
+    class RateLimitTransport(httpx.AsyncBaseTransport):
+        async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+            nonlocal calls
+            calls += 1
+            return httpx.Response(
+                429,
+                json={"success": False, "error": "rate limited"},
+                request=request,
+            )
+
+    client = httpx.AsyncClient(transport=RateLimitTransport())
+    provider = FirecrawlSecurityPublicationProvider(
+        api_key="test-key",
+        client=client,
+        publishers=(("Kaspersky Securelist", "securelist.com"),),
+        max_concurrency=1,
+        cooldown_seconds=60,
+    )
+
+    try:
+        assert await provider.search_domain("example.com") == []
+        assert await provider.search_domain("example.org") == []
+    finally:
+        await client.aclose()
+
+    assert calls == 1
+
+
+@pytest.mark.asyncio
 async def test_enrich_evidence_merges_contextual_records(monkeypatch) -> None:
     from services.evidence.models import EvidenceDirectness, EvidenceRelation, EvidenceRecord
 
