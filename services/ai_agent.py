@@ -2137,21 +2137,50 @@ async def analyze_smart_cache(
             tenant_id=tenant_id,
         )
 
-        # Reuse only when the exact analysis inputs match.
+        # Reuse only when the exact analysis inputs match AND the cached
+        # payload still satisfies the same AI output contract used for live
+        # provider responses. Cache files are encrypted, but encryption does
+        # not make their application-level schema trustworthy.
         if (
             cached_result
             and cached_result.get("input_fp") == fingerprint
         ):
-            if not cached_result.get("dsr_template"):
-                cached_result["dsr_template"] = load_local_dsr_template(
-                    email,
-                    services,
-                    phone,
+            try:
+                cached_analysis = cached_result.get("analysis")
+                # Validate the cached analysis through the same canonical
+                # validator used by provider responses. Keep the original
+                # finalized item fields (evidence lineage/risk guards/etc.)
+                # after validation; the validator is used as a contract check.
+                validate_ai_output(
+                    {"analysis": cached_analysis},
                     lang,
                 )
-            logger.info("[AICache] Memuat hasil analisis dari Local Cache.")
-            logger.info("AI Audit Selesai (%s, CACHE) dalam %.2f detik.", cached_result.get("provider_used", "Unknown"), time.monotonic() - start_time)
-            return cached_result
+
+                provider_used = str(cached_result.get("provider_used", "")).strip()
+                if not provider_used or provider_used == "None":
+                    raise ValueError("provider_used cache tidak valid.")
+
+            except (TypeError, ValueError, KeyError) as exc:
+                logger.warning(
+                    "[AICache] Cache cocok fingerprint tetapi payload ditolak: %s. "
+                    "Melanjutkan sebagai cache miss.",
+                    type(exc).__name__,
+                )
+            else:
+                if not cached_result.get("dsr_template"):
+                    cached_result["dsr_template"] = load_local_dsr_template(
+                        email,
+                        services,
+                        phone,
+                        lang,
+                    )
+                logger.info("[AICache] Memuat hasil analisis dari Local Cache.")
+                logger.info(
+                    "AI Audit Selesai (%s, CACHE) dalam %.2f detik.",
+                    cached_result.get("provider_used", "Unknown"),
+                    time.monotonic() - start_time,
+                )
+                return cached_result
 
     # -------------------------------------------------------------------------
     # Prompt construction
