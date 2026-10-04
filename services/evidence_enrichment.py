@@ -116,10 +116,29 @@ async def enrich_evidence(
             async with domain_gate:
                 return await provider.search_domain(domain)
 
-        results = await asyncio.gather(
-            *(enrich_domain(domain) for domain in domains),
-            return_exceptions=True,
-        )
+        # Process only one bounded domain batch at a time. The previous
+        # gather-all design created one coroutine per domain even after the
+        # provider entered its global cooldown. That did not create a network
+        # storm (the request gate prevented that), but it did create a large
+        # task/log storm. Once a provider-wide rate limit is observed, do not
+        # schedule another domain batch.
+        results: list[object] = []
+        for start in range(0, len(domains), domain_concurrency):
+            batch = domains[start : start + domain_concurrency]
+            batch_results = await asyncio.gather(
+                *(enrich_domain(domain) for domain in batch),
+                return_exceptions=True,
+            )
+            results.extend(batch_results)
+
+            if provider.cooldown_active:
+                logger.warning(
+                    "[Evidence Enrichment] Firecrawl cooldown active; "
+                    "stopping remaining domain batches after %d/%d domains.",
+                    min(start + len(batch), len(domains)),
+                    len(domains),
+                )
+                break
 
     merged: dict[str, EvidenceRecord] = {
         record.evidence_id: record for record in base
