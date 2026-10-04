@@ -439,8 +439,9 @@ def save_analysis_cache(email: str, data: dict, phone: str = "", lang: str = "id
 #SYSTEM_PROMPTS = {lang_code: _BASE_SYSTEM_PROMPT for lang_code in SUPPORTED_LANGS}
 
 
-CACHE_WRITE_LOCK = threading.Lock()
+CACHE_WRITE_LOCK = threading.RLock()
 CACHE_GENERATION_FIELD = "_cache_generated_at"
+CACHE_INVALIDATION_GENERATION = 0
 
 MAX_EVIDENCE_RECORDS = 150
 MAX_EVIDENCE_FIELD_LENGTH = 2_000
@@ -2305,6 +2306,8 @@ async def analyze_smart_cache(
             # older result must never overwrite a newer result that has already
             # been persisted.
             parsed_data[CACHE_GENERATION_FIELD] = time.time()
+            with CACHE_WRITE_LOCK:
+                write_generation = CACHE_INVALIDATION_GENERATION
 
             def _cache_worker() -> None:
                 try:
@@ -2317,6 +2320,13 @@ async def analyze_smart_cache(
                     generation = float(parsed_data[CACHE_GENERATION_FIELD])
 
                     with CACHE_WRITE_LOCK:
+                        if write_generation != CACHE_INVALIDATION_GENERATION:
+                            logger.info(
+                                "[AICache] Background cache write skipped: "
+                                "cache was invalidated after this result was dispatched."
+                            )
+                            return
+
                         existing = load_encrypted_json(
                             cache_file,
                             tenant_id=_validate_tenant_id(tenant_id),
