@@ -17,7 +17,6 @@ import ipaddress
 import json
 import os
 import re
-from pathlib import Path
 from typing import Any, Iterable
 from urllib.parse import urlsplit
 import time
@@ -47,10 +46,6 @@ DEFAULT_COOLDOWN_SECONDS = 60.0
 MAX_RESPONSE_BYTES = 1_000_000
 MAX_TITLE_LENGTH = 512
 MAX_SUMMARY_LENGTH = 2_000
-CONTEXTUAL_FILTER_DUMP_DIR = resolve_data_path(
-    os.getenv("EVIDENCE_CONTEXTUAL_FILTER_DUMP_DIR"),
-    "cache/evidence",
-)
 CONTEXTUAL_FILTER_BEFORE_FILE = "contextual_filter_before.json"
 CONTEXTUAL_FILTER_AFTER_FILE = "contextual_filter_after.json"
 CONTEXTUAL_FILTER_DUMP_SCHEMA_VERSION = "contextual-filter-dump-v1"
@@ -235,6 +230,10 @@ class FirecrawlSecurityPublicationProvider:
         self._cooldown_until = 0.0
         self._cooldown_lock = asyncio.Lock()
         self._filter_dump_lock = asyncio.Lock()
+        self._filter_dump_dir = resolve_data_path(
+            os.getenv("EVIDENCE_CONTEXTUAL_FILTER_DUMP_DIR"),
+            "cache/evidence",
+        )
         self._filter_candidates: list[dict[str, Any]] = []
         self._filter_accepted: list[dict[str, Any]] = []
         self._reset_filter_dumps()
@@ -290,12 +289,12 @@ class FirecrawlSecurityPublicationProvider:
 
     def _reset_filter_dumps(self) -> None:
         try:
-            CONTEXTUAL_FILTER_DUMP_DIR.mkdir(parents=True, exist_ok=True)
+            self._filter_dump_dir.mkdir(parents=True, exist_ok=True)
             for filename in (
                 CONTEXTUAL_FILTER_BEFORE_FILE,
                 CONTEXTUAL_FILTER_AFTER_FILE,
             ):
-                (CONTEXTUAL_FILTER_DUMP_DIR / filename).write_text(
+                (self._filter_dump_dir / filename).write_text(
                     json.dumps(
                         {
                             "schema_version": CONTEXTUAL_FILTER_DUMP_SCHEMA_VERSION,
