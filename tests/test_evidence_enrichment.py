@@ -321,3 +321,47 @@ async def test_enrich_evidence_merges_contextual_records(monkeypatch) -> None:
     assert result[0].evidence_id == "base-1"
     assert result[1].relation is EvidenceRelation.SECURITY_PUBLICATION
     assert result[1].directness is EvidenceDirectness.CONTEXTUAL
+
+
+@pytest.mark.asyncio
+async def test_enrich_evidence_stops_scheduling_domains_after_rate_limit(monkeypatch) -> None:
+    base_records = [
+        EvidenceRecord(
+            evidence_id=f"base-{domain}",
+            source="OSINT / Holehe",
+            source_type="osint",
+            relation=EvidenceRelation.TARGET_RESOURCE,
+            directness=EvidenceDirectness.DIRECT,
+            confidence=0.80,
+            observed_at="2026-01-01T00:00:00+00:00",
+            published_at=None,
+            domain=domain,
+            url="",
+            title=f"Target-associated service: {domain}",
+            summary="Observed service association.",
+        )
+        for domain in ("one.example", "two.example", "three.example", "four.example")
+    ]
+
+    calls: list[str] = []
+
+    class FakeProvider:
+        def __init__(self, **kwargs):
+            self.cooldown_active = False
+
+        async def search_domain(self, domain):
+            calls.append(domain)
+            self.cooldown_active = True
+            return []
+
+    import services.evidence_enrichment as enrichment
+    monkeypatch.setattr(enrichment, "FirecrawlSecurityPublicationProvider", FakeProvider)
+    monkeypatch.setenv("FIRECRAWL_DOMAIN_CONCURRENCY", "2")
+
+    result = await enrich_evidence(
+        base_records,
+        firecrawl_api_key="test-key",
+    )
+
+    assert len(result) == 4
+    assert sorted(calls) == ["one.example", "two.example"]
