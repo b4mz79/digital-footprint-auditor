@@ -39,6 +39,9 @@ _CREDENTIAL_PATTERN = re.compile(
     r"|\b(?:api[_ -]?key|access[_ -]?token|auth[_ -]?token|secret|password|passwd)"
     r"\s*[:=]\s*[A-Za-z0-9._~+/=-]{8,}"
 )
+_MARKDOWN_IMAGE_PATTERN = re.compile(r"!\[([^\]]*)\]\([^)]*\)")
+_MARKDOWN_LINK_PATTERN = re.compile(r"\[([^\]]+)\]\([^)]*\)")
+_MARKDOWN_DECORATION_PATTERN = re.compile(r"(?m)^\s{0,3}#{1,6}\s+|[*_~`]+")
 _WHITESPACE_PATTERN = re.compile(r"\s+")
 
 
@@ -50,8 +53,14 @@ def clean_web_text(
 ) -> str:
     """Normalize untrusted web text before storage or display."""
     value = html.unescape(str(text or ""))
+    value = html.unescape(value)
     value = _HTML_BLOCK_PATTERN.sub(" ", value)
     value = _HTML_TAG_PATTERN.sub(" ", value)
+    # Firecrawl descriptions may contain Markdown generated from page content.
+    # Convert images/links to visible text before storage.
+    value = _MARKDOWN_IMAGE_PATTERN.sub(lambda m: m.group(1), value)
+    value = _MARKDOWN_LINK_PATTERN.sub(lambda m: m.group(1), value)
+    value = _MARKDOWN_DECORATION_PATTERN.sub(" ", value)
     value = EMAIL_PATTERN.sub(lambda m: mask_email(m.group(0)), value)
     value = redact_loose_phones(value, placeholder)
     value = NUMERIC_CODE_PATTERN.sub(placeholder, value)
