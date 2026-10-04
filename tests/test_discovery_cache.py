@@ -12,6 +12,7 @@ def test_discovery_cache_disabled_by_default(monkeypatch):
 
 def test_discovery_cache_roundtrip(monkeypatch, tmp_path):
     monkeypatch.setenv("CACHE_SECRET_KEY", Fernet.generate_key().decode("ascii"))
+    monkeypatch.setenv("PII_PEPPER_KEY", "p" * 32)
     monkeypatch.setattr(discovery_cache, "_cache_path", lambda *args: tmp_path / "imap_cache_test.json")
     findings = [{"name": "Example", "domain": "example.com"}]
 
