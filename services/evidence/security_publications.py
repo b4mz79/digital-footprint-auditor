@@ -224,11 +224,27 @@ def _page_type(url: str, title: str) -> str:
         if re.search(pattern, path): return "non_article"
     return "article"
 
-def _target_subject_signal(domain: str, *, title: str, summary: str) -> tuple[bool, str, str]:
+def _target_subject_signal(
+    domain: str,
+    *,
+    url: str,
+    title: str,
+    summary: str,
+) -> tuple[bool, str, str]:
+    """Determine whether the target is substantively identified by the result."""
     aliases = _domain_aliases(domain)
-    if _contains_term(title, aliases): return True, "title_alias", "strong"
-    if _contains_term(summary, (domain,)): return True, "summary_domain", "medium"
-    if _contains_term(summary, aliases): return True, "summary_alias", "weak"
+    if _contains_term(title, aliases):
+        return True, "title_alias", "strong"
+    if _contains_term(summary, (domain,)):
+        return True, "summary_domain", "medium"
+    if _contains_term(summary, aliases):
+        return True, "summary_alias", "weak"
+    # Some publishers encode the target in a canonical/result URL rather than
+    # repeating it in the title or excerpt. This is still target identification,
+    # but URL-only identification must remain weak and cannot bypass the
+    # substantive security-context floor.
+    if _contains_term(url, aliases):
+        return True, "url_alias", "weak"
     return False, "none", "none"
 
 def _incidental_target_mention(domain: str, title: str, summary: str) -> bool:
@@ -264,7 +280,12 @@ def _security_near_target(domain: str, title: str, summary: str) -> bool:
 def _contextual_relevance(domain: str, *, url: str, title: str, summary: str) -> tuple[bool, dict[str, str | bool]]:
     page_type = _page_type(url, title)
     if page_type != "article": return False, {"page_type": page_type, "target": "none", "target_strength": "none", "security": False, "reason": f"{page_type}_page"}
-    target, target_signal, target_strength = _target_subject_signal(domain, title=title, summary=summary)
+    target, target_signal, target_strength = _target_subject_signal(
+        domain,
+        url=url,
+        title=title,
+        summary=summary,
+    )
     # Generic "security" wording is insufficient for contextual evidence.
     # Require a substantive threat/incident signal so product, compliance,
     # capability, and generic security-reference pages do not become evidence.
