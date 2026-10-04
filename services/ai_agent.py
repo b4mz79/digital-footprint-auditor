@@ -2170,6 +2170,12 @@ async def analyze_smart_cache(
     #
     # The returned `parsed_data` is already validated.
     # -------------------------------------------------------------------------
+    # Progressive callbacks must follow the same service identity semantics
+    # as finalization. _finalize_analysis() deduplicates services by normalized
+    # name; keep the live stream consistent when the scanner produced duplicate
+    # services across different Ollama batches.
+    live_emitted_services: set[str] = set()
+
     def _on_ollama_batch(
         batch_analysis: list[dict[str, Any]],
         batch_services: list[dict[str, Any]],
@@ -2185,6 +2191,10 @@ async def analyze_smart_cache(
             evidence_records=evidence,
         )
         for batch_item in finalized_batch:
+            service_key = _norm(batch_item.get("service"))
+            if not service_key or service_key in live_emitted_services:
+                continue
+            live_emitted_services.add(service_key)
             on_analysis_item(batch_item)
 
     parsed_data, provider_used = await _run_provider_chain(
