@@ -70,6 +70,11 @@ async def enrich_evidence(
         2,
         16,
     ) or 1
+    requests_per_minute = env_non_negative_int(
+        "FIRECRAWL_REQUESTS_PER_MINUTE",
+        10,
+        10000,
+    ) or 1
     cooldown_seconds = env_positive_float(
         "FIRECRAWL_COOLDOWN_SECONDS",
         60.0,
@@ -88,12 +93,13 @@ async def enrich_evidence(
         return base
 
     logger.info(
-        "[Evidence Enrichment] Firecrawl enabled; domains=%d max_results=%d timeout=%.1fs domain_concurrency=%d request_concurrency=%d cooldown=%.1fs",
+        "[Evidence Enrichment] Firecrawl enabled; domains=%d max_results=%d timeout=%.1fs domain_concurrency=%d request_concurrency=%d requests_per_minute=%d cooldown=%.1fs",
         len(domains),
         max_results,
         timeout_seconds,
         domain_concurrency,
         request_concurrency,
+        requests_per_minute,
         cooldown_seconds,
     )
 
@@ -109,6 +115,7 @@ async def enrich_evidence(
             timeout_seconds=timeout_seconds,
             client=client,
             max_concurrency=request_concurrency,
+            requests_per_minute=requests_per_minute,
             cooldown_seconds=cooldown_seconds,
         )
 
