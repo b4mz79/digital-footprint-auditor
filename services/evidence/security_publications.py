@@ -231,6 +231,24 @@ def _target_subject_signal(domain: str, *, title: str, summary: str) -> tuple[bo
     if _contains_term(summary, aliases): return True, "summary_alias", "weak"
     return False, "none", "none"
 
+def _incidental_target_mention(domain: str, title: str, summary: str) -> bool:
+    aliases = _domain_aliases(domain)
+    pattern = "|".join(re.escape(alias.casefold()) for alias in aliases)
+    incidental_patterns = (
+        r"\bmentioned\s+as\s+an\s+example\b",
+        r"\bmentions?\b.{0,100}\b(?:and|among|including)\b",
+        r"\b(?:among|including)\b.{0,100}\b(?:other|various|multiple)\b",
+        r"\b(?:other|various|multiple)\s+(?:companies|organizations|retailers|vendors|providers)\b",
+    )
+    for text2 in (title, summary):
+        folded = text2.casefold()
+        if not re.search(pattern, folded):
+            continue
+        if any(re.search(item, folded) for item in incidental_patterns):
+            return True
+    return False
+
+
 def _security_near_target(domain: str, title: str, summary: str) -> bool:
     aliases = _domain_aliases(domain)
     pattern = "|".join(re.escape(alias.casefold()) for alias in aliases)
@@ -255,6 +273,20 @@ def _contextual_relevance(domain: str, *, url: str, title: str, summary: str) ->
             "target_strength": "none",
             "security": security,
             "reason": "target_not_subject",
+        }
+    # Explicitly incidental/list-style mentions are target-relevance failures
+    # even when the surrounding text is not itself a substantive security
+    # signal. This keeps "mentioned as an example", "other retailers", etc.
+    # from being reported as missing security context.
+    if target_strength in {"weak", "medium"} and _incidental_target_mention(
+        domain, title, summary
+    ):
+        return False, {
+            "page_type": page_type,
+            "target": target_signal,
+            "target_strength": target_strength,
+            "security": security,
+            "reason": "incidental_target_mention",
         }
     # Check the substantive security floor before proximity. A page that
     # merely mentions the target while discussing generic security material
