@@ -660,6 +660,12 @@ async def test_gemini_transport_failure_rotates_to_next_key(monkeypatch) -> None
     assert parsed["analysis"][0]["service"] == "Example"
 
 
+def test_default_provider_order_keeps_ollama_as_last_fallback(monkeypatch) -> None:
+    monkeypatch.delenv("LLM_LOCAL_ONLY", raising=False)
+    monkeypatch.delenv("LLM_PROVIDER_ORDER", raising=False)
+    assert ai_agent._provider_order() == ["gemini", "groq", "openai", "ollama"]
+
+
 def test_provider_order_configuration_is_deterministic(monkeypatch) -> None:
     monkeypatch.delenv("LLM_LOCAL_ONLY", raising=False)
     monkeypatch.setenv("LLM_PROVIDER_ORDER", " groq,invalid,gemini,groq,ollama ")
