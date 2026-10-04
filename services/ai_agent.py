@@ -1933,6 +1933,16 @@ def _finalize_analysis(
             if RISK_RANK[floor] > RISK_RANK.get(risk_key, -1):
                 risk_key = floor
                 item["risk_raised"] = True
+                item["risk_guarded"] = True
+                # A breach floor is authoritative. If it raises the model's
+                # rating, the explanation must describe the actual evidence
+                # that caused the raise; never leave a stale model reason.
+                item["reason"] = t(
+                    "evidence_note",
+                    lang=lang,
+                    count=len(matches),
+                    level=t(f"risk_{risk_key}", lang=lang),
+                )
         item["risk_key"] = risk_key
         item["risk_level"] = t(f"risk_{risk_key}", lang=lang)
 
