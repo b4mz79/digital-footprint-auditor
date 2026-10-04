@@ -14,6 +14,12 @@ from services.ai_agent import (
 )
 import services.ai_agent as ai_agent
 from services.breach_scanner import BREACH_CACHE_DIR, scan_data_breaches
+from services.discovery_cache import (
+    DISCOVERY_CACHE_DIR,
+    discovery_cache_enabled,
+    load_discovery_cache,
+    save_discovery_cache,
+)
 from services.evidence_enrichment import enrich_evidence
 from services.evidence import evidence_to_dicts, service_findings_to_evidence
 from services.imap_scanner import scan_gmail_inbox
@@ -104,34 +110,48 @@ def run_scan(
             else:
                 on_event(event)
 
+    cache_enabled = discovery_cache_enabled()
+
     # Step 1: Gmail via IMAP
     if enable_imap:
         if not gmail_app_password:
             emit(_event("warning", "warn_no_gmail_pass", stage="imap"))
         else:
-            emit(_event("info", "info_imap_scanning", stage="imap"))
-            try:
-                found = scan_gmail_inbox(email, gmail_app_password, lang=lang)
+            cached = load_discovery_cache("imap", email, tenant_id=tenant_id) if cache_enabled else None
+            if cached is not None:
+                logger.info("[Discovery Cache] IMAP HIT")
+                found = cached
+            else:
+                logger.info("[Discovery Cache] IMAP %s", "MISS" if cache_enabled else "OFF -> fresh scan")
+                emit(_event("info", "info_imap_scanning", stage="imap"))
+                try:
+                    found = scan_gmail_inbox(email, gmail_app_password, lang=lang)
+                    save_discovery_cache("imap", found, email, tenant_id=tenant_id)
+                except Exception as exc:
+                    emit(_event("error", text=f"Error IMAP: {exc}", stage="imap"))
+                    found = None
+            if found is not None:
                 state["services"].extend(found)
-                emit(
-                    _event("success", "success_imap", stage="imap", count=len(found)),
-                    {"services": found},
-                )
-            except Exception as exc:
-                emit(_event("error", text=f"Error IMAP: {exc}", stage="imap"))
+                emit(_event("success", "success_imap", stage="imap", count=len(found)), {"services": found})
 
     # Step 2: OSINT via Holehe
     if enable_osint:
-        emit(_event("info", "info_osint_scanning", stage="osint"))
-        try:
-            found = scan_osint_footprint(email, lang=lang)
+        cached = load_discovery_cache("osint", email, tenant_id=tenant_id) if cache_enabled else None
+        if cached is not None:
+            logger.info("[Discovery Cache] OSINT HIT")
+            found = cached
+        else:
+            logger.info("[Discovery Cache] OSINT %s", "MISS" if cache_enabled else "OFF -> fresh scan")
+            emit(_event("info", "info_osint_scanning", stage="osint"))
+            try:
+                found = scan_osint_footprint(email, lang=lang)
+                save_discovery_cache("osint", found, email, tenant_id=tenant_id)
+            except Exception as exc:
+                emit(_event("error", text=f"Error OSINT: {exc}", stage="osint"))
+                found = None
+        if found is not None:
             state["services"].extend(found)
-            emit(
-                _event("success", "success_osint", stage="osint", count=len(found)),
-                {"services": found},
-            )
-        except Exception as exc:
-            emit(_event("error", text=f"Error OSINT: {exc}", stage="osint"))
+            emit(_event("success", "success_osint", stage="osint", count=len(found)), {"services": found})
 
     # Step 3: Multi-layer breach scan
     if enable_breach:
@@ -141,7 +161,7 @@ def run_scan(
                 scan_data_breaches(
                     email=email,
                     phone=phone,
-                    force_refresh=force_refresh,
+                    force_refresh=(force_refresh or not cache_enabled),
                     lang=lang,
                     tenant_id=tenant_id,
                 )
@@ -318,7 +338,7 @@ def purge_expired_caches() -> int:
     # Coordinate with the AI background writer so retention cleanup cannot
     # race a force-refresh result that is being persisted.
     with CACHE_WRITE_LOCK:
-        for directory in {AI_CACHE_DIR, BREACH_CACHE_DIR}:
+        for directory in {AI_CACHE_DIR, BREACH_CACHE_DIR, DISCOVERY_CACHE_DIR}:
             removed += purge_expired(directory, hours * 3600)
     if removed:
         logger.info("Cache kedaluwarsa dihapus: %d berkas.", removed)
@@ -331,4 +351,4 @@ def clear_all_caches() -> int:
     # ai_agent must reject results dispatched before the explicit clear.
     with CACHE_WRITE_LOCK:
         ai_agent.CACHE_INVALIDATION_GENERATION += 1
-        return clear_cache_files(AI_CACHE_DIR, BREACH_CACHE_DIR)
+        return clear_cache_files(AI_CACHE_DIR, BREACH_CACHE_DIR, DISCOVERY_CACHE_DIR)
