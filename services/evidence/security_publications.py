@@ -59,6 +59,9 @@ STRONG_SECURITY_TERMS = (
     "phishing", "malware", "ransomware", "breach", "incident",
     "vulnerability", "exploit", "compromised", "attack", "attacked",
     "infected", "stolen", "exposed", "campaign",
+    "trojanized", "backdoor", "supply-chain", "supply chain",
+    "security certificate", "security certificates", "abused certificate",
+    "abused certificates",
 )
 
 SECURITY_QUERY_TERMS = (
