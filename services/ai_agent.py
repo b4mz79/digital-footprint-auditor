@@ -57,6 +57,7 @@ EMAIL_RE = re.compile(r"[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9.-]+\.[A-Za-z
 GENERIC_EVENT_TERMS = (
     # English and common European-language evidence.
     "welcome", "willkommen", "bienvenido", "bienvenue", "benvenuto", "welkom",
+    "email confirmation", "account confirmation", "login verification",
     "добро пожаловать", "регистрация", "注册", "欢迎", "ようこそ",
     "thank you for joining", "thanks for joining", "thank you for your interest",
     "thank you for participating", "thank you for creating", "thank you for creating an account",
@@ -1665,6 +1666,24 @@ def _activity_risk_floor(svc: dict) -> str:
     return "unknown"
 
 
+def _model_reason_is_unsupported(reason: object) -> bool:
+    text = _safe_component(str(reason or ""), MAX_REASON_LENGTH).lower()
+    if not text:
+        return True
+    unsupported_terms = (
+        "not enough",
+        "insufficient",
+        "cannot determine",
+        "unable to determine",
+        "unknown",
+        "belum cukup",
+        "tidak cukup",
+        "belum memadai",
+        "tidak dapat menentukan",
+    )
+    return any(term in text for term in unsupported_terms)
+
+
 def _apply_conservative_unknown_guard(svc: dict, risk_key: str, has_breach: bool) -> str:
     """Apply explicit-activity floors and reject unsupported model ratings."""
     # No scanner evidence means the model has nothing concrete to classify.
@@ -1802,6 +1821,16 @@ def _finalize_analysis(
 
         # START IMPROVE AND AUDITED BY CHATGPT
         guarded_risk_key = _apply_conservative_unknown_guard(svc, risk_key, bool(matches))
+
+        if not matches and risk_key == "high" and _activity_risk_floor(svc) == "unknown":
+            guarded_risk_key = "unknown"
+
+        if (
+            not matches
+            and risk_key in {"high", "medium"}
+            and _model_reason_is_unsupported(item.get("reason"))
+        ):
+            guarded_risk_key = "unknown"
         if guarded_risk_key != risk_key:
             risk_key = guarded_risk_key
             item["risk_guarded"] = True
@@ -1820,6 +1849,13 @@ def _finalize_analysis(
                 item["risk_raised"] = True
         item["risk_key"] = risk_key
         item["risk_level"] = t(f"risk_{risk_key}", lang=lang)
+
+        explicit_delete_url = svc.get("delete_url")
+        if explicit_delete_url:
+            item["delete_url"] = _sanitize_delete_value(explicit_delete_url)
+        else:
+            item["delete_url"] = "-"
+
         item["evidence_count"] = len(matches)
         # was audited by claude and now not used anymoere.
         # item["delete_url"] = _vet_delete_url(item.get("delete_url", ""), svc, name)
