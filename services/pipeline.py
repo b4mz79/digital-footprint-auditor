@@ -225,6 +225,15 @@ def run_ai(
             {"ai_item": item},
         )
 
+    def on_analysis_reset() -> None:
+        # Ollama may have emitted provisional batches before a later batch
+        # failed. Those items are not valid final AI output and must disappear
+        # before the failover provider/final fallback is rendered.
+        emit(
+            _event("warning", stage="ai"),
+            {"ai_reset": True},
+        )
+
     try:
         state["ai"] = asyncio.run(
             analyze_smart_cache(
@@ -245,6 +254,7 @@ def run_ai(
                     ],
                 },
                 on_analysis_item=on_analysis_item,
+                on_analysis_reset=on_analysis_reset,
             )
         )
         emit(
