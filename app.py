@@ -570,11 +570,14 @@ if run_scan:
             stage = event.get("stage")
             live_data = event.get("_live", {})
 
-            # Breach selesai: tampilkan hasil breach secara langsung.
+            # Breach selesai: render hasil breach sebelum stage berikutnya dimulai.
+            # Evidence & Enrichment memang berjalan setelah breach di pipeline,
+            # tetapi UI harus menampilkan breach terlebih dahulu agar urutan
+            # visual mengikuti urutan kerja modul discovery yang sudah ada.
             if stage == "breach" and "breach" in live_data:
-                # Keep live state in sync. The final renderer below owns the
-                # completed breach block so Streamlit does not show it twice.
                 live_state["breach"] = live_data["breach"]
+                with live_area:
+                    render_breach(live_state)
                 return
 
             if stage == "evidence_start":
@@ -748,9 +751,8 @@ if run_scan:
             ai_live_placeholder.empty()
 
         with live_area:
-            # Completed scan results are rendered exactly once after the
-            # pipeline returns. Stage callbacks only update live_state.
-            render_breach(final_state)
+            # Breach was rendered when its stage completed; Evidence & Enrichment
+            # was rendered by the normal final result path below.
             render_evidence(final_state)
 
             if final_state.get("ai"):
