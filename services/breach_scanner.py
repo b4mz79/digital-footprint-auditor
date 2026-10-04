@@ -388,7 +388,6 @@ def load_breach_cache(email_addr: str, phone: str = "", max_age_hours: float = 1
         if isinstance(data, dict):
             logger.info("[Breach Cache] Cache schema lama/tidak dikenal; dianggap cache miss.")
         return None
-        return None
     except Exception:
         # Cache failure must not fail the scan.
         return None
