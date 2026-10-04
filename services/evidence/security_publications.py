@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import hashlib
 import ipaddress
 import json
 import os
@@ -176,6 +177,17 @@ def _publisher_matches(url: str, publisher: SecurityPublisher) -> bool:
         return False
     expected = publisher.domain.lower().lstrip(".")
     return host == expected or host.endswith("." + expected)
+
+
+def _response_fingerprint(items: list[Any]) -> str:
+    normalized = []
+    for item in items:
+        if not isinstance(item, dict):
+            normalized.append(item)
+            continue
+        normalized.append({"url": item.get("url"), "title": item.get("title"), "description": item.get("description"), "metadata": item.get("metadata")})
+    payload = json.dumps(normalized, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()[:16]
 
 
 def _build_query(domain: str) -> str:
@@ -432,6 +444,13 @@ class FirecrawlSecurityPublicationProvider:
             publisher.name,
             domain,
             len(items),
+        )
+        logger.info(
+            "[Firecrawl] Response fingerprint publisher=%s domain=%s candidates=%d results_sha256=%s",
+            publisher.name,
+            domain,
+            len(items),
+            _response_fingerprint(items),
         )
 
         for item in items[: self.max_results]:
