@@ -658,3 +658,79 @@ async def test_gemini_transport_failure_rotates_to_next_key(monkeypatch) -> None
     assert provider == "Google Gemini"
     assert parsed is not None
     assert parsed["analysis"][0]["service"] == "Example"
+
+
+def test_provider_order_configuration_is_deterministic(monkeypatch) -> None:
+    monkeypatch.delenv("LLM_LOCAL_ONLY", raising=False)
+    monkeypatch.setenv("LLM_PROVIDER_ORDER", " groq,invalid,gemini,groq,ollama ")
+    assert ai_agent._provider_order() == ["groq", "gemini", "ollama"]
+
+
+def test_local_only_overrides_provider_order(monkeypatch) -> None:
+    monkeypatch.setenv("LLM_LOCAL_ONLY", "true")
+    monkeypatch.setenv("LLM_PROVIDER_ORDER", "groq,gemini")
+    assert ai_agent._provider_order() == ["ollama"]
+
+
+@pytest.mark.asyncio
+async def test_provider_chain_exhaustion_returns_explicit_none(monkeypatch) -> None:
+    calls: list[str] = []
+
+    async def fake_groq(*args, **kwargs):
+        calls.append("groq")
+        raise RuntimeError("groq unavailable")
+
+    async def fake_openai(*args, **kwargs):
+        calls.append("openai")
+        return ""
+
+    async def fake_ollama(*args, **kwargs):
+        calls.append("ollama")
+        raise ValueError("ollama invalid output")
+
+    monkeypatch.setenv("GROQ_API_KEY", "groq-key")
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
+    monkeypatch.setattr(ai_agent, "call_groq_async", fake_groq)
+    monkeypatch.setattr(ai_agent, "call_openai_async", fake_openai)
+    monkeypatch.setattr(ai_agent, "call_ollama_async", fake_ollama)
+    monkeypatch.setattr(ai_agent, "_provider_order", lambda: ["groq", "openai", "ollama"])
+
+    parsed, provider = await ai_agent._run_provider_chain("prompt", "system", "en")
+
+    assert calls == ["groq", "openai", "ollama"]
+    assert parsed is None
+    assert provider == "None"
+
+
+@pytest.mark.asyncio
+async def test_analyze_smart_cache_all_provider_failure_uses_uncached_fallback(monkeypatch) -> None:
+    services = [
+        {"name": "Example Shop", "domain": "example.com", "subject": "Welcome to Example Shop"}
+    ]
+    scan_status = {"breach_scan_complete": True, "failed_engines": []}
+    saved: list[dict] = []
+
+    async def fake_chain(*args, **kwargs):
+        return None, "None"
+
+    def fake_save(*args, **kwargs):
+        saved.append(kwargs)
+
+    monkeypatch.setenv("PII_PEPPER_KEY", "x" * 32)
+    monkeypatch.setattr(ai_agent, "_run_provider_chain", fake_chain)
+    monkeypatch.setattr(ai_agent, "load_analysis_cache_ext", lambda *args, **kwargs: None)
+    monkeypatch.setattr(ai_agent, "save_analysis_cache_ext", fake_save)
+    monkeypatch.setattr(ai_agent, "load_local_dsr_template", lambda *args, **kwargs: "")
+
+    result = await ai_agent.analyze_smart_cache(
+        "example@example.com",
+        services,
+        force_refresh=True,
+        lang="en",
+        scan_status=scan_status,
+    )
+
+    assert result["provider_used"] == "Local Rule-based Engine (Offline Fallback)"
+    assert result["is_from_cache"] is False
+    assert result["analysis"][0]["risk_key"] == "unknown"
+    assert saved == []
