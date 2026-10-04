@@ -8,6 +8,8 @@ import pytest
 
 from utils.privacy import clean_web_snippet, clean_web_title
 
+from services.evidence_enrichment import enrich_evidence
+
 from services.evidence.models import (
     EvidenceDirectness,
     EvidenceRelation,
@@ -231,7 +233,6 @@ async def test_firecrawl_provider_swallows_provider_failure() -> None:
 
 @pytest.mark.asyncio
 async def test_enrich_evidence_merges_contextual_records(monkeypatch) -> None:
-    from services.evidence import enrichment
     from services.evidence.models import EvidenceDirectness, EvidenceRelation, EvidenceRecord
 
     base = EvidenceRecord(
@@ -273,9 +274,10 @@ async def test_enrich_evidence_merges_contextual_records(monkeypatch) -> None:
                 )
             ]
 
+    import services.evidence_enrichment as enrichment
     monkeypatch.setattr(enrichment, "FirecrawlSecurityPublicationProvider", FakeProvider)
 
-    result = await enrichment.enrich_evidence(
+    result = await enrich_evidence(
         [base],
         firecrawl_api_key="test-key",
     )
