@@ -12,6 +12,7 @@ from services.ai_agent import (
     CACHE_WRITE_LOCK,
     analyze_smart_cache,
 )
+import services.ai_agent as ai_agent
 from services.breach_scanner import BREACH_CACHE_DIR, scan_data_breaches
 from services.evidence import evidence_to_dicts, service_findings_to_evidence
 from services.imap_scanner import scan_gmail_inbox
