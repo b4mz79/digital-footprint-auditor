@@ -234,8 +234,11 @@ def _target_subject_signal(domain: str, *, title: str, summary: str) -> tuple[bo
 def _incidental_target_mention(domain: str, title: str, summary: str) -> bool:
     aliases = _domain_aliases(domain)
     pattern = "|".join(re.escape(alias.casefold()) for alias in aliases)
+    # List-style mentions are useful for detecting incidental references even
+    # when the surrounding article has only generic "security" wording.
+    # Example/reference wording is intentionally excluded here; it must still
+    # pass the substantive security-context floor.
     incidental_patterns = (
-        r"\bmentioned\s+as\s+an\s+example\b",
         r"\bmentions?\b.{0,100}\b(?:and|among|including)\b",
         r"\b(?:among|including)\b.{0,100}\b(?:other|various|multiple)\b",
         r"\b(?:other|various|multiple)\s+(?:companies|organizations|retailers|vendors|providers)\b",
