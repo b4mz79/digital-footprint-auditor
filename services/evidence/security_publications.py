@@ -19,6 +19,7 @@ import re
 from typing import Any, Iterable
 from urllib.parse import urlsplit
 import time
+from collections import deque
 
 import httpx
 
@@ -39,6 +40,7 @@ FIRECRAWL_SEARCH_URL = "https://api.firecrawl.dev/v2/search"
 DEFAULT_TIMEOUT_SECONDS = 20.0
 DEFAULT_MAX_RESULTS = 5
 DEFAULT_MAX_CONCURRENCY = 2
+DEFAULT_REQUESTS_PER_MINUTE = 10
 DEFAULT_COOLDOWN_SECONDS = 60.0
 MAX_RESPONSE_BYTES = 1_000_000
 MAX_TITLE_LENGTH = 512
@@ -78,6 +80,25 @@ class SecurityPublicationRateLimited(SecurityPublicationError):
 class SecurityPublisher:
     name: str
     domain: str
+
+
+class _RequestRateGate:
+    """Space outbound requests so the provider stays within a configured RPM."""
+
+    def __init__(self, requests_per_minute: int) -> None:
+        self.requests_per_minute = max(1, int(requests_per_minute))
+        self.interval_seconds = 60.0 / self.requests_per_minute
+        self._next_allowed = 0.0
+        self._lock = asyncio.Lock()
+
+    async def wait(self) -> None:
+        async with self._lock:
+            now = time.monotonic()
+            delay = self._next_allowed - now
+            if delay > 0:
+                await asyncio.sleep(delay)
+                now = time.monotonic()
+            self._next_allowed = max(now, self._next_allowed) + self.interval_seconds
 
 
 def _is_private_ip(hostname: str) -> bool:
@@ -164,6 +185,7 @@ class FirecrawlSecurityPublicationProvider:
         client: httpx.AsyncClient | None = None,
         publishers: Iterable[tuple[str, str]] = DEFAULT_SECURITY_PUBLISHERS,
         max_concurrency: int = DEFAULT_MAX_CONCURRENCY,
+        requests_per_minute: int = DEFAULT_REQUESTS_PER_MINUTE,
         cooldown_seconds: float = DEFAULT_COOLDOWN_SECONDS,
     ) -> None:
         # None means "use configured environment"; an explicit empty string
@@ -180,7 +202,9 @@ class FirecrawlSecurityPublicationProvider:
         self._client = client
         self.max_concurrency = max(1, min(int(max_concurrency), 16))
         self.cooldown_seconds = max(1.0, float(cooldown_seconds))
+        self.requests_per_minute = max(1, int(requests_per_minute))
         self._request_gate = asyncio.Semaphore(self.max_concurrency)
+        self._request_rate_gate = _RequestRateGate(self.requests_per_minute)
         self._cooldown_until = 0.0
         self._cooldown_lock = asyncio.Lock()
         self.publishers = tuple(
@@ -240,6 +264,8 @@ class FirecrawlSecurityPublicationProvider:
         await self._check_cooldown()
         try:
             async with self._request_gate:
+                await self._check_cooldown()
+                await self._request_rate_gate.wait()
                 await self._check_cooldown()
                 response = await client.post(
                     FIRECRAWL_SEARCH_URL,
