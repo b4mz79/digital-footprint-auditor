@@ -719,18 +719,15 @@ if run_scan:
         if ai_live_placeholder is not None:
             ai_live_placeholder.empty()
 
-        if final_state.get("ai"):
-            with live_area:
-                render_evidence(final_state)
-                render_ai(final_state)
+        with live_area:
+            render_evidence(final_state)
 
-        # Jika AI tidak berjalan / tidak menghasilkan output,
-        # tetap tampilkan hasil service jika belum ada hasil.
-        elif (
-            not final_state["services"]
-            and not final_state["breach"]["findings"]
-        ):
-            with live_area:
+            if final_state.get("ai"):
+                render_ai(final_state)
+            elif (
+                not final_state["services"]
+                and not final_state["breach"]["findings"]
+            ):
                 st.warning(t("warn_no_services", lang=lang))
 
 
