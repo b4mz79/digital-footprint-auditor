@@ -215,6 +215,18 @@ def test_contextual_relevance_requires_target_and_security_signals() -> None:
     assert signals["target"] == "summary_alias"
 
     accepted, signals = _contextual_relevance(
+        "asus.com",
+        url="https://unit42.paloaltonetworks.com/risks-in-iot-supply-chain/",
+        title="Risks in IoT Supply Chain",
+        summary=(
+            "Operation ShadowHammer targeted ASUS through trojanized software. "
+            "The campaign compromised infrastructure and abused security certificates."
+        ),
+    )
+    assert accepted is True
+    assert signals["reason"] == "target_subject_security_context"
+
+    accepted, signals = _contextual_relevance(
         "asus.com", url="https://securelist.com/browsing-malicious-websites/36273/",
         title="Browsing malicious websites",
         summary="A general guide to browsing malicious websites; ASUS is mentioned as an example.",
