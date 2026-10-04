@@ -126,6 +126,54 @@ def test_model_insufficient_reason_does_not_override_explicit_activity_floor() -
     assert final[0]["reason"] == ai_agent.t("fallback_reason", lang="en")
 
 
+def test_progressive_ollama_callback_deduplicates_service_identity(monkeypatch) -> None:
+    emitted: list[dict] = []
+
+    def callback(item: dict) -> None:
+        emitted.append(item)
+
+    services = [
+        {"name": "Example Shop", "domain": "example.com"},
+        {"name": "Example Shop", "domain": "example.net"},
+    ]
+
+    async def fake_chain(*args, **kwargs):
+        batch_callback = kwargs["on_ollama_batch"]
+        batch_callback(
+            [{"service": "Example Shop", "risk_key": "unknown", "reason": "First"}],
+            [services[0]],
+        )
+        batch_callback(
+            [{"service": "Example Shop", "risk_key": "medium", "reason": "Second"}],
+            [services[1]],
+        )
+        return {
+            "analysis": [
+                {"service": "Example Shop", "risk_key": "unknown", "reason": "First", "delete_url": ""}
+            ]
+        }, "Ollama Local"
+
+    monkeypatch.setattr(ai_agent, "_run_provider_chain", fake_chain)
+    monkeypatch.setattr(ai_agent, "load_analysis_cache_ext", lambda *args, **kwargs: None)
+    monkeypatch.setattr(ai_agent, "save_analysis_cache_ext", lambda *args, **kwargs: None)
+    monkeypatch.setattr(ai_agent, "load_local_dsr_template", lambda *args, **kwargs: "")
+
+    import os
+    monkeypatch.setenv("PII_PEPPER_KEY", "x" * 32)
+
+    result = await ai_agent.analyze_smart_cache(
+        "example@example.com",
+        services,
+        force_refresh=True,
+        lang="en",
+        on_analysis_item=callback,
+    )
+
+    assert len(emitted) == 1
+    assert emitted[0]["service"] == "Example Shop"
+    assert result["analysis"][0]["service"] == "Example Shop"
+
+
 def test_breach_floor_raises_risk_with_coherent_reason() -> None:
     services = [
         {
