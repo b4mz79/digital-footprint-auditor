@@ -423,6 +423,9 @@ async def test_enrich_evidence_passes_configured_request_rate(monkeypatch) -> No
             captured["requests_per_minute"] = kwargs["requests_per_minute"]
             self.cooldown_active = False
 
+        async def finalize_filter_dump(self):
+            return None
+
         async def search_domain(self, domain):
             return []
 
@@ -479,6 +482,9 @@ async def test_enrich_evidence_merges_contextual_records(monkeypatch) -> None:
             assert kwargs["requests_per_minute"] >= 1
             assert kwargs["cooldown_seconds"] >= 1
             self.cooldown_active = False
+
+        async def finalize_filter_dump(self):
+            return None
 
         async def search_domain(self, domain):
             assert domain == "example.com"
@@ -538,6 +544,9 @@ async def test_enrich_evidence_stops_scheduling_domains_after_rate_limit(monkeyp
     class FakeProvider:
         def __init__(self, **kwargs):
             self.cooldown_active = False
+
+        async def finalize_filter_dump(self):
+            return None
 
         async def search_domain(self, domain):
             calls.append(domain)
