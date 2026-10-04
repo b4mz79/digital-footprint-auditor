@@ -65,3 +65,62 @@ async def test_ollama_partial_failure_rotates_to_next_provider(monkeypatch) -> N
     assert provider == "Groq Cloud"
     assert parsed is not None
     assert parsed["analysis"][0]["service"] == "Example"
+
+
+
+def test_rule_based_fallback_keeps_medium_reason_coherent() -> None:
+    services = [
+        {
+            "name": "Example Shop",
+            "domain": "example.com",
+            "subject": "Order confirmation for your purchase",
+        }
+    ]
+
+    final, exposures = ai_agent._finalize_analysis([], services, [], "en")
+
+    assert exposures == []
+    assert final[0]["risk_key"] == "medium"
+    assert final[0]["risk_level"] == ai_agent.t("risk_medium", lang="en")
+    assert final[0]["reason"] == ai_agent.t("medium_activity_guard_reason", lang="en")
+
+
+def test_rule_based_fallback_keeps_high_reason_coherent() -> None:
+    services = [
+        {
+            "name": "Example Bank",
+            "domain": "example.com",
+            "subject": "Your banking authentication code",
+        }
+    ]
+
+    final, exposures = ai_agent._finalize_analysis([], services, [], "en")
+
+    assert exposures == []
+    assert final[0]["risk_key"] == "high"
+    assert final[0]["risk_level"] == ai_agent.t("risk_high", lang="en")
+    assert final[0]["reason"] == ai_agent.t("fallback_reason", lang="en")
+
+
+def test_model_insufficient_reason_does_not_override_explicit_activity_floor() -> None:
+    services = [
+        {
+            "name": "Example Bank",
+            "domain": "example.com",
+            "subject": "Payment received for your account",
+        }
+    ]
+    analysis = [
+        {
+            "service": "Example Bank",
+            "risk_key": "medium",
+            "reason": "Insufficient evidence to determine risk.",
+            "delete_url": "",
+        }
+    ]
+
+    final, exposures = ai_agent._finalize_analysis(analysis, services, [], "en")
+
+    assert exposures == []
+    assert final[0]["risk_key"] == "high"
+    assert final[0]["reason"] == ai_agent.t("fallback_reason", lang="en")
