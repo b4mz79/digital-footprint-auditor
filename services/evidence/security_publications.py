@@ -199,6 +199,11 @@ class FirecrawlSecurityPublicationProvider:
     def enabled(self) -> bool:
         return bool(self.api_key)
 
+    @property
+    def cooldown_active(self) -> bool:
+        """Return whether the provider-wide cooldown is currently active."""
+        return self._cooldown_until > time.monotonic()
+
     async def _check_cooldown(self) -> None:
         remaining = self._cooldown_until - time.monotonic()
         if remaining > 0:
