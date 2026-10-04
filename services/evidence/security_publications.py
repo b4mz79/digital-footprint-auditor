@@ -274,18 +274,17 @@ def _contextual_relevance(domain: str, *, url: str, title: str, summary: str) ->
             "security": security,
             "reason": "target_not_subject",
         }
-    # Explicitly incidental/list-style mentions are target-relevance failures
-    # even when the surrounding text is not itself a substantive security
-    # signal. This keeps "mentioned as an example", "other retailers", etc.
-    # from being reported as missing security context.
-    if target_strength in {"weak", "medium"} and _incidental_target_mention(
+    # An explicit incidental/list-style mention is only classified as
+    # incidental after a substantive security signal exists. Otherwise the
+    # primary failure is the missing security-context floor.
+    if security and target_strength in {"weak", "medium"} and _incidental_target_mention(
         domain, title, summary
     ):
         return False, {
             "page_type": page_type,
             "target": target_signal,
             "target_strength": target_strength,
-            "security": security,
+            "security": True,
             "reason": "incidental_target_mention",
         }
     # Check the substantive security floor before proximity. A page that
