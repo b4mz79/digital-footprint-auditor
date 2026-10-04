@@ -264,6 +264,31 @@ async def test_firecrawl_provider_returns_contextual_evidence() -> None:
 
 
 @pytest.mark.asyncio
+async def test_contextual_filter_dump_is_single_markdown_file(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("EVIDENCE_CONTEXTUAL_FILTER_DUMP_DIR", str(tmp_path))
+    payload = {"success": True, "data": {"web": [{
+        "title": "Example.com phishing incident",
+        "description": "Security incident involving example.com.",
+        "url": "https://securelist.com/example-incident/",
+    }]}}
+    client = httpx.AsyncClient(transport=MockTransport(payload))
+    provider = FirecrawlSecurityPublicationProvider(
+        api_key="test-key", client=client,
+        publishers=(("Kaspersky Securelist", "securelist.com"),),
+    )
+    try:
+        await provider.search_domain("example.com")
+    finally:
+        await client.aclose()
+    dump = (tmp_path / "contextual_filter_dump.md").read_text(encoding="utf-8")
+    assert dump.startswith("BEFORE\n```json\n")
+    assert "\n---\nAFTER\n```json\n" in dump
+    assert dump.endswith("\n```\n")
+    assert not (tmp_path / "contextual_filter_before.json").exists()
+    assert not (tmp_path / "contextual_filter_after.json").exists()
+
+
+@pytest.mark.asyncio
 async def test_firecrawl_provider_is_optional_without_api_key() -> None:
     provider = FirecrawlSecurityPublicationProvider(
         api_key="",
