@@ -31,7 +31,7 @@ def test_evidence_record_preserves_directness_and_relation() -> None:
         relation=EvidenceRelation.SECURITY_PUBLICATION,
         directness=EvidenceDirectness.CONTEXTUAL,
         confidence=1.7,
-        observed_at=datetime.now().isoformat(),
+        observed_at=datetime.now().astimezone().isoformat(),
         published_at=None,
         domain="example.com",
         url="https://securelist.com/example",
