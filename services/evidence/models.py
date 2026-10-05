@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
+from datetime import datetime
 from enum import Enum
 import hashlib
 from typing import Any
@@ -29,6 +30,30 @@ class EvidenceDirectness(str, Enum):
 
 VERIFICATION_SCOPES = ("url_accessibility",)
 VERIFICATION_STATES = ("reachable", "unreachable", "unknown")
+
+def _validate_timestamp(value: str | None, *, field_name: str, allow_none: bool) -> str | None:
+    """Validate a timezone-aware ISO-8601 timestamp without inferring timezones."""
+    if value is None:
+        if allow_none:
+            return None
+        raise ValueError(f"{field_name} must be a timezone-aware ISO-8601 timestamp")
+
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{field_name} must be a timezone-aware ISO-8601 timestamp")
+
+    raw = value.strip()
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError(
+            f"{field_name} must be a timezone-aware ISO-8601 timestamp"
+        ) from exc
+
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ValueError(
+            f"{field_name} must include an explicit timezone offset"
+        )
+    return raw
 
 
 @dataclass(slots=True)
@@ -65,6 +90,17 @@ class EvidenceRecord:
     verification_observed_at: str | None = None
 
     def __post_init__(self) -> None:
+        self.observed_at = _validate_timestamp(
+            self.observed_at, field_name="observed_at", allow_none=False
+        ) or ""
+        self.published_at = _validate_timestamp(
+            self.published_at, field_name="published_at", allow_none=True
+        )
+        self.verification_observed_at = _validate_timestamp(
+            self.verification_observed_at,
+            field_name="verification_observed_at",
+            allow_none=True,
+        )
         self.confidence = max(0.0, min(1.0, float(self.confidence)))
         self.assertion_scope = str(self.assertion_scope or "unknown").strip() or "unknown"
         self.verification_scope = (
