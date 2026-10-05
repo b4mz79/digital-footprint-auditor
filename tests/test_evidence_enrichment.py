@@ -44,6 +44,10 @@ def test_evidence_record_preserves_directness_and_relation() -> None:
     assert data["relation"] == "security_publication"
     assert data["directness"] == "contextual"
     assert data["confidence"] == 1.0
+    assert data["assertion_scope"] == "unknown"
+    assert data["verification_scope"] == "url_accessibility"
+    assert data["verification_state"] == "unknown"
+    assert data["verification_observed_at"] is None
 
 
 def test_evidence_id_does_not_use_target_pii() -> None:
@@ -319,6 +323,9 @@ async def test_firecrawl_provider_returns_contextual_evidence() -> None:
     assert record.published_at == "2025-10-10"
     assert record.provenance["query_scope"] == "domain_only"
     assert record.provenance["relevance_filter"] == "security_publication_context_v2"
+    assert record.assertion_scope == "security_publication_context_only"
+    assert record.verification_scope == "url_accessibility"
+    assert record.verification_state == "unknown"
     assert record.metadata["status"] == "contextual_accepted"
 
 
