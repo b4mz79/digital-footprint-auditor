@@ -480,6 +480,10 @@ def _sanitize_evidence_records(evidence_records: list | None) -> list[dict[str, 
             "directness",
             "observed_at",
             "published_at",
+            "assertion_scope",
+            "verification_scope",
+            "verification_state",
+            "verification_observed_at",
         ):
             if key in raw:
                 value = _redact_text_for_llm(raw.get(key), MAX_EVIDENCE_FIELD_LENGTH)
