@@ -402,6 +402,22 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _normalize_source_timestamp(value: Any) -> str | None:
+    """Accept only explicit timezone-aware ISO-8601 source timestamps."""
+    if value is None:
+        return None
+    raw = str(value).strip()
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        return None
+    return raw
+
+
 class FirecrawlSecurityPublicationProvider:
     """Search trusted public security-research publishers for domain context."""
 
@@ -640,7 +656,9 @@ class FirecrawlSecurityPublicationProvider:
 
             metadata = item.get("metadata")
             metadata = metadata if isinstance(metadata, dict) else {}
-            published_at = metadata.get("publishedTime") or metadata.get("published_time")
+            published_at = _normalize_source_timestamp(
+                metadata.get("publishedTime") or metadata.get("published_time")
+            )
 
             accepted, signals = _contextual_relevance(domain, url=url, title=title, summary=description)
             candidate_dump = self._dump_item(domain=domain, publisher=publisher, url=url, title=title, summary=description, published_at=published_at, decision="accept" if accepted else "reject", decision_reason=str(signals["reason"]), signals=signals)
