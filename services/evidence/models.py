@@ -50,6 +50,15 @@ class EvidenceRecord:
     summary: str
     provenance: dict[str, Any] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
+    # Explicit semantic contract for the assertion represented by this record.
+    # This is not a risk score and must never be interpreted as one.
+    assertion_scope: str = "unknown"
+    # Verification is deliberately scoped. "url_accessibility" means only that
+    # the stored URL was checked for HTTP reachability; it does not verify the
+    # source, claim, or target exposure.
+    verification_scope: str = "url_accessibility"
+    verification_state: str = "unknown"
+    verification_observed_at: str | None = None
 
     def __post_init__(self) -> None:
         self.confidence = max(0.0, min(1.0, float(self.confidence)))
