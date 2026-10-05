@@ -50,6 +50,24 @@ def test_evidence_record_preserves_directness_and_relation() -> None:
     assert data["verification_observed_at"] is None
 
 
+
+def test_service_finding_declares_narrow_assertion_scope() -> None:
+    from services.evidence.normalizer import service_findings_to_evidence
+
+    records = service_findings_to_evidence([{
+        "name": "Example Service",
+        "domain": "example.com",
+        "source": "OSINT",
+        "subject": "Observed service association",
+    }], observed_at="2026-10-05T00:00:00+00:00")
+
+    assert len(records) == 1
+    record = records[0]
+    assert record.assertion_scope == "service_association_only"
+    assert record.directness is EvidenceDirectness.DIRECT
+    assert record.verification_state == "unknown"
+
+
 def test_evidence_id_does_not_use_target_pii() -> None:
     first = make_evidence_id(
         source="ESET Research",
