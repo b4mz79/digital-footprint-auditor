@@ -28,7 +28,7 @@ def test_build_user_prompt_includes_structured_evidence_without_target_pii() -> 
                 "assertion_scope": "service_association_only",
                 "verification_scope": "url_accessibility",
                 "verification_state": "unknown",
-                "verification_observed_at": None,
+                "verification_observed_at": "2026-10-05T00:00:00+00:00",
                 "confidence": 0.8,
                 "observed_at": "2026-10-03T00:00:00+00:00",
                 "published_at": None,
