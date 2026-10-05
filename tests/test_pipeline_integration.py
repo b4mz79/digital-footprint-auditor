@@ -135,6 +135,10 @@ def test_pipeline_passes_enriched_evidence_to_ai(monkeypatch) -> None:
         return base
 
     monkeypatch.setattr(pipeline, "enrich_evidence", fake_enrich)
+    async def fake_verify(records):
+        return list(records)
+
+    monkeypatch.setattr(pipeline, "verify_evidence_records", fake_verify)
     monkeypatch.setattr(
         pipeline,
         "analyze_smart_cache",
