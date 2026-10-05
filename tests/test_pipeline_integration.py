@@ -37,6 +37,11 @@ def test_pipeline_exposes_normalized_evidence(monkeypatch) -> None:
     assert evidence["domain"] == "example.com"
     assert evidence["relation"] == "target_resource"
     assert evidence["directness"] == "direct"
+    assert evidence["assertion_scope"] == "service_association_only"
+    assert evidence["provenance"]["assertion_scope"] == "service_association_only"
+    assert evidence["verification_scope"] == "url_accessibility"
+    assert evidence["verification_state"] == "unknown"
+    assert evidence["verification_observed_at"] is None
     assert evidence["metadata"]["finding_type"] == "service_discovery"
 
 
@@ -79,6 +84,10 @@ def test_pipeline_forwards_evidence_to_ai(monkeypatch) -> None:
     assert len(state["evidence"]) == 1
     assert captured["evidence_records"][0]["domain"] == "example.com"
     assert captured["evidence_records"][0]["relation"] == "target_resource"
+    assert captured["evidence_records"][0]["assertion_scope"] == "service_association_only"
+    assert captured["evidence_records"][0]["provenance"]["assertion_scope"] == "service_association_only"
+    assert captured["evidence_records"][0]["verification_scope"] == "url_accessibility"
+    assert captured["evidence_records"][0]["verification_state"] == "unknown"
 
 
 def test_pipeline_passes_enriched_evidence_to_ai(monkeypatch) -> None:
@@ -113,6 +122,14 @@ def test_pipeline_passes_enriched_evidence_to_ai(monkeypatch) -> None:
                 url="https://securelist.com/example",
                 title="Example security context",
                 summary="Security publication context.",
+                provenance={
+                    "provider": "firecrawl_search",
+                    "publisher_domain": "securelist.com",
+                    "query_scope": "domain_only",
+                    "relevance_filter": "security_publication_context_v2",
+                    "assertion_scope": "security_publication_context_only",
+                },
+                assertion_scope="security_publication_context_only",
             )
         )
         return base
@@ -139,7 +156,12 @@ def test_pipeline_passes_enriched_evidence_to_ai(monkeypatch) -> None:
     )
 
     assert len(state["evidence"]) == 2
-    assert any(
-        item["relation"] == "security_publication"
-        for item in captured["evidence_records"]
+    contextual = next(
+        item for item in captured["evidence_records"]
+        if item["relation"] == "security_publication"
     )
+    assert contextual["directness"] == "contextual"
+    assert contextual["assertion_scope"] == "security_publication_context_only"
+    assert contextual["provenance"]["assertion_scope"] == "security_publication_context_only"
+    assert contextual["verification_scope"] == "url_accessibility"
+    assert contextual["verification_state"] == "unknown"
