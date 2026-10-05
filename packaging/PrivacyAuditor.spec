@@ -1,8 +1,16 @@
+# -*- mode: python ; coding: utf-8 -*-
+import sys
 from pathlib import Path
-
 from PyInstaller.utils.hooks import collect_all, collect_submodules
 
-DEV_ARTIFACT_SUFFIXES = {".h", ".lib", ".pyx", ".pxi"}
+# Deteksi otomatis ekstensi binary berdasarkan OS (Linux = .so, Windows = .pyd)
+IS_LINUX = sys.platform.startswith("linux")
+BIN_EXT = ".so" if IS_LINUX else ".pyd"
+
+if IS_LINUX :
+   DEV_ARTIFACT_SUFFIXES = {".h", ".lib", ".pyx", ".pxi", ".a"}
+else:
+   DEV_ARTIFACT_SUFFIXES = {".h", ".lib", ".pyx", ".pxi"}
 
 STREAMLIT_OPTIONAL_ASSET_PREFIXES = (
     "PlotlyChart.",
@@ -24,11 +32,11 @@ STREAMLIT_OPTIONAL_ASSET_PREFIXES = (
 )
 
 PIL_OPTIONAL_BINARIES = {
-    "_webp.pyd",
-    "_imagingft.pyd",
-    "_imagingcms.pyd",
-    "_imagingmath.pyd",
-    "_imagingtk.pyd",
+    f"_webp{BIN_EXT}",
+    f"_imagingft{BIN_EXT}",
+    f"_imagingcms{BIN_EXT}",
+    f"_imagingmath{BIN_EXT}",
+    f"_imagingtk{BIN_EXT}",
 }
 
 def _is_runtime_data(item) -> bool:
@@ -55,6 +63,7 @@ datas = []
 binaries = []
 hiddenimports += holehe_hidden
 
+# Penyesuaian pemisah path khusus untuk Linux/Ubuntu (menggunakan titik dua ':')
 datas += [
     (str(ROOT / "app.py"), "."),
     (str(ROOT / ".env.example"), "."),
@@ -112,71 +121,41 @@ a = Analysis(
         "lxml.etree",
         "lxml.html",
         "lxml.cssselect",
-        ],
-        noarchive=False,
+    ],
+    noarchive=False,
 )
 
+# --- SLIMMING PASSES ---
 before_datas = len(a.datas)
 a.datas = [item for item in a.datas if _is_runtime_data(item)]
-print(
-    f"[Slimming Pass 4] Removed "
-    f"{before_datas - len(a.datas)} development data files."
-)
+print(f"[Slimming Pass 4] Removed {before_datas - len(a.datas)} development data files.")
 
 # Pass 9: Remove Pillow's AVIF native extension if collected by a hook.
 
 before_pil_binaries = len(a.binaries)
-a.binaries = [
-    item
-    for item in a.binaries
-        if not Path(str(item[0])).name.lower().startswith("_avif.")
-]
-print(
-    f"[Slimming Pass 9] Removed "
-    f"{before_pil_binaries - len(a.binaries)} Pillow AVIF binaries."
-)
+a.binaries = [item for item in a.binaries if not Path(str(item[0])).name.lower().startswith("_avif.")]
+print(f"[Slimming Pass 9] Removed {before_pil_binaries - len(a.binaries)} Pillow AVIF binaries.")
 
 # Pass 10: Remove Pillow optional native extensions that are not loaded
 
 # by the application's tested runtime path.
 
-PIL_OPTIONAL_BINARIES = {
-    "_webp.pyd",
-    "_imagingft.pyd",
-    "_imagingcms.pyd",
-    "_imagingmath.pyd",
-    "_imagingtk.pyd",
-}
-
 before_optional_pil_binaries = len(a.binaries)
-a.binaries = [
-    item
-    for item in a.binaries
-        if Path(str(item[0])).name.lower() not in PIL_OPTIONAL_BINARIES
-]
-print(
-    f"[Slimming Pass 10] Removed "
-    f"{before_optional_pil_binaries - len(a.binaries)} optional Pillow binaries."
-)
+# Di Linux, nama binary mengandung string tambahan (cth: _webp.cpython-310...), jadi kita gunakan kecocokan sebagian
+if IS_LINUX :
+    a.binaries = [item for item in a.binaries if not any(name.replace(BIN_EXT, "") in Path(str(item[0])).name.lower() for name in PIL_OPTIONAL_BINARIES)]
+else:
+    a.binaries = [item for item in a.binaries if Path(str(item[0])).name.lower() not in PIL_OPTIONAL_BINARIES]
+print(f"[Slimming Pass 10] Removed {before_optional_pil_binaries - len(a.binaries)} optional Pillow binaries.")
 
 # Pass 11: Remove Streamlit frontend assets for chart/diagram features
 
 # that are not used by Privacy Auditor.
 
 before_streamlit_assets = len(a.datas)
-removed_streamlit_assets = [
-    item for item in a.datas if _is_unused_streamlit_asset(item)
-]
-
-a.datas = [
-    item for item in a.datas if not _is_unused_streamlit_asset(item)
-]
-
-print(
-    f"[Slimming Pass 11] Removed "
-    f"{before_streamlit_assets - len(a.datas)} unused "
-    f"Streamlit frontend assets."
-)
+removed_streamlit_assets = [item for item in a.datas if _is_unused_streamlit_asset(item)]
+a.datas = [item for item in a.datas if not _is_unused_streamlit_asset(item)]
+print(f"[Slimming Pass 11] Removed {before_streamlit_assets - len(a.datas)} unused Streamlit frontend assets.")
 
 for item in removed_streamlit_assets:
     print(f"  [Pass 11] {Path(str(item[0])).name}")
@@ -186,42 +165,49 @@ for item in removed_streamlit_assets:
 # still contributes them despite the Analysis exclusion.
 
 before_lxml_binaries = len(a.binaries)
-a.binaries = [
-    item for item in a.binaries if not _is_lxml_item(item)
-]
-print(
-    f"[Slimming Pass 12] Removed {before_lxml_binaries - len(a.binaries)} lxml binaries."
-)
+a.binaries = [item for item in a.binaries if not _is_lxml_item(item)]
+print(f"[Slimming Pass 12] Removed {before_lxml_binaries - len(a.binaries)} lxml binaries.")
 
 before_lxml_datas = len(a.datas)
-a.datas = [
-    item for item in a.datas if not _is_lxml_item(item)
-]
-print(
-    f"[Slimming Pass 12] Removed {before_lxml_datas - len(a.datas)} lxml data files."
-)
+a.datas = [item for item in a.datas if not _is_lxml_item(item)]
+print(f"[Slimming Pass 12] Removed {before_lxml_datas - len(a.datas)} lxml data files.")
 
 pyz = PYZ(a.pure)
 
-exe = EXE(
-    pyz,
-    a.scripts,
-    [],
-    exclude_binaries=True,
-    name="PrivacyAuditor",
-    debug=False,
-    bootloader_ignore_signals=False,
-    strip=False,
-    upx=True,
-    console=False,
-    disable_windowed_traceback=True,
-)
-
-coll = COLLECT(
-    exe,
-    a.binaries,
-    a.datas,
-    strip=False,
-    upx=True,
-    name="PrivacyAuditor",
-)
+# Opsi console=False di Linux setara dengan --windowed (tanpa terminal latar belakang)
+if IS_LINUX :
+    exe = EXE(
+        pyz,
+        a.scripts,
+        a.binaries,       # Memasukkan binary ke dalam satu file tunggal
+        a.datas,          # Memasukkan data ke dalam satu file tunggal
+        name="PrivacyAuditor",
+        debug=False,
+        bootloader_ignore_signals=False,
+        strip=True,       # Mengompres ukuran binary di Linux dengan menghapus simbol debug
+        upx=True,
+        console=False,    # Murni GUI, terminal tidak akan muncul
+        disable_windowed_traceback=True,
+    )
+else:
+    exe = EXE(
+        pyz,
+        a.scripts,
+        [],
+        exclude_binaries=True,
+        name="PrivacyAuditor",
+        debug=False,
+        bootloader_ignore_signals=False,
+        strip=False,
+        upx=True,
+        console=False,
+        disable_windowed_traceback=True,
+    )
+    coll = COLLECT(
+        exe,
+        a.binaries,
+        a.datas,
+        strip=False,
+        upx=True,
+        name="PrivacyAuditor",
+    )
