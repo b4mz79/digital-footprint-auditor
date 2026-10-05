@@ -132,10 +132,24 @@ def bundle_root() -> Path:
 
 
 def user_data_dir() -> Path:
-    """Persistent per-user storage; never write mutable data into the bundle."""
-    root = Path(os.getenv("LOCALAPPDATA") or Path.home() / "AppData" / "Local") / APP_NAME
+    """Persistent per-user storage; never write mutable data into the bundle.
+    Kompatibel dengan standar Linux (XDG) dan Windows fallback.
+    """
+    if sys.platform.startswith("linux"):
+        # Standar Linux: ~/.local/share/DigitalFootprintAuditor
+        root = Path(os.getenv("XDG_DATA_HOME") or Path.home() / ".local" / "share") / APP_NAME
+    else:
+        # Fallback untuk Windows
+        root = Path(os.getenv("LOCALAPPDATA") or Path.home() / "AppData" / "Local") / APP_NAME
+
     root.mkdir(parents=True, exist_ok=True)
     return root
+
+#def user_data_dir() -> Path:
+#    """Persistent per-user storage; never write mutable data into the bundle."""
+#    root = Path(os.getenv("LOCALAPPDATA") or Path.home() / "AppData" / "Local") / APP_NAME
+#    root.mkdir(parents=True, exist_ok=True)
+#    return root
 
 
 def _ensure_pepper(env_file: Path) -> None:
@@ -305,7 +319,10 @@ def show_configuration(parent, data_dir: Path, on_saved, on_save_start=None) -> 
     outer = ttk.Frame(dialog, padding=12)
     outer.pack(fill="both", expand=True)
 
-    ttk.Label(outer, text="Configuration", font=("Segoe UI", 15, "bold")).pack(anchor="w")
+    if sys.platform.startswith("linux"):
+        ttk.Label(outer, text="Configuration", font=("Helvetica", 14, "bold")).pack(anchor="w")
+    else:
+        ttk.Label(outer, text="Configuration", font=("Segoe UI", 15, "bold")).pack(anchor="w")
     ttk.Label(
         outer,
         text="API keys and settings are stored locally in your Windows user profile.",
@@ -396,11 +413,10 @@ def run_gui(data_dir: Path, first_run: bool) -> None:
     port = DEFAULT_PORT
     url = ""
 
-    ttk.Label(
-        root,
-        text="🛡️ Local Digital Footprint & Privacy Auditor",
-        font=("Segoe UI", 14, "bold"),
-    ).pack(pady=(20, 12))
+    if sys.platform.startswith("linux"):
+        ttk.Label(root, text="🛡️ Local Digital Footprint & Privacy Auditor", font=("Helvetica", 13, "bold")).pack(pady=(20, 12))
+    else:
+        ttk.Label(root, text="🛡️ Local Digital Footprint & Privacy Auditor", font=("Segoe UI", 14, "bold")).pack(pady=(20, 12))
     status = ttk.Label(root, text="Status: Ready")
     status.pack(pady=3)
     address = ttk.Label(root, text="")

@@ -6,18 +6,10 @@ setlocal enabledelayedexpansion
 :: Pindah ke direktori tempat script ini berada
 cd /d "%~dp0"
 
-:: Cek & aktifkan virtual environment (Windows path)
-if exist "venv\Scripts\activate.bat" (
-    echo 🔌 Mengaktifkan virtual environment ^(venv^)...
-    call venv\Scripts\activate.bat
-) else (
-    echo ❌ Virtual environment 'venv\Scripts\activate.bat' tidak ditemukan!
-    exit /b 1
-)
-
 :: Parsing parameter untuk mengecek perintah 'reset' dan 'web'
 set "RESET_MODE=false"
 set "FULL_RESET_MODE=false"
+set "NO_RUN=false"
 set "ARGS="
 
 for %%a in (%*) do (
@@ -26,9 +18,27 @@ for %%a in (%*) do (
     ) else if /i "%%~a"=="full-reset" (
 	    set "RESET_MODE=true"
         set "FULL_RESET_MODE=true"
+    ) else if /i "%%~a"=="reset-only" (
+	    set "RESET_MODE=true"
+		set "NO_RUN=true"
+    ) else if /i "%%~a"=="full-reset-only" (
+	    set "RESET_MODE=true"
+		set "FULL_RESET_MODE=true"
+		set "NO_RUN=true"
     ) else (
         set "ARGS=!ARGS! %%~a"
     )
+)
+
+if "%NO_RUN%"=="false" (
+	:: Cek & aktifkan virtual environment (Windows path)
+	if exist "venv\Scripts\activate.bat" (
+		echo 🔌 Mengaktifkan virtual environment ^(venv^)...
+		call venv\Scripts\activate.bat
+	) else (
+		echo ❌ Virtual environment 'venv\Scripts\activate.bat' tidak ditemukan!
+		exit /b 1
+	)
 )
 
 :: Eksekusi reset jika parameter terdeteksi
@@ -44,8 +54,12 @@ if "%RESET_MODE%"=="true" (
 			if exist "%%d" rd /s /q "%%d" 2>nul
 		)
 		echo ✅ Folder cache berhasil dibersihkan!
+		for /d /r . %%d in (.pytest_cache) do (
+			if exist "%%d" rd /s /q "%%d" 2>nul
+		)
+		echo ✅ Folder Pytest cache berhasil dibersihkan!
 	)
-
+	
     :: Jika Streamlit lagi jalan di port 8501, matikan prosesnya
     set "KILLED=false"
     for /f "tokens=5" %%p in ('netstat -aon ^| findstr :8501 ^| findstr LISTENING 2^>nul') do (
@@ -61,12 +75,14 @@ if "%RESET_MODE%"=="true" (
     )
 )
 
-:: Eksekusi aplikasi berdasarkan mode
-netstat -aon | findstr :8501 | findstr LISTENING >nul 2>&1
-if !errorlevel! neq 0 (
-    echo 🌐 Menjalankan Web UI via Streamlit di ^(port 8501^)...
-    streamlit run app.py
-) else (
-    echo ⚠️ Server Web UI di port 8501 sudah berjalan!
-    echo 🌐 Akses via browser: http://localhost:8501
+if "%NO_RUN%"=="false" (
+	:: Eksekusi aplikasi berdasarkan mode
+	netstat -aon | findstr :8501 | findstr LISTENING >nul 2>&1
+	if !errorlevel! neq 0 (
+		echo 🌐 Menjalankan Web UI via Streamlit di ^(port 8501^)...
+		streamlit run app.py
+	) else (
+		echo ⚠️ Server Web UI di port 8501 sudah berjalan!
+		echo 🌐 Akses via browser: http://localhost:8501
+	)
 )
