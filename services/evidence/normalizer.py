@@ -119,6 +119,9 @@ def service_findings_to_evidence(
                 provenance={
                     "provider": source_type,
                     "normalizer": "service_findings_to_evidence",
+                    # Backward-compatible provenance projection: the explicit
+                    # EvidenceRecord field remains the semantic authority.
+                    "assertion_scope": "service_association_only",
                 },
                 assertion_scope="service_association_only",
                 metadata={
