@@ -51,6 +51,25 @@ def test_evidence_record_preserves_directness_and_relation() -> None:
 
 
 
+def test_evidence_record_rejects_unscoped_verification_state() -> None:
+    with pytest.raises(ValueError, match="Unsupported verification state"):
+        EvidenceRecord(
+            evidence_id="invalid",
+            source="Example",
+            source_type="test",
+            relation=EvidenceRelation.TARGET_RESOURCE,
+            directness=EvidenceDirectness.DIRECT,
+            confidence=0.5,
+            observed_at="2026-10-05T00:00:00+00:00",
+            published_at=None,
+            domain="example.com",
+            url="https://example.com",
+            title="Example",
+            summary="Example",
+            verification_state="verified",
+        )
+
+
 def test_service_finding_declares_narrow_assertion_scope() -> None:
     from services.evidence.normalizer import service_findings_to_evidence
 
