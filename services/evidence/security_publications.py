@@ -403,12 +403,19 @@ def _utc_now() -> str:
 
 
 def _normalize_source_timestamp(value: Any) -> str | None:
-    """Accept only explicit timezone-aware ISO-8601 source timestamps."""
+    """Accept source-reported ISO-8601 dates or timezone-aware timestamps."""
     if value is None:
         return None
     raw = str(value).strip()
     if not raw:
         return None
+    if len(raw) == 10:
+        try:
+            datetime.fromisoformat(raw)
+        except ValueError:
+            return None
+        return raw
+
     try:
         parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
     except ValueError:
