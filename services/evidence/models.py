@@ -31,8 +31,14 @@ class EvidenceDirectness(str, Enum):
 VERIFICATION_SCOPES = ("url_accessibility",)
 VERIFICATION_STATES = ("reachable", "unreachable", "unknown")
 
-def _validate_timestamp(value: str | None, *, field_name: str, allow_none: bool) -> str | None:
-    """Validate a timezone-aware ISO-8601 timestamp without inferring timezones."""
+def _validate_timestamp(
+    value: str | None,
+    *,
+    field_name: str,
+    allow_none: bool,
+    allow_date_only: bool = False,
+) -> str | None:
+    """Validate an ISO-8601 temporal value without inferring missing timezone data."""
     if value is None:
         if allow_none:
             return None
@@ -42,6 +48,14 @@ def _validate_timestamp(value: str | None, *, field_name: str, allow_none: bool)
         raise ValueError(f"{field_name} must be a timezone-aware ISO-8601 timestamp")
 
     raw = value.strip()
+    if allow_date_only and len(raw) == 10:
+        try:
+            parsed = datetime.fromisoformat(raw)
+        except ValueError as exc:
+            raise ValueError(f"{field_name} must be a valid ISO-8601 date") from exc
+        if parsed.time() == datetime.min.time():
+            return raw
+
     try:
         parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
     except ValueError as exc:
@@ -94,7 +108,10 @@ class EvidenceRecord:
             self.observed_at, field_name="observed_at", allow_none=False
         ) or ""
         self.published_at = _validate_timestamp(
-            self.published_at, field_name="published_at", allow_none=True
+            self.published_at,
+            field_name="published_at",
+            allow_none=True,
+            allow_date_only=True,
         )
         self.verification_observed_at = _validate_timestamp(
             self.verification_observed_at,
