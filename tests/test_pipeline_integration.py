@@ -117,7 +117,7 @@ def test_pipeline_passes_enriched_evidence_to_ai(monkeypatch) -> None:
                 directness=EvidenceDirectness.CONTEXTUAL,
                 confidence=0.65,
                 observed_at=base[0].observed_at,
-                published_at="2026-01-01",
+                published_at="2026-01-01T00:00:00+00:00",
                 domain="example.com",
                 url="https://securelist.com/example",
                 title="Example security context",
