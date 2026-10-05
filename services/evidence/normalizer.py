@@ -119,8 +119,8 @@ def service_findings_to_evidence(
                 provenance={
                     "provider": source_type,
                     "normalizer": "service_findings_to_evidence",
-                    "assertion_scope": "service_association_only",
                 },
+                assertion_scope="service_association_only",
                 metadata={
                     "finding_type": "service_discovery",
                     "service_name": name,
