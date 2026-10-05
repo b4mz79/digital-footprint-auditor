@@ -21,6 +21,7 @@ from services.discovery_cache import (
     save_discovery_cache,
 )
 from services.evidence_enrichment import enrich_evidence
+from services.evidence_verification import verify_evidence_records
 from services.evidence import evidence_to_dicts, service_findings_to_evidence
 from services.imap_scanner import scan_gmail_inbox
 from services.osint_scanner import scan_osint_footprint
@@ -210,7 +211,15 @@ def run_scan(
         logger.warning("[Pipeline] Evidence enrichment failed: %s", exc)
         enriched_evidence = local_evidence
 
-    state["evidence"] = evidence_to_dicts(enriched_evidence)
+    try:
+        verified_evidence = asyncio.run(verify_evidence_records(enriched_evidence))
+    except Exception as exc:
+        # Verification is a quality/provenance signal only. If the verifier
+        # itself is unavailable, preserve the enriched evidence unchanged.
+        logger.warning("[Pipeline] Evidence URL verification failed: %s", exc)
+        verified_evidence = enriched_evidence
+
+    state["evidence"] = evidence_to_dicts(verified_evidence)
     contextual_count = sum(
         1
         for item in state["evidence"]
