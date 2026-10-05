@@ -52,6 +52,9 @@ def test_build_user_prompt_includes_structured_evidence_without_target_pii() -> 
     assert "+62 812-3456-7890" not in prompt
     assert "[EMAIL_REDACTED]" in prompt
     assert "[PHONE_REDACTED]" in prompt
+    assert "url_accessibility" in prompt
+    assert "unknown" in prompt
+    assert "verification_observed_at" in prompt
 
 
 def test_input_fingerprint_changes_when_evidence_changes() -> None:
