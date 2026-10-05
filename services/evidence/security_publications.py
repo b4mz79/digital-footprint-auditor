@@ -679,6 +679,9 @@ class FirecrawlSecurityPublicationProvider:
                         "publisher_domain": publisher.domain,
                         "query_scope": "domain_only",
                         "relevance_filter": CONTEXTUAL_FILTER_NAME,
+                        # Preserve the assertion contract in the provenance
+                        # projection consumed by downstream/legacy serializers.
+                        "assertion_scope": "security_publication_context_only",
                     },
                     assertion_scope="security_publication_context_only",
                     metadata={
