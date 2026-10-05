@@ -71,11 +71,16 @@ async def verify_evidence_records(
                         timeout_seconds=timeout,
                         client=client,
                     )
-                except (ValueError, httpx.HTTPError) as exc:
+                except Exception as exc:
+                    # Verification is an optional quality signal. A failure for
+                    # one URL must not cancel verification of unrelated records.
+                    # Keep the record explicitly UNKNOWN rather than inferring
+                    # reachability from the failure.
                     logger.warning(
                         "[Evidence Verification] URL verification failed: %s",
                         type(exc).__name__,
                     )
+                    record.verification_scope = "url_accessibility"
                     record.verification_state = "unknown"
                     record.verification_observed_at = None
                     return
