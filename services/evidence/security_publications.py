@@ -53,7 +53,21 @@ CONTEXTUAL_FILTER_NAME = "security_publication_context_v2"
 
 PAGE_TYPE_REJECT_PATTERNS = (r"/(?:category|categories|author|authors|tag|tags|topic|topics|archive|archives|search)(?:/|$)", r"/page/\d+(?:/|$)", r"(?:^|&)(?:page|paged|offset)=\d+")
 PAGE_TITLE_REJECT_PATTERNS = (r"^category(?:\s*[:|]|$)", r"^author(?:\s*[:|]|$)", r"^(?:tag|topic|archive|search)(?:\s*[:|]|$)", r"\bpage\s+\d+\b")
-NON_ARTICLE_PATH_PATTERNS = (r"/(?:questions?|q|answers?)(?:/|$)", r"/(?:store|products?|apps?)(?:/|$)")
+NON_ARTICLE_PATH_PATTERNS = (
+    r"/(?:questions?|q|answers?)(?:/|$)",
+    r"/(?:store|products?|apps?)(?:/|$)",
+    r"/(?:certification|certifications|compliance|catalog|marketplace)(?:/|$)",
+)
+
+REFERENCE_TITLE_PATTERNS = (
+    r"^(?:browsing|how to|guide to|tips for|understanding|what is|introduction to)\b",
+)
+
+PRODUCT_METADATA_TITLE_PATTERNS = (
+    r"\bapp certification\b",
+    r"^application information\b",
+    r"\bapplication information\b",
+)
 
 STRONG_SECURITY_TERMS = (
     "phishing", "malware", "ransomware", "breach", "incident",
@@ -217,12 +231,22 @@ def _page_type(url: str, title: str) -> str:
     query = (parsed.query if parsed else "").casefold()
     title_folded = title.casefold().strip()
     for pattern in PAGE_TYPE_REJECT_PATTERNS:
-        if re.search(pattern, path) or re.search(pattern, query): return "navigation"
+        if re.search(pattern, path) or re.search(pattern, query):
+            return "navigation"
     for pattern in PAGE_TITLE_REJECT_PATTERNS:
-        if re.search(pattern, title_folded): return "navigation"
+        if re.search(pattern, title_folded):
+            return "navigation"
     for pattern in NON_ARTICLE_PATH_PATTERNS:
-        if re.search(pattern, path): return "non_article"
+        if re.search(pattern, path):
+            return "non_article"
+    for pattern in PRODUCT_METADATA_TITLE_PATTERNS:
+        if re.search(pattern, title_folded):
+            return "product_metadata"
     return "article"
+
+def _reference_page(title: str) -> bool:
+    title_folded = title.casefold().strip()
+    return any(re.search(pattern, title_folded) for pattern in REFERENCE_TITLE_PATTERNS)
 
 def _target_subject_signal(
     domain: str,
@@ -293,7 +317,14 @@ def _security_near_target(domain: str, title: str, summary: str) -> bool:
 
 def _contextual_relevance(domain: str, *, url: str, title: str, summary: str) -> tuple[bool, dict[str, str | bool]]:
     page_type = _page_type(url, title)
-    if page_type != "article": return False, {"page_type": page_type, "target": "none", "target_strength": "none", "security": False, "reason": f"{page_type}_page"}
+    if page_type != "article":
+        return False, {
+            "page_type": page_type,
+            "target": "none",
+            "target_strength": "none",
+            "security": False,
+            "reason": f"{page_type}_page",
+        }
     target, target_signal, target_strength = _target_subject_signal(
         domain,
         url=url,
@@ -312,6 +343,17 @@ def _contextual_relevance(domain: str, *, url: str, title: str, summary: str) ->
             "security": security,
             "reason": "target_not_subject",
         }
+    # Generic guides/reference pages are not target-specific security
+    # evidence when the target appears only incidentally in the body.
+    if target_strength in {"weak", "medium"} and _reference_page(title):
+        return False, {
+            "page_type": "reference",
+            "target": target_signal,
+            "target_strength": target_strength,
+            "security": security,
+            "reason": "reference_page",
+        }
+
     # List-style multi-entity mentions are incidental by definition and
     # should be classified as such even when the article has only generic
     # security wording. This is intentionally narrower than example/reference
