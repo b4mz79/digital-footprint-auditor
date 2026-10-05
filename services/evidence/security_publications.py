@@ -680,6 +680,7 @@ class FirecrawlSecurityPublicationProvider:
                         "query_scope": "domain_only",
                         "relevance_filter": CONTEXTUAL_FILTER_NAME,
                     },
+                    assertion_scope="security_publication_context_only",
                     metadata={
                         "status": "contextual_accepted",
                         "credits_used": body.get("creditsUsed"),
