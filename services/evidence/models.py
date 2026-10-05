@@ -27,6 +27,10 @@ class EvidenceDirectness(str, Enum):
     UNKNOWN = "unknown"
 
 
+VERIFICATION_SCOPES = ("url_accessibility",)
+VERIFICATION_STATES = ("reachable", "unreachable", "unknown")
+
+
 @dataclass(slots=True)
 class EvidenceRecord:
     """A provenance-preserving, machine-readable evidence item.
@@ -62,6 +66,20 @@ class EvidenceRecord:
 
     def __post_init__(self) -> None:
         self.confidence = max(0.0, min(1.0, float(self.confidence)))
+        self.assertion_scope = str(self.assertion_scope or "unknown").strip() or "unknown"
+        self.verification_scope = (
+            str(self.verification_scope or "url_accessibility").strip()
+            or "url_accessibility"
+        )
+        self.verification_state = (
+            str(self.verification_state or "unknown").strip().lower() or "unknown"
+        )
+        if self.verification_scope not in VERIFICATION_SCOPES:
+            raise ValueError(f"Unsupported verification scope: {self.verification_scope}")
+        if self.verification_state not in VERIFICATION_STATES:
+            raise ValueError(f"Unsupported verification state: {self.verification_state}")
+        if self.verification_state == "unknown":
+            self.verification_observed_at = None
 
     def to_dict(self) -> dict[str, Any]:
         """Return JSON-serializable evidence without losing enum semantics."""
