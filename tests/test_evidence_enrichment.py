@@ -241,7 +241,8 @@ def test_contextual_relevance_requires_target_and_security_signals() -> None:
         summary="A general guide to browsing malicious websites; ASUS is mentioned as an example.",
     )
     assert accepted is False
-    assert signals["reason"] == "security_context_missing"
+    assert signals["reason"] == "reference_page"
+    assert signals["page_type"] == "reference"
 
     accepted, signals = _contextual_relevance(
         "atlassian.com", url="https://learn.microsoft.com/en-us/microsoft-365-app-certification/teams/atlassiancom-jira-data-center",
@@ -249,9 +250,20 @@ def test_contextual_relevance_requires_target_and_security_signals() -> None:
         summary="Security and compliance information for the application.",
     )
     assert accepted is False
-    assert signals["reason"] == "security_context_missing"
-    assert signals["target"] == "url_alias"
-    assert signals["target_strength"] == "weak"
+    assert signals["reason"] == "product_metadata_page"
+    assert signals["page_type"] == "product_metadata"
+    assert signals["target"] == "none"
+    assert signals["target_strength"] == "none"
+
+    accepted, signals = _contextual_relevance(
+        "atlassian.com",
+        url="https://learn.microsoft.com/en-us/some-article",
+        title="Application Information for Jira Cloud for Outlook (Official) by Atlassian.com",
+        summary="Security and compliance information for the application.",
+    )
+    assert accepted is False
+    assert signals["reason"] == "product_metadata_page"
+    assert signals["page_type"] == "product_metadata"
 
 
 @pytest.mark.asyncio
