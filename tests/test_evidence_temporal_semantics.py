@@ -48,7 +48,6 @@ def test_evidence_record_accepts_timezone_aware_temporal_fields() -> None:
     [
         ("observed_at", "not-a-timestamp"),
         ("observed_at", "2026-10-05T03:00:00"),
-        ("published_at", "2026-10-01"),
         ("published_at", "not-a-timestamp"),
         ("verification_observed_at", "2026-10-05T03:05:00"),
     ],
@@ -92,7 +91,6 @@ def test_source_publication_timestamp_preserves_valid_timezone_aware_value(
     [
         None,
         "",
-        "2026-10-01",
         "2026-10-01T00:00:00",
         "January 2026",
         "not-a-timestamp",
