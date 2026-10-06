@@ -66,6 +66,10 @@ def _assert_scorecard_result_contract(data: dict[str, Any]) -> None:
     policy_refs = data.get("policy_refs")
     assert isinstance(policy_refs, dict)
 
+    if data["state"] == "observed" and data["contributions"]:
+        contribution_total = sum(item["contribution"] for item in data["contributions"])
+        assert math.isclose(contribution_total, float(data["score"]), rel_tol=0.0, abs_tol=1e-12)
+
 
 def test_scorecard_result_contract_is_self_contained() -> None:
     data = _load()
