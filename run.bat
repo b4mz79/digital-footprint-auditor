@@ -44,6 +44,7 @@ if "%NO_RUN%"=="false" (
 :: Eksekusi reset jika parameter terdeteksi
 if "%RESET_MODE%"=="true" (
     echo 🧹 Parameter 'reset' terdeteksi! Membersihkan cache...
+	del log.txt
     for /d /r . %%d in (__pycache__) do (
         if exist "%%d" rd /s /q "%%d" 2>nul
     )
@@ -80,7 +81,7 @@ if "%NO_RUN%"=="false" (
 	netstat -aon | findstr :8501 | findstr LISTENING >nul 2>&1
 	if !errorlevel! neq 0 (
 		echo 🌐 Menjalankan Web UI via Streamlit di ^(port 8501^)...
-		streamlit run app.py
+		streamlit run app.py > log.txt 2>&1
 	) else (
 		echo ⚠️ Server Web UI di port 8501 sudah berjalan!
 		echo 🌐 Akses via browser: http://localhost:8501

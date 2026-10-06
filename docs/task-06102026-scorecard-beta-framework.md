@@ -1,9 +1,13 @@
-# Checkpoint — Measurement / Scorecard Foundation: Beta Framework Direction
+Konsep *Balanced Scorecard* nya norton & kaplan udah mulai masuk ke future design framework aplikasi *Digital Footprint & Privacy Auditor v2.0.0* ... ;)
+
+---
+
+# *Checkpoint — Measurement / Scorecard Foundation: Beta Framework Direction*
 
 Date: 06-10-2026
 Branch: feat/evidence-enrichment-foundation
 
-## Status
+## *Status*
 
 Measurement / Scorecard Foundation is in beta framework design.
 
@@ -11,7 +15,7 @@ The KPI inventory/definition work is intentionally NOT final. The scorecard is b
 
 No production scorecard implementation, scoring formula, weights, thresholds, or hard-coded risk mapping has been introduced.
 
-## Core Architectural Decision — Scorecard as Add-on Module
+## *Core Architectural Decision — Scorecard as Add-on Module*
 
 Scorecard is an independent add-on capability/module, comparable in architectural position to:
 
@@ -27,7 +31,7 @@ Evidence Enrichment remains responsible for producing/enriching structured evide
 
 Conceptual boundary:
 
-DISCOVERY
+→ DISCOVERY
 → EVIDENCE ENRICHMENT
 → EVIDENCE / VERIFICATION
 → SCORECARD ADD-ON
@@ -36,13 +40,13 @@ DISCOVERY
 
 Evidence semantics remain the stable foundation. Scorecard interpretation is configurable and independently evolvable.
 
-## Why Scorecard Must Be Dynamic
+## *Why Scorecard Must Be Dynamic*
 
 The scorecard is not a fixed application feature.
 
 It is a configurable measurement framework that must support iterative:
 
-MAP → MEASURE → ANALYSIS → FEEDBACK → MAP ADJUSTMENT → MAP ...
+SCORECARD MODEL → MEASURE → ANALYSIS → FEEDBACK → SCORECARD MODEL ADJUSTMENT → Back to SCORECARD MODEL (Looping cycle) ...
 
 Therefore the application must not hard-code:
 
@@ -58,7 +62,7 @@ These belong to a scorecard definition/configuration layer that can evolve and b
 
 The goal is to build the Scorecard Engine/framework, not to permanently encode one specific Privacy Auditor Scorecard.
 
-## Product / Strategic Rationale
+## *Product / Strategic Rationale*
 
 For B2C/personal use, a scorecard is useful but not necessarily central.
 
@@ -71,7 +75,7 @@ Therefore the Scorecard add-on is both:
 
 B2C and B2B remain strategic horizons; this does not create a separate B2B product at this stage.
 
-## Current Beta KPI Tree
+## *Current Beta TREE (SCORECARD MODEL) -- KPI Relationship*
 
 PRIVACY ASSESSMENT
 
@@ -103,7 +107,7 @@ Current beta inventory: 12 candidate KPIs, 0 parked.
 
 KEEP at this stage means covered and sufficiently distinct as a candidate measurement target. It does NOT mean final KPI specification.
 
-## KPI Definition Scope
+## *KPI Definition Scope*
 
 KPI Definition is intentionally limited to:
 
@@ -114,9 +118,9 @@ KPI Definition is intentionally limited to:
 
 Units, formulas, normalization, targets, thresholds, weights, contributions, aggregation, scoring, and risk mapping belong to later stages.
 
-## Agreed Future Lifecycle
+## *Agreed Future Lifecycle*
 
-TREE
+→ TREE (SCORECARD MODEL)
 → KPI INVENTORY
 → KPI COVERAGE CHECK
 → KPI DEFINITION
@@ -129,10 +133,10 @@ TREE
 → BETA TEST
 → ANALYSIS
 → FEEDBACK
-→ MAP ADJUSTMENT
+→ TREE (SCORECARD MODEL) ADJUSTMENT
 → repeat
 
-## Architectural Guardrails
+## *Architectural Guardrails*
 
 - Evidence Enrichment ≠ Scorecard.
 - Scorecard ≠ AI.
@@ -146,7 +150,7 @@ TREE
 - Do not invent formulas, weights, thresholds, or scorecard dimensions before they are designed and beta-tested.
 - Do not hard-code the beta model into ai_agent.py.
 
-## Next Step
+## *Next Step*
 
 Continue the beta Scorecard framework work from the KPI definition/measurement-design boundary, while preserving the add-on/module architecture and keeping the scoring model configurable rather than fixed.
 
