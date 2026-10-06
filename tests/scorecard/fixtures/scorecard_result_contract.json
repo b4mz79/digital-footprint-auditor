@@ -12,23 +12,36 @@
     {
       "dimension_id": "digital_footprint",
       "state": "observed",
-      "score": 0.70
+      "score": 0.7
     }
   ],
   "contributions": [
     {
       "kpi_id": "service_discovery_count",
-      "value": 10.0,
+      "value": 10,
       "weight": 0.6,
       "contribution": 0.6
+    },
+    {
+      "kpi_id": "relevant_security_evidence",
+      "value": 4,
+      "weight": 0.4,
+      "contribution": 0.16
     }
   ],
   "measurement_refs": [
-    "measurement-service-count-001"
+    "measurement-service-count-001",
+    "measurement-url-state-001"
   ],
   "calculation_lineage": {
-    "inputs": ["measurement-service-count-001"],
-    "operations": ["weighted_sum", "normalization"],
+    "inputs": [
+      "measurement-service-count-001",
+      "measurement-url-state-001"
+    ],
+    "operations": [
+      "weighted_sum",
+      "normalization"
+    ],
     "output": "score"
   },
   "policy_refs": {
