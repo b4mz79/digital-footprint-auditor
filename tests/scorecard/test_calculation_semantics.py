@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import pytest
 
-from tests.scorecard.reference_engine import (\n    evaluate_aggregation,\n    evaluate_dependency,\n    evaluate_formula,\n    evaluate_weighted_sum,\n)
+from tests.scorecard.reference_engine import (
+    evaluate_aggregation,
+    evaluate_dependency,
+    evaluate_formula,
+    evaluate_weighted_sum,
+)
 
 
 def _measurements() -> dict:
