@@ -1,6 +1,6 @@
 {
   "schema_version": "scorecard-oss-evaluation-v1",
-  "status": "evaluation_in_progress",
+  "status": "evaluation_ready",
   "comparison_scope": [
     "calculation_semantics",
     "unknown_partial_semantics",
