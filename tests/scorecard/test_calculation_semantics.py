@@ -262,3 +262,16 @@ def test_unknown_result_preserves_known_contribution_details() -> None:
     assert result.state == "unknown"
     assert result.value is None
     assert result.contribution_details == (ContributionDetail("a", 10.0, 0.6, 6.0),)
+
+def test_unknown_dependency_preserves_known_contribution_details() -> None:
+    observed = evaluate_weighted_sum(
+        {"a": {"unit": "count", "value": 10, "state": "observed"}}, {"a": 0.6}
+    )
+    unknown = evaluate_weighted_sum(
+        {"b": {"unit": "count", "value": None, "state": "unknown"}}, {"b": 0.4}
+    )
+    result = evaluate_dependency(observed, unknown, relation="sum")
+    assert result.state == "unknown"
+    assert result.value is None
+    assert result.lineage == ("a", "b")
+    assert result.contribution_details == (ContributionDetail("a", 10.0, 0.6, 6.0),)
