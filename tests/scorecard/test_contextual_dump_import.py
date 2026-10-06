@@ -41,12 +41,9 @@ def test_contextual_dump_derives_only_supported_security_evidence_measurement() 
     assert measurement["value"] == len(records)
     assert measurement["state"] == "observed"
     assert measurement["source"] == "contextual_filter_dump"
-    assert measurement["evidence_ids"] == [
-        str(item["evidence_id"])
-        for item in records
-        if item.get("evidence_id")
-    ]
-    assert all(
-        item.get("assertion_scope") == "security_publication_context_only"
-        for item in records
-    )
+    # The contextual filter dump is a filter-decision artifact, not a
+    # serialized EvidenceRecord. It therefore does not provide evidence IDs
+    # or EvidenceRecord assertion_scope.
+    assert measurement["evidence_ids"] == []
+    assert all(item.get("decision") == "accept" for item in records)
+    assert all(item.get("signals", {}).get("security") is True for item in records)
