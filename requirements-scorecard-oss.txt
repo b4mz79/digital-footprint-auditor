@@ -1,2 +1,3 @@
 # Candidate-only evaluation dependency; not a Privacy Auditor runtime dependency.
 zen-engine==2.1.2
+python-jsonlogic==0.2.0
