@@ -102,6 +102,8 @@ def _assert_scorecard_result_contract(data: dict[str, Any]) -> None:
 
     policy_refs = data.get("policy_refs")
     assert isinstance(policy_refs, dict)
+    assert isinstance(policy_refs.get("risk_policy"), str)
+    assert policy_refs["risk_policy"]
 
     # Contributions are stage-specific additive decomposition details. They
     # must not be assumed to sum to the reported score when a later affine
@@ -210,4 +212,19 @@ def test_dimension_result_score_preserves_state_semantics() -> None:
     unknown["state"] = "unknown"
     unknown["score"] = None
     data["dimension_results"] = [unknown]
+    _assert_scorecard_result_contract(data)
+
+def test_risk_band_is_policy_output_not_a_score_threshold_contract() -> None:
+    data = _load()
+    _assert_scorecard_result_contract(data)
+
+    # The result carries a risk-policy reference, but this contract does not
+    # define High/Medium/Low thresholds. Threshold semantics remain owned by
+    # the referenced policy and are intentionally outside this contract.
+    assert data["policy_refs"]["risk_policy"]
+    assert data["risk_band"] in {"high", "medium", "low", "unknown"}
+
+    # Band correctness for a given score belongs to the risk-policy layer,
+    # not to the structural Result Contract.
+    data["risk_band"] = "high"
     _assert_scorecard_result_contract(data)
