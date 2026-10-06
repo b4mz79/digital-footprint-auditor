@@ -266,8 +266,8 @@ def test_active_rules_reject_duplicate_rule_ids() -> None:
 def test_active_rules_reject_duplicate_priorities() -> None:
     data = _active_mapping_with_rules(
         [
-            {"rule_id": "rule-1", "priority": 10, "then": "low"},
-            {"rule_id": "rule-2", "priority": 10, "then": "medium"},
+            _active_rule("rule-1", 10, "low"),
+            _active_rule("rule-2", 10, "medium"),
         ]
     )
 
@@ -275,10 +275,21 @@ def test_active_rules_reject_duplicate_priorities() -> None:
         _assert_risk_policy_contract(data)
 
 
+def test_active_rule_priorities_need_not_be_contiguous() -> None:
+    data = _active_mapping_with_rules(
+        [
+            _active_rule("rule-1", 10, "low"),
+            _active_rule("rule-2", 100, "medium"),
+        ]
+    )
+
+    _assert_risk_policy_contract(data)
+
+
 def test_active_rules_reject_invalid_risk_band() -> None:
     data = _active_mapping_with_rules(
         [
-            {"rule_id": "rule-1", "priority": 10, "then": "critical"},
+            _active_rule("rule-1", 10, "critical"),
         ]
     )
 
