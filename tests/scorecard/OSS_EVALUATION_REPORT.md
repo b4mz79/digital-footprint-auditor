@@ -4,6 +4,85 @@ Status: **EVALUATED — CONDITIONAL CALCULATION PRIMITIVE**
 
 Candidate: **GoRules ZEN / `zen-engine==2.1.2`**
 
+## Executive summary
+
+This section is the **decision record** for this candidate. The same structure should be used for every subsequent OSS candidate so that candidates can be compared on the same evidence and without changing the evaluation criteria after seeing the result.
+
+### Executive decision table
+
+| Area | ZEN result | Decision meaning |
+|---|---|---|
+| Arithmetic / calculation compatibility | **PASS** | Matches the frozen Native Reference for the evaluated weighted-sum path. |
+| UNKNOWN / partial semantics | **PASS WITH DOMAIN ADAPTER** | Domain semantics are preserved; UNKNOWN is not coerced to zero. This is not evidence that ZEN natively implements our UNKNOWN model. |
+| Determinism | **PASS** | Repeated equivalent evaluation produces the same semantic result. |
+| Lineage ownership | **PASS WITH DOMAIN ADAPTER** | Scorecard lineage remains domain-owned and is reconstructed outside the engine. |
+| Contribution semantics | **PASS WITH DOMAIN ADAPTER** | Canonical contribution data remains domain-owned and matches the reference result. |
+| Definition / version isolation | **PASS WITH DOMAIN ADAPTER** | Different calculation definitions remain isolated; authoritative Scorecard version binding remains domain-owned. |
+| Adapter complexity | **ACCEPTABLE WITH CAVEAT** | Candidate integration is isolated and small, but requires translation to/from the candidate engine model. |
+| Dependency cost | **ACCEPTABLE FOR EVALUATION** | Candidate-only pinned dependency with published platform wheels. |
+| Operational cost | **ACCEPTABLE FOR EVALUATION** | Native bindings and prebuilt wheels are operationally attractive for further evaluation. |
+| Policy resolution | **NOT EVALUATED** | Policy semantics remain domain-owned; no claim is made that ZEN replaces the policy engine. |
+| Production readiness | **NOT EVALUATED** | No production adoption or packaging decision has been made. |
+| Overall candidate status | **CONDITIONAL CALCULATION PRIMITIVE** | Worth keeping as a candidate for further evaluation, but not selected. |
+
+### Decision in one line
+
+> **Keep GoRules ZEN as a conditional calculation-primitive candidate; do not select it as the Scorecard Engine yet.**
+
+### What this result actually proves
+
+The current evidence establishes that ZEN can perform the **evaluated arithmetic primitive** while the Scorecard domain retains ownership of:
+
+- UNKNOWN / partial semantics
+- lineage
+- contribution semantics
+- Scorecard version binding
+- policy semantics
+- final domain contracts
+
+This is a useful compatibility result, but it is intentionally narrower than full engine adoption.
+
+### What this result does not prove
+
+It does **not** establish:
+
+- full Scorecard calculation coverage
+- full formula/operator coverage
+- production workload performance
+- production packaging impact
+- compiled-decision lifecycle/reuse suitability
+- failure/error mapping completeness
+- policy-engine compatibility
+- final OSS engine selection
+- production dependency approval
+
+### Percentage / scoring policy
+
+**No official percentage is assigned at this stage.**
+
+A percentage such as “85% suitable” would be misleading unless a formal, weighted evaluation rubric had first been defined. The current evaluation deliberately uses explicit status gates instead of invented percentages.
+
+For future candidates, the comparison must therefore remain evidence-based:
+
+1. **Compatibility gate** — candidate must preserve the frozen Scorecard domain semantics.
+2. **Operational/adoption gate** — dependency, adapter, lifecycle, packaging, and operational trade-offs must be acceptable.
+3. **Coverage gate** — evaluated capabilities must be sufficient for the intended calculation/policy scope.
+4. **Production gate** — production readiness must be separately evidenced before adoption.
+
+A candidate that passes only the first gate is **not** a selected engine.
+
+## Candidate comparison record
+
+The following record is the reusable executive-summary format for subsequent OSS evaluations.
+
+| Candidate | Version | Calculation | UNKNOWN/Partial | Determinism | Lineage | Contribution | Version Isolation | Adapter | Dependency | Operations | Policy | Verdict |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **GoRules ZEN** | 2.1.2 | PASS | PASS + adapter | PASS | PASS + adapter | PASS + adapter | PASS + adapter | Acceptable + caveat | Acceptable for evaluation | Acceptable for evaluation | Not evaluated | **Conditional calculation primitive** |
+| python-jsonlogic | — | Not evaluated | Not evaluated | Not evaluated | Not evaluated | Not evaluated | Not evaluated | Not evaluated | Not evaluated | Not evaluated | Not evaluated | **Not evaluated** |
+| simpleeval | — | Not evaluated | Not evaluated | Not evaluated | Not evaluated | Not evaluated | Not evaluated | Not evaluated | Not evaluated | Not evaluated | Not evaluated | **Not evaluated** |
+
+**Rule:** each new candidate gets its own candidate-specific adapter/evaluation tests and one row in this comparison table. Existing frozen semantic contracts remain the oracle.
+
 ## Purpose
 
 This report records the first concrete OSS candidate evaluation against the frozen Scorecard semantic contracts.
