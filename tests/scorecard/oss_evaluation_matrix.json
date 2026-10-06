@@ -77,7 +77,58 @@
     {
       "id": "python-jsonlogic",
       "kind": "oss-candidate",
-      "status": "not_evaluated"
+      "status": "evaluated_conditional",
+      "version": "0.2.0",
+      "compatibility": {
+        "calculation_semantics": {
+          "status": "pass",
+          "evidence": "tests/scorecard/test_python_jsonlogic_evaluation.py::test_python_jsonlogic_weighted_sum_matches_native_reference"
+        },
+        "unknown_partial_semantics": {
+          "status": "pass_with_domain_adapter",
+          "evidence": "tests/scorecard/test_python_jsonlogic_evaluation.py::test_python_jsonlogic_preserves_domain_unknown_semantics",
+          "note": "UNKNOWN is intercepted by the Scorecard adapter before expression evaluation; python-jsonlogic is not allowed to coerce missing domain measurements to zero."
+        },
+        "determinism": {
+          "status": "pass",
+          "evidence": "tests/scorecard/test_python_jsonlogic_evaluation.py::test_python_jsonlogic_weighted_sum_is_deterministic_for_repeated_evaluation"
+        },
+        "lineage": {
+          "status": "pass_with_domain_adapter",
+          "evidence": "tests/scorecard/test_python_jsonlogic_evaluation.py::test_python_jsonlogic_weighted_sum_matches_native_reference",
+          "note": "Lineage is reconstructed from canonical KPI inputs by the adapter; the expression engine is not the owner of Scorecard lineage."
+        },
+        "contribution": {
+          "status": "pass_with_domain_adapter",
+          "evidence": "tests/scorecard/test_python_jsonlogic_evaluation.py::test_python_jsonlogic_reconstructs_domain_contribution_semantics",
+          "note": "Contribution details are reconstructed from canonical inputs and weights; python-jsonlogic is used only for arithmetic evaluation."
+        },
+        "version_isolation": {
+          "status": "pass_with_domain_adapter",
+          "evidence": "tests/scorecard/test_python_jsonlogic_evaluation.py::test_python_jsonlogic_keeps_definition_inputs_isolated_between_evaluations",
+          "note": "Separate weight definitions remain isolated between evaluations. Authoritative Scorecard definition/policy version binding remains domain-owned."
+        },
+        "adapter_complexity": {
+          "status": "acceptable_with_caveat",
+          "evidence": "tests/scorecard/engines/python_jsonlogic.py",
+          "note": "The adapter is small and candidate-specific. It translates weighted-sum semantics into JsonLogic expressions and reconstructs domain metadata outside the candidate."
+        },
+        "dependency_cost": {
+          "status": "acceptable_for_evaluation",
+          "evidence": "requirements-scorecard-oss.txt plus PyPI python-jsonlogic 0.2.0 metadata",
+          "note": "Pinned candidate-only dependency. The published 0.2.0 wheel is 26.5 kB and is platform-independent. PyPI reports MIT licensing and Python >=3.10."
+        },
+        "operational_cost": {
+          "status": "acceptable_for_evaluation",
+          "evidence": "PyPI python-jsonlogic 0.2.0 metadata and candidate adapter",
+          "note": "Pure-Python wheel with no native build requirement in the published artifact. The package provides expression parsing, operator-tree construction, optional JSON-Schema typechecking, and evaluation. This is candidate evidence, not production deployment approval."
+        }
+      },
+      "policy_resolution": {
+        "status": "not_evaluated_as_candidate_owned_semantics",
+        "note": "The current python-jsonlogic adapter evaluates calculation primitives only. Scorecard policy rule ordering, MATCH/NO_MATCH/UNKNOWN semantics and applied-rule identity remain domain-owned and are not delegated to python-jsonlogic by this evaluation artifact."
+      },
+      "verdict": "conditional_calculation_primitive"
     },
     {
       "id": "simpleeval",
@@ -88,7 +139,7 @@
   "verdicts": {
     "native-reference": "baseline_only",
     "gorules-zen": "conditional_calculation_primitive",
-    "python-jsonlogic": "not_evaluated",
+    "python-jsonlogic": "conditional_calculation_primitive",
     "simpleeval": "not_evaluated"
   },
   "decision_rule": {
@@ -103,6 +154,11 @@
       "gorules-zen": [
         "tests/scorecard/engines/zen.py",
         "tests/scorecard/test_zen_evaluation.py",
+        "requirements-scorecard-oss.txt"
+      ],
+      "python-jsonlogic": [
+        "tests/scorecard/engines/python_jsonlogic.py",
+        "tests/scorecard/test_python_jsonlogic_evaluation.py",
         "requirements-scorecard-oss.txt"
       ]
     }
