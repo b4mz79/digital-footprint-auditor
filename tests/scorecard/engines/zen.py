@@ -1,13 +1,22 @@
 from __future__ import annotations
 
+import math
 from typing import Any
 
-from tests.scorecard.reference_engine import (
-    ContributionDetail,
-    EvalResult,
-    _numeric,
-    _weight,
-)
+from tests.scorecard.reference_engine import ContributionDetail, EvalResult
+
+
+def _numeric(value: Any, *, label: str) -> float:
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        raise TypeError(f"{label} must be numeric")
+    result = float(value)
+    if not math.isfinite(result):
+        raise ValueError(f"{label} must be finite")
+    return result
+
+
+def _weight(value: Any, *, kpi_id: str) -> float:
+    return _numeric(value, label=f"weight[{kpi_id}]")
 
 
 class ZenReferenceAdapter:
