@@ -561,3 +561,64 @@ def test_ratio_by_zero_is_unknown_with_zero_coverage() -> None:
     assert result.value is None
     assert result.state == "unknown"
     assert result.coverage == 0.0
+
+
+def test_nested_weighted_aggregation_scales_effective_contribution_details() -> None:
+    inner = evaluate_weighted_sum(
+        {"a": {"unit": "count", "value": 10, "state": "observed"}}, {"a": 0.6}
+    )
+    observed = evaluate_weighted_sum(
+        {"c": {"unit": "count", "value": 5, "state": "observed"}}, {"c": 1.0}
+    )
+    result = evaluate_aggregation(
+        [inner, observed], operation="weighted_sum", weights=[0.5, 0.5]
+    )
+    assert result.value == 5.0
+    assert result.contribution_details == (
+        ContributionDetail("a", 10.0, 0.3, 3.0),
+        ContributionDetail("c", 5.0, 0.5, 2.5),
+    )
+    assert sum(detail.contribution for detail in result.contribution_details) == result.value
+
+
+def test_difference_flips_right_hand_contribution_sign() -> None:
+    left = evaluate_weighted_sum(
+        {"a": {"unit": "count", "value": 10, "state": "observed"}}, {"a": 0.6}
+    )
+    right = evaluate_weighted_sum(
+        {"b": {"unit": "count", "value": 4, "state": "observed"}}, {"b": 0.4}
+    )
+    result = evaluate_formula(left, right, operation="difference")
+    assert result.value == 5.2
+    assert result.contribution_details == (
+        ContributionDetail("a", 10.0, 0.6, 6.0),
+        ContributionDetail("b", 4.0, -0.4, -1.6),
+    )
+    assert sum(detail.contribution for detail in result.contribution_details) == result.value
+
+
+def test_non_additive_operations_do_not_invent_contribution_details() -> None:
+    a = evaluate_weighted_sum(
+        {"a": {"unit": "count", "value": 10, "state": "observed"}}, {"a": 1.0}
+    )
+    b = evaluate_weighted_sum(
+        {"b": {"unit": "count", "value": 4, "state": "observed"}}, {"b": 1.0}
+    )
+    ratio = evaluate_formula(a, b, operation="ratio")
+    maximum = evaluate_aggregation([a, b], operation="max")
+    dependency_max = evaluate_dependency(a, b, relation="max")
+    assert ratio.contribution_details == ()
+    assert maximum.contribution_details == ()
+    assert dependency_max.contribution_details == ()
+
+
+def test_normalization_clears_additive_contributions_but_preserves_lineage() -> None:
+    result = evaluate_weighted_sum(
+        {"score": {"unit": "points", "value": 75, "state": "observed"}},
+        {"score": 1.0},
+    )
+    normalized = evaluate_normalization(result, source_min=0, source_max=100)
+    assert normalized.value == 0.75
+    assert normalized.contribution_details == ()
+    assert normalized.contributions == ()
+    assert normalized.lineage == ("score",)
