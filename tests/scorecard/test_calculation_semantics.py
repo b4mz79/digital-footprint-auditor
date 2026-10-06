@@ -8,6 +8,7 @@ from tests.scorecard.reference_engine import (
     evaluate_formula,
     evaluate_weighted_sum,
     evaluate_normalization,
+    ContributionDetail,
 )
 
 
@@ -224,3 +225,40 @@ def test_normalization_rejects_non_finite_configuration() -> None:
     )
     with pytest.raises(ValueError):
         evaluate_normalization(result, source_min=float("nan"), source_max=100)
+
+
+def test_weighted_sum_exposes_explicit_contribution_details() -> None:
+    result = evaluate_weighted_sum(_measurements(), {"a": 0.6, "b": 0.4})
+    assert result.contribution_details == (
+        ContributionDetail("a", 10.0, 0.6, 6.0),
+        ContributionDetail("b", 4.0, 0.4, 1.6),
+    )
+
+def test_contribution_details_preserve_zero_and_negative_weights() -> None:
+    result = evaluate_weighted_sum(_measurements(), {"a": 0.0, "b": -0.5})
+    assert result.contribution_details == (
+        ContributionDetail("a", 10.0, 0.0, 0.0),
+        ContributionDetail("b", 4.0, -0.5, -2.0),
+    )
+
+def test_derived_results_preserve_contribution_details_and_lineage() -> None:
+    left = evaluate_weighted_sum(_measurements(), {"a": 0.6})
+    right = evaluate_weighted_sum(_measurements(), {"b": 0.4})
+    result = evaluate_dependency(left, right, relation="sum")
+    assert result.contribution_details == (
+        ContributionDetail("a", 10.0, 0.6, 6.0),
+        ContributionDetail("b", 4.0, 0.4, 1.6),
+    )
+    assert result.lineage == ("a", "b")
+
+def test_unknown_result_preserves_known_contribution_details() -> None:
+    observed = evaluate_weighted_sum(
+        {"a": {"unit": "count", "value": 10, "state": "observed"}}, {"a": 0.6}
+    )
+    unknown = evaluate_weighted_sum(
+        {"b": {"unit": "count", "value": None, "state": "unknown"}}, {"b": 0.4}
+    )
+    result = evaluate_aggregation([observed, unknown], operation="sum")
+    assert result.state == "unknown"
+    assert result.value is None
+    assert result.contribution_details == (ContributionDetail("a", 10.0, 0.6, 6.0),)
