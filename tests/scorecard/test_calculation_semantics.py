@@ -114,6 +114,116 @@ def test_aggregation_primitives_are_explicit() -> None:
     assert evaluate_aggregation([a, b], operation="weighted_sum", weights=[0.6, 0.4]).value == 7.6
 
 
+def test_weighted_aggregation_returns_partial_value_and_coverage() -> None:
+    observed = evaluate_weighted_sum(
+        {"a": {"unit": "count", "value": 10, "state": "observed"}}, {"a": 1.0}
+    )
+    unknown = evaluate_weighted_sum(
+        {"b": {"unit": "count", "value": None, "state": "unknown"}}, {"b": 1.0}
+    )
+    result = evaluate_aggregation(
+        [observed, unknown], operation="weighted_sum", weights=[0.6, 0.4]
+    )
+    assert result.value == 6.0
+    assert result.state == "partial"
+    assert result.coverage == 0.6
+    assert result.known_weight == 0.6
+    assert result.unknown_weight == 0.4
+    assert result.lineage == ("a", "b")
+    assert result.contribution_details == (ContributionDetail("a", 10.0, 1.0, 10.0),)
+
+
+def test_weighted_aggregation_is_complete_when_all_inputs_are_observed() -> None:
+    observed_a = evaluate_weighted_sum(
+        {"a": {"unit": "count", "value": 10, "state": "observed"}}, {"a": 1.0}
+    )
+    observed_b = evaluate_weighted_sum(
+        {"b": {"unit": "count", "value": 4, "state": "observed"}}, {"b": 1.0}
+    )
+    result = evaluate_aggregation(
+        [observed_a, observed_b], operation="weighted_sum", weights=[0.6, 0.4]
+    )
+    assert result.value == 7.6
+    assert result.state == "observed"
+    assert result.coverage == 1.0
+    assert result.known_weight == 1.0
+    assert result.unknown_weight == 0.0
+
+
+def test_weighted_aggregation_is_unknown_when_all_inputs_are_unknown() -> None:
+    unknown_a = evaluate_weighted_sum(
+        {"a": {"unit": "count", "value": None, "state": "unknown"}}, {"a": 1.0}
+    )
+    unknown_b = evaluate_weighted_sum(
+        {"b": {"unit": "count", "value": None, "state": "unknown"}}, {"b": 1.0}
+    )
+    result = evaluate_aggregation(
+        [unknown_a, unknown_b], operation="weighted_sum", weights=[0.6, 0.4]
+    )
+    assert result.value is None
+    assert result.state == "unknown"
+    assert result.coverage == 0.0
+    assert result.known_weight == 0.0
+    assert result.unknown_weight == 1.0
+    assert result.lineage == ("a", "b")
+
+
+def test_weighted_aggregation_coverage_uses_weight_not_item_count() -> None:
+    observed = evaluate_weighted_sum(
+        {"a": {"unit": "count", "value": 10, "state": "observed"}}, {"a": 1.0}
+    )
+    unknown_b = evaluate_weighted_sum(
+        {"b": {"unit": "count", "value": None, "state": "unknown"}}, {"b": 1.0}
+    )
+    unknown_c = evaluate_weighted_sum(
+        {"c": {"unit": "count", "value": None, "state": "unknown"}}, {"c": 1.0}
+    )
+    result = evaluate_aggregation(
+        [observed, unknown_b, unknown_c],
+        operation="weighted_sum",
+        weights=[0.8, 0.1, 0.1],
+    )
+    assert result.state == "partial"
+    assert result.value == 8.0
+    assert result.coverage == 0.8
+    assert result.known_weight == 0.8
+    assert result.unknown_weight == 0.2
+
+
+def test_weighted_aggregation_rejects_negative_weights_for_partial_coverage() -> None:
+    observed = evaluate_weighted_sum(
+        {"a": {"unit": "count", "value": 10, "state": "observed"}}, {"a": 1.0}
+    )
+    unknown = evaluate_weighted_sum(
+        {"b": {"unit": "count", "value": None, "state": "unknown"}}, {"b": 1.0}
+    )
+    with pytest.raises(ValueError, match="non-negative weights"):
+        evaluate_aggregation(
+            [observed, unknown], operation="weighted_sum", weights=[0.6, -0.4]
+        )
+
+
+def test_weighted_aggregation_rejects_zero_total_weight() -> None:
+    observed = evaluate_weighted_sum(
+        {"a": {"unit": "count", "value": 10, "state": "observed"}}, {"a": 1.0}
+    )
+    with pytest.raises(ValueError, match="positive total weight"):
+        evaluate_aggregation([observed], operation="weighted_sum", weights=[0.0])
+
+
+def test_non_weighted_aggregation_keeps_strict_unknown_semantics() -> None:
+    observed = evaluate_weighted_sum(
+        {"a": {"unit": "count", "value": 10, "state": "observed"}}, {"a": 1.0}
+    )
+    unknown = evaluate_weighted_sum(
+        {"b": {"unit": "count", "value": None, "state": "unknown"}}, {"b": 1.0}
+    )
+    result = evaluate_aggregation([observed, unknown], operation="mean")
+    assert result.value is None
+    assert result.state == "unknown"
+    assert result.lineage == ("a", "b")
+
+
 def test_aggregation_preserves_unknown_lineage() -> None:
     observed = evaluate_weighted_sum(
         {"a": {"unit": "count", "value": 10, "state": "observed"}}, {"a": 1.0}
