@@ -204,7 +204,7 @@ def evaluate_normalization(
             raise ValueError("normalization input is outside source range")
         value = min(max(value, lower), upper)
 
-    normalized = (value - lower) / (upper - lower)
+    normalized = round((value - lower) / (upper - lower), 2)
     return EvalResult(
         value=_numeric(normalized, label="normalized score"),
         state="observed",
