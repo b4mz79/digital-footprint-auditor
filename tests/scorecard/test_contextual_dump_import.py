@@ -8,7 +8,7 @@ from tests.scorecard.fixture_loader import (
     load_contextual_filter_dump,
 )
 
-FIXTURE = Path(__file__).parent / "fixtures" / "contextual_filter_dump.sample.md"
+FIXTURE = Path(__file__).parent / "fixtures" / "contextual_filter_dump.md"
 
 
 def test_contextual_dump_parser_reads_before_and_after() -> None:
