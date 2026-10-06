@@ -11,6 +11,8 @@ def test_oss_evaluation_matrix_is_complete_and_not_prejudged() -> None:
     data = json.loads(MATRIX.read_text(encoding="utf-8"))
 
     assert data["schema_version"] == "scorecard-oss-evaluation-v1"
+    # Matrix readiness is independent from whether individual candidates have
+    # already been evaluated.
     assert data["status"] == "evaluation_ready"
 
     required_dimensions = {
@@ -35,9 +37,19 @@ def test_oss_evaluation_matrix_is_complete_and_not_prejudged() -> None:
         if item["kind"] == "oss-candidate"
     }
     assert oss_candidates
-    assert all(item["status"] == "not_evaluated" for item in oss_candidates.values())
 
-    for candidate_id in oss_candidates:
-        assert data["verdicts"][candidate_id] == "not_evaluated"
+    allowed_statuses = {
+        "not_evaluated",
+        "evaluated_conditional",
+    }
+    allowed_verdicts = {
+        "not_evaluated",
+        "conditional_calculation_primitive",
+    }
+
+    for candidate_id, item in oss_candidates.items():
+        assert item["status"] in allowed_statuses
+        assert data["verdicts"][candidate_id] in allowed_verdicts
 
     assert data["decision_rule"]["reference_engine_is_not_an_adoption_candidate"] is True
+    assert data["decision_rule"]["partial_evaluation_is_not_a_full_engine_adoption_verdict"] is True
