@@ -7,6 +7,7 @@ from tests.scorecard.reference_engine import (
     evaluate_dependency,
     evaluate_formula,
     evaluate_weighted_sum,
+    evaluate_normalization,
 )
 
 
@@ -137,3 +138,80 @@ def test_aggregation_rejects_weight_count_mismatch() -> None:
     ]
     with pytest.raises(ValueError):
         evaluate_aggregation(results, operation="weighted_sum", weights=[1.0])
+
+
+
+def test_normalization_uses_canonical_zero_to_one_range() -> None:
+    result = evaluate_weighted_sum(
+        {"score": {"unit": "points", "value": 75, "state": "observed"}},
+        {"score": 1.0},
+    )
+    normalized = evaluate_normalization(result, source_min=0, source_max=100)
+    assert normalized.value == 0.75
+    assert normalized.state == "observed"
+    assert normalized.lineage == ("score",)
+    assert normalized.contributions == (("score", 75.0),)
+
+
+def test_normalization_preserves_exact_boundaries() -> None:
+    low = evaluate_weighted_sum(
+        {"score": {"unit": "points", "value": 0, "state": "observed"}},
+        {"score": 1.0},
+    )
+    high = evaluate_weighted_sum(
+        {"score": {"unit": "points", "value": 100, "state": "observed"}},
+        {"score": 1.0},
+    )
+    assert evaluate_normalization(low, source_min=0, source_max=100).value == 0.0
+    assert evaluate_normalization(high, source_min=0, source_max=100).value == 1.0
+
+
+def test_normalization_rejects_out_of_range_by_default() -> None:
+    result = evaluate_weighted_sum(
+        {"score": {"unit": "points", "value": 101, "state": "observed"}},
+        {"score": 1.0},
+    )
+    with pytest.raises(ValueError):
+        evaluate_normalization(result, source_min=0, source_max=100)
+
+
+def test_normalization_can_explicitly_clamp_out_of_range_input() -> None:
+    result = evaluate_weighted_sum(
+        {"score": {"unit": "points", "value": 125, "state": "observed"}},
+        {"score": 1.0},
+    )
+    normalized = evaluate_normalization(
+        result, source_min=0, source_max=100, clamp=True
+    )
+    assert normalized.value == 1.0
+    assert normalized.lineage == ("score",)
+    assert normalized.contributions == (("score", 125.0),)
+
+
+def test_normalization_preserves_unknown_semantics() -> None:
+    result = evaluate_weighted_sum(
+        {"score": {"unit": "points", "value": None, "state": "unknown"}},
+        {"score": 1.0},
+    )
+    normalized = evaluate_normalization(result, source_min=0, source_max=100)
+    assert normalized.value is None
+    assert normalized.state == "unknown"
+    assert normalized.lineage == ("score",)
+
+
+def test_normalization_rejects_invalid_source_range() -> None:
+    result = evaluate_weighted_sum(
+        {"score": {"unit": "points", "value": 50, "state": "observed"}},
+        {"score": 1.0},
+    )
+    with pytest.raises(ValueError):
+        evaluate_normalization(result, source_min=100, source_max=100)
+
+
+def test_normalization_rejects_non_finite_configuration() -> None:
+    result = evaluate_weighted_sum(
+        {"score": {"unit": "points", "value": 50, "state": "observed"}},
+        {"score": 1.0},
+    )
+    with pytest.raises(ValueError):
+        evaluate_normalization(result, source_min=float("nan"), source_max=100)
