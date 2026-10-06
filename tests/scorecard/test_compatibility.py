@@ -60,6 +60,8 @@ class DivergentCandidate(NativeReferenceAdapter):
                 contributions=result.contributions,
                 contribution_details=result.contribution_details,
                 coverage=1.0,
+                known_weight=result.known_weight,
+                unknown_weight=result.unknown_weight,
             )
         return result
 
