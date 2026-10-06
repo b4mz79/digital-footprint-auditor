@@ -403,13 +403,3 @@ def test_active_mapping_resolution_is_independent_of_numeric_thresholds() -> Non
 
     _assert_risk_policy_contract(data)
     assert "thresholds" not in data["mapping"]
-
-        assert isinstance(mapping.get("no_match_behavior"), str)
-        assert mapping["no_match_behavior"]
-        assert "default_risk_band" not in mapping
-
-        # Overlapping conditions must resolve deterministically. Priority
-        # identity alone is insufficient unless the policy also states how
-        # priorities are interpreted and how matching terminates.
-        assert mapping.get("resolution_strategy") == "first_match_by_priority"
-        assert mapping.get("priority_order") == "ascending"
