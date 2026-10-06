@@ -168,7 +168,10 @@ def test_weighted_aggregation_propagates_nested_partial_coverage() -> None:
         weights=[0.5, 0.5],
     )
 
-    assert result.value == 5.0
+    # The inner partial result contributes its measured value (6.0)
+    # through the outer weight (0.5): 6.0 * 0.5 + 5.0 * 0.5 = 5.5.
+    # Coverage remains separate metadata; it does not renormalize the value.
+    assert result.value == 5.5
     assert result.state == "partial"
     assert result.coverage == 0.8
     assert result.known_weight == 0.8
