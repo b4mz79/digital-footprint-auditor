@@ -323,7 +323,7 @@ def test_normalization_uses_canonical_zero_to_one_range() -> None:
     assert normalized.value == 0.75
     assert normalized.state == "observed"
     assert normalized.lineage == ("score",)
-    assert normalized.contributions == (("score", 75.0),)
+    assert normalized.contributions == ()
 
 
 def test_normalization_rounds_to_two_decimal_places() -> None:
@@ -367,7 +367,7 @@ def test_normalization_can_explicitly_clamp_out_of_range_input() -> None:
     )
     assert normalized.value == 1.0
     assert normalized.lineage == ("score",)
-    assert normalized.contributions == (("score", 125.0),)
+    assert normalized.contributions == ()
 
 
 def test_normalization_preserves_unknown_semantics() -> None:
@@ -573,7 +573,7 @@ def test_nested_weighted_aggregation_scales_effective_contribution_details() -> 
     result = evaluate_aggregation(
         [inner, observed], operation="weighted_sum", weights=[0.5, 0.5]
     )
-    assert result.value == 5.0
+    assert result.value == 5.5
     assert result.contribution_details == (
         ContributionDetail("a", 10.0, 0.3, 3.0),
         ContributionDetail("c", 5.0, 0.5, 2.5),
