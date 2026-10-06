@@ -98,23 +98,31 @@ def evaluate_weighted_sum(
     contributions: list[tuple[str, float]] = []
     contribution_details: list[ContributionDetail] = []
     lineage: list[str] = []
+    has_unknown = False
 
     for kpi_id, weight in weights.items():
+        lineage.append(kpi_id)
         item = measurements.get(kpi_id)
         if not item or item.get("state") == "unknown" or item.get("value") is None:
-            return EvalResult(
-                value=None,
-                state="unknown",
-                lineage=tuple(sorted({*lineage, kpi_id})),
-                contributions=tuple(contributions),
-                contribution_details=tuple(contribution_details),
-            )
+            has_unknown = True
+            continue
 
         value = _numeric(item["value"], label=kpi_id)
-        weighted = value * _weight(weight, kpi_id=kpi_id)
+        numeric_weight = _weight(weight, kpi_id=kpi_id)
+        weighted = value * numeric_weight
         contributions.append((kpi_id, weighted))
-        contribution_details.append(ContributionDetail(kpi_id, value, float(weight), weighted))
-        lineage.append(kpi_id)
+        contribution_details.append(
+            ContributionDetail(kpi_id, value, numeric_weight, weighted)
+        )
+
+    if has_unknown:
+        return EvalResult(
+            value=None,
+            state="unknown",
+            lineage=tuple(lineage),
+            contributions=tuple(contributions),
+            contribution_details=tuple(contribution_details),
+        )
 
     return EvalResult(
         value=sum(value for _, value in contributions),
