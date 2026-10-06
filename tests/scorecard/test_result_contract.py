@@ -45,6 +45,13 @@ def _assert_scorecard_result_contract(data: dict[str, Any]) -> None:
 
     contributions = data.get("contributions")
     assert isinstance(contributions, list)
+    if contributions:
+        assert data.get("contribution_stage") in {
+            "pre_normalization",
+            "aggregation",
+            "dimension",
+            "final_score",
+        }
     for contribution in contributions:
         assert isinstance(contribution, dict)
         assert isinstance(contribution.get("kpi_id"), str) and contribution["kpi_id"]
@@ -66,9 +73,10 @@ def _assert_scorecard_result_contract(data: dict[str, Any]) -> None:
     policy_refs = data.get("policy_refs")
     assert isinstance(policy_refs, dict)
 
-    if data["state"] == "observed" and data["contributions"]:
-        contribution_total = sum(item["contribution"] for item in data["contributions"])
-        assert math.isclose(contribution_total, float(data["score"]), rel_tol=0.0, abs_tol=1e-12)
+    # Contributions are stage-specific additive decomposition details. They
+    # must not be assumed to sum to the reported score when a later affine
+    # transformation (such as min-max normalization) produces that score.
+    # The producing stage is explicit instead.
 
 
 def test_scorecard_result_contract_is_self_contained() -> None:
@@ -95,4 +103,21 @@ def test_scorecard_result_contract_allows_partial_results() -> None:
     data = _load()
     data["state"] = "partial"
     data["score"] = 0.60
+    data["contributions"] = []
+    data.pop("contribution_stage", None)
     _assert_scorecard_result_contract(data)
+
+def test_scorecard_result_does_not_treat_pre_normalization_contributions_as_final_score() -> None:
+    data = _load()
+    contribution_total = sum(
+        item["contribution"] for item in data["contributions"]
+    )
+    assert data["contribution_stage"] == "pre_normalization"
+    assert math.isclose(contribution_total, 7.6, rel_tol=0.0, abs_tol=1e-12)
+    assert math.isclose(float(data["score"]), 0.76, rel_tol=0.0, abs_tol=1e-12)
+    assert not math.isclose(
+        contribution_total,
+        float(data["score"]),
+        rel_tol=0.0,
+        abs_tol=1e-12,
+    )
