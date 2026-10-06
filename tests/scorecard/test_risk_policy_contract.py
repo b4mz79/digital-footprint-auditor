@@ -80,6 +80,13 @@ def _assert_risk_policy_contract(data: dict) -> None:
         rules = mapping.get("rules")
         assert isinstance(rules, list)
         assert rules
+        rule_ids = [rule.get("rule_id") for rule in rules]
+        priorities = [rule.get("priority") for rule in rules]
+        assert all(isinstance(rule_id, str) and rule_id for rule_id in rule_ids)
+        assert len(set(rule_ids)) == len(rule_ids)
+        assert all(isinstance(priority, int) and not isinstance(priority, bool) for priority in priorities)
+        assert len(set(priorities)) == len(priorities)
+        assert all(rule.get("then") in risk_bands for rule in rules)
     else:
         assert "rules" not in mapping
         assert "deterministic" not in mapping
@@ -183,6 +190,63 @@ def test_risk_policy_rejects_nondeterministic_active_mapping() -> None:
         {"rule_id": "synthetic-rule-1", "then": "unknown"}
     ]
     data["mapping"]["deterministic"] = False
+
+    with pytest.raises(AssertionError):
+        _assert_risk_policy_contract(data)
+
+
+def _active_mapping_with_rules(rules: list[dict]) -> dict:
+    data = _load()
+    data["mapping"] = {
+        "type": "configured_rules",
+        "status": "active",
+        "deterministic": True,
+        "rules": rules,
+    }
+    return data
+
+
+def test_active_rules_have_unique_identity_priority_and_valid_band() -> None:
+    data = _active_mapping_with_rules(
+        [
+            {"rule_id": "rule-1", "priority": 10, "then": "low"},
+            {"rule_id": "rule-2", "priority": 20, "then": "medium"},
+        ]
+    )
+
+    _assert_risk_policy_contract(data)
+
+
+def test_active_rules_reject_duplicate_rule_ids() -> None:
+    data = _active_mapping_with_rules(
+        [
+            {"rule_id": "rule-1", "priority": 10, "then": "low"},
+            {"rule_id": "rule-1", "priority": 20, "then": "medium"},
+        ]
+    )
+
+    with pytest.raises(AssertionError):
+        _assert_risk_policy_contract(data)
+
+
+def test_active_rules_reject_duplicate_priorities() -> None:
+    data = _active_mapping_with_rules(
+        [
+            {"rule_id": "rule-1", "priority": 10, "then": "low"},
+            {"rule_id": "rule-2", "priority": 10, "then": "medium"},
+        ]
+    )
+
+    with pytest.raises(AssertionError):
+        _assert_risk_policy_contract(data)
+
+
+def test_active_rules_reject_invalid_risk_band() -> None:
+    data = _active_mapping_with_rules(
+        [
+            {"rule_id": "rule-1", "priority": 10, "then": "critical"},
+        ]
+    )
 
     with pytest.raises(AssertionError):
         _assert_risk_policy_contract(data)
