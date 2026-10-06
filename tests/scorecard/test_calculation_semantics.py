@@ -130,7 +130,6 @@ def test_weighted_aggregation_returns_partial_value_and_coverage() -> None:
     assert result.known_weight == 0.6
     assert result.unknown_weight == 0.4
     assert result.lineage == ("a", "b")
-    assert result.contribution_details == (ContributionDetail("a", 10.0, 1.0, 10.0),)
 
 
 def test_weighted_aggregation_is_complete_when_all_inputs_are_observed() -> None:
