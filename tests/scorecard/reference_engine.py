@@ -21,6 +21,9 @@ class EvalResult:
     lineage: tuple[str, ...]
     contributions: tuple[tuple[str, float], ...] = ()
     contribution_details: tuple[ContributionDetail, ...] = ()
+    coverage: float | None = None
+    known_weight: float | None = None
+    unknown_weight: float | None = None
 
 
 def _numeric(value: Any, *, label: str) -> float:
@@ -156,10 +159,6 @@ def evaluate_aggregation(
     if not results:
         raise ValueError("aggregation requires at least one result")
 
-    if any(result.state == "unknown" or result.value is None for result in results):
-        return _unknown_result(results)
-
-    values = [_numeric(result.value, label="aggregation input") for result in results]
     lineage = tuple(sorted({item for result in results for item in result.lineage}))
     contributions = tuple(
         contribution
@@ -172,6 +171,65 @@ def evaluate_aggregation(
         for detail in result.contribution_details
     )
 
+    if operation == "weighted_sum":
+        if weights is None:
+            raise ValueError("weighted_sum aggregation requires weights")
+        if len(weights) != len(results):
+            raise ValueError("weighted_sum weights must match result count")
+
+        numeric_weights = [
+            _numeric(weight, label=f"weight[{index}]")
+            for index, weight in enumerate(weights)
+        ]
+        if any(weight < 0 for weight in numeric_weights):
+            raise ValueError("partial weighted_sum coverage requires non-negative weights")
+
+        total_weight = sum(numeric_weights)
+        if total_weight <= 0:
+            raise ValueError("partial weighted_sum requires positive total weight")
+
+        known_weight = 0.0
+        unknown_weight = 0.0
+        weighted_values: list[float] = []
+
+        for index, result in enumerate(results):
+            weight = numeric_weights[index]
+            is_unknown = result.state == "unknown" or result.value is None
+            if is_unknown:
+                unknown_weight += weight
+                continue
+            value = _numeric(result.value, label="aggregation input")
+            known_weight += weight
+            weighted_values.append(value * weight)
+
+        if known_weight == 0.0:
+            return EvalResult(
+                value=None,
+                state="unknown",
+                lineage=lineage,
+                contributions=contributions,
+                contribution_details=contribution_details,
+                coverage=0.0,
+                known_weight=0.0,
+                unknown_weight=unknown_weight,
+            )
+
+        state = "observed" if unknown_weight == 0.0 else "partial"
+        return EvalResult(
+            value=_numeric(sum(weighted_values), label=f"aggregation[{operation}]"),
+            state=state,
+            lineage=lineage,
+            contributions=contributions,
+            contribution_details=contribution_details,
+            coverage=known_weight / total_weight,
+            known_weight=known_weight,
+            unknown_weight=unknown_weight,
+        )
+
+    if any(result.state == "unknown" or result.value is None for result in results):
+        return _unknown_result(results)
+
+    values = [_numeric(result.value, label="aggregation input") for result in results]
     if operation == "sum":
         value = sum(values)
     elif operation == "mean":
@@ -180,16 +238,6 @@ def evaluate_aggregation(
         value = min(values)
     elif operation == "max":
         value = max(values)
-    elif operation == "weighted_sum":
-        if weights is None:
-            raise ValueError("weighted_sum aggregation requires weights")
-        if len(weights) != len(results):
-            raise ValueError("weighted_sum weights must match result count")
-        weighted_values: list[float] = []
-        for index, result in enumerate(results):
-            weight = _numeric(weights[index], label=f"weight[{index}]")
-            weighted_values.append(result.value * weight)  # type: ignore[operator]
-        value = sum(weighted_values)
     else:
         raise ValueError(f"Unsupported synthetic aggregation: {operation}")
 
