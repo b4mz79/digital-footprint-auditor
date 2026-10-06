@@ -1,37 +1,43 @@
-# Scorecard OSS Evaluation — GoRules ZEN
+# Scorecard OSS Evaluation — GoRules ZEN + python-jsonlogic
 
-Status: **EVALUATED — CONDITIONAL CALCULATION PRIMITIVE**
+Status: **EVALUATION IN PROGRESS — TWO CONDITIONAL CALCULATION PRIMITIVES**
 
-Candidate: **GoRules ZEN / `zen-engine==2.1.2`**
+Candidates evaluated:
+- **GoRules ZEN / `zen-engine==2.1.2`**
+- **python-jsonlogic / `python-jsonlogic==0.2.0`**
 
 ## Executive summary
 
-This section is the **decision record** for this candidate. The same structure should be used for every subsequent OSS candidate so that candidates can be compared on the same evidence and without changing the evaluation criteria after seeing the result.
+This report is the decision record for the OSS calculation-primitive evaluation. The same criteria are applied to each candidate. The native reference engine remains the semantic oracle.
+
+Neither evaluated candidate is selected as the Scorecard Engine.
 
 ### Executive decision table
 
-| Area | ZEN result | Decision meaning |
-|---|---|---|
-| Arithmetic / calculation compatibility | **PASS** | Matches the frozen Native Reference for the evaluated weighted-sum path. |
-| UNKNOWN / partial semantics | **PASS WITH DOMAIN ADAPTER** | Domain semantics are preserved; UNKNOWN is not coerced to zero. This is not evidence that ZEN natively implements our UNKNOWN model. |
-| Determinism | **PASS** | Repeated equivalent evaluation produces the same semantic result. |
-| Lineage ownership | **PASS WITH DOMAIN ADAPTER** | Scorecard lineage remains domain-owned and is reconstructed outside the engine. |
-| Contribution semantics | **PASS WITH DOMAIN ADAPTER** | Canonical contribution data remains domain-owned and matches the reference result. |
-| Definition / version isolation | **PASS WITH DOMAIN ADAPTER** | Different calculation definitions remain isolated; authoritative Scorecard version binding remains domain-owned. |
-| Adapter complexity | **ACCEPTABLE WITH CAVEAT** | Candidate integration is isolated and small, but requires translation to/from the candidate engine model. |
-| Dependency cost | **ACCEPTABLE FOR EVALUATION** | Candidate-only pinned dependency with published platform wheels. |
-| Operational cost | **ACCEPTABLE FOR EVALUATION** | Native bindings and prebuilt wheels are operationally attractive for further evaluation. |
-| Policy resolution | **NOT EVALUATED** | Policy semantics remain domain-owned; no claim is made that ZEN replaces the policy engine. |
-| Production readiness | **NOT EVALUATED** | No production adoption or packaging decision has been made. |
-| Overall candidate status | **CONDITIONAL CALCULATION PRIMITIVE** | Worth keeping as a candidate for further evaluation, but not selected. |
+| Area | GoRules ZEN | python-jsonlogic | Decision meaning |
+|---|---|---|---|
+| Arithmetic / calculation compatibility | **PASS** | **PASS** | Both match the frozen Native Reference for the evaluated weighted-sum path. |
+| UNKNOWN / partial semantics | **PASS WITH DOMAIN ADAPTER** | **PASS WITH DOMAIN ADAPTER** | Domain semantics are preserved; neither candidate is allowed to coerce UNKNOWN to zero. |
+| Determinism | **PASS** | **PASS** | Repeated equivalent evaluation produces the same semantic result. |
+| Lineage ownership | **PASS WITH DOMAIN ADAPTER** | **PASS WITH DOMAIN ADAPTER** | Scorecard lineage remains domain-owned. |
+| Contribution semantics | **PASS WITH DOMAIN ADAPTER** | **PASS WITH DOMAIN ADAPTER** | Canonical contribution semantics remain domain-owned. |
+| Definition / version isolation | **PASS WITH DOMAIN ADAPTER** | **PASS WITH DOMAIN ADAPTER** | Calculation definitions remain isolated; authoritative Scorecard version binding remains domain-owned. |
+| Adapter complexity | **ACCEPTABLE WITH CAVEAT** | **ACCEPTABLE WITH CAVEAT** | Both require an explicit translation boundary rather than leaking candidate semantics into the domain. |
+| Dependency cost | **ACCEPTABLE FOR EVALUATION** | **ACCEPTABLE FOR EVALUATION** | Both are pinned candidate-only dependencies; python-jsonlogic is substantially smaller and platform-independent. |
+| Operational cost | **ACCEPTABLE FOR EVALUATION** | **ACCEPTABLE FOR EVALUATION** | ZEN uses native bindings/prebuilt wheels; python-jsonlogic is pure Python. |
+| Policy resolution | **NOT EVALUATED** | **NOT EVALUATED** | Policy semantics remain domain-owned and are not delegated by these candidate adapters. |
+| Production readiness | **NOT EVALUATED** | **NOT EVALUATED** | No production adoption or packaging decision has been made. |
+| Overall candidate status | **CONDITIONAL CALCULATION PRIMITIVE** | **CONDITIONAL CALCULATION PRIMITIVE** | Both remain candidates; neither is selected. |
 
-### Decision in one line
+### Current decision
 
-> **Keep GoRules ZEN as a conditional calculation-primitive candidate; do not select it as the Scorecard Engine yet.**
+> **Keep both GoRules ZEN and python-jsonlogic as conditional calculation-primitive candidates. Do not select the Scorecard Engine yet.**
 
-### What this result actually proves
+The current evidence is deliberately narrower than engine adoption.
 
-The current evidence establishes that ZEN can perform the **evaluated arithmetic primitive** while the Scorecard domain retains ownership of:
+## What this evaluation actually proves
+
+For the evaluated weighted-sum path, both candidates can reproduce the frozen Native Reference arithmetic while the Scorecard domain retains ownership of:
 
 - UNKNOWN / partial semantics
 - lineage
@@ -40,9 +46,9 @@ The current evidence establishes that ZEN can perform the **evaluated arithmetic
 - policy semantics
 - final domain contracts
 
-This is a useful compatibility result, but it is intentionally narrower than full engine adoption.
+This is a compatibility result, not proof that either candidate natively implements the Scorecard domain model.
 
-### What this result does not prove
+## What this evaluation does not prove
 
 It does **not** establish:
 
@@ -53,159 +59,133 @@ It does **not** establish:
 - compiled-decision lifecycle/reuse suitability
 - failure/error mapping completeness
 - policy-engine compatibility
+- historical/reproducibility behavior under a production result lifecycle
 - final OSS engine selection
 - production dependency approval
 
-### Percentage / scoring policy
+## Percentage / scoring policy
 
-**No official percentage is assigned at this stage.**
+**No official percentage is assigned.**
 
-A percentage such as “85% suitable” would be misleading unless a formal, weighted evaluation rubric had first been defined. The current evaluation deliberately uses explicit status gates instead of invented percentages.
+A percentage such as “85% suitable” would be misleading unless a formal weighted evaluation rubric had first been defined. The current evaluation therefore uses explicit status gates instead of invented percentages.
 
-For future candidates, the comparison must therefore remain evidence-based:
+The comparison remains:
 
-1. **Compatibility gate** — candidate must preserve the frozen Scorecard domain semantics.
+1. **Compatibility gate** — candidate must preserve frozen Scorecard domain semantics.
 2. **Operational/adoption gate** — dependency, adapter, lifecycle, packaging, and operational trade-offs must be acceptable.
 3. **Coverage gate** — evaluated capabilities must be sufficient for the intended calculation/policy scope.
-4. **Production gate** — production readiness must be separately evidenced before adoption.
+4. **Production gate** — production readiness must be separately evidenced.
 
-A candidate that passes only the first gate is **not** a selected engine.
+A candidate that passes only the evaluated compatibility path is **not** a selected engine.
 
-## Candidate comparison record
-
-The following record is the reusable executive-summary format for subsequent OSS evaluations.
+# Candidate comparison record
 
 | Candidate | Version | Calculation | UNKNOWN/Partial | Determinism | Lineage | Contribution | Version Isolation | Adapter | Dependency | Operations | Policy | Verdict |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | **GoRules ZEN** | 2.1.2 | PASS | PASS + adapter | PASS | PASS + adapter | PASS + adapter | PASS + adapter | Acceptable + caveat | Acceptable for evaluation | Acceptable for evaluation | Not evaluated | **Conditional calculation primitive** |
-| python-jsonlogic | — | Not evaluated | Not evaluated | Not evaluated | Not evaluated | Not evaluated | Not evaluated | Not evaluated | Not evaluated | Not evaluated | Not evaluated | **Not evaluated** |
+| **python-jsonlogic** | 0.2.0 | PASS | PASS + adapter | PASS | PASS + adapter | PASS + adapter | PASS + adapter | Acceptable + caveat | Acceptable for evaluation | Acceptable for evaluation | Not evaluated | **Conditional calculation primitive** |
 | simpleeval | — | Not evaluated | Not evaluated | Not evaluated | Not evaluated | Not evaluated | Not evaluated | Not evaluated | Not evaluated | Not evaluated | Not evaluated | **Not evaluated** |
 
-**Rule:** each new candidate gets its own candidate-specific adapter/evaluation tests and one row in this comparison table. Existing frozen semantic contracts remain the oracle.
+**Rule:** each candidate gets its own adapter/evaluation tests. The frozen semantic contracts remain the oracle.
 
-## Purpose
+# Candidate 1 — GoRules ZEN
 
-This report records the first concrete OSS candidate evaluation against the frozen Scorecard semantic contracts.
+## Result
 
-The evaluation is **not** a production Scorecard Add-on implementation and is **not** an adoption decision.
+**Conditional calculation primitive**
 
-The native reference engine remains the semantic oracle. GoRules ZEN is evaluated only through a candidate-specific adapter.
+### Evaluated evidence
 
-## Evaluation result
+- Calculation semantics — **PASS**
+- UNKNOWN / partial — **PASS WITH DOMAIN ADAPTER**
+- Determinism — **PASS**
+- Lineage — **PASS WITH DOMAIN ADAPTER**
+- Contribution — **PASS WITH DOMAIN ADAPTER**
+- Definition isolation — **PASS WITH DOMAIN ADAPTER**
+- Adapter complexity — **ACCEPTABLE WITH CAVEAT**
+- Dependency cost — **ACCEPTABLE FOR EVALUATION**
+- Operational cost — **ACCEPTABLE FOR EVALUATION**
+- Policy resolution — **NOT EVALUATED**
 
-The current evidence supports:
+### Current interpretation
 
-> **ZEN is compatible as a calculation primitive for the evaluated weighted-sum path, with acceptable dependency/operational characteristics for further consideration.**
+ZEN is useful as an embedded calculation primitive for the evaluated path, but the adapter must keep domain semantics outside ZEN. The current implementation constructs a ZEN decision graph for the calculation and reconstructs domain metadata around it.
 
-It does **not** support:
+The evidence does not establish full Scorecard-engine compatibility or production readiness.
 
-> "ZEN is the selected Scorecard Engine."
+### Evidence
 
-The distinction is intentional.
+- `tests/scorecard/engines/zen.py`
+- `tests/scorecard/test_zen_evaluation.py`
+- `requirements-scorecard-oss.txt`
 
-The current adapter evaluates calculation semantics. Policy rule-resolution semantics remain domain-owned and are not delegated to ZEN by this candidate artifact.
+# Candidate 2 — python-jsonlogic
 
-## Evidence matrix
+## Result
 
-| Dimension | Result | Evidence / interpretation |
-|---|---|---|
-| Calculation semantics | **PASS** | ZEN weighted-sum output matches the frozen Native Reference result. |
-| UNKNOWN / partial semantics | **PASS WITH DOMAIN ADAPTER** | UNKNOWN is intercepted before engine evaluation; no implicit zero/imputation is introduced. |
-| Determinism | **PASS** | Repeated evaluation with identical input/configuration returns identical semantic output. |
-| Lineage | **PASS WITH DOMAIN ADAPTER** | Canonical lineage is reconstructed from declared KPI inputs; lineage remains a Scorecard-domain concern. |
-| Contribution | **PASS WITH DOMAIN ADAPTER** | Weighted contribution details are reconstructed from canonical inputs/weights and match the reference result. |
-| Version isolation | **PASS WITH DOMAIN ADAPTER** | Different calculation definitions remain isolated between evaluations; scorecard version binding remains domain-owned. |
-| Adapter complexity | **ACCEPTABLE WITH CAVEAT** | Adapter is small, but it must construct a JDM graph and reconstruct domain metadata. |
-| Dependency cost | **ACCEPTABLE FOR EVALUATION** | Candidate-only pinned dependency; published 2.1.2 wheels are available for Windows/Linux/macOS. |
-| Operational cost | **ACCEPTABLE FOR EVALUATION** | Rust core/native Python binding with prebuilt wheels; no Rust toolchain required for normal wheel installation. |
-| Policy resolution | **NOT EVALUATED AS CANDIDATE-OWNED SEMANTICS** | Current adapter does not delegate rule ordering or MATCH/NO_MATCH/UNKNOWN policy semantics to ZEN. |
-
-## Detailed evidence
+**Conditional calculation primitive**
 
 ### 1. Calculation semantics — PASS
 
-The candidate adapter translates the Scorecard weighted-sum operation into a ZEN expression graph.
+The adapter translates the Scorecard weighted-sum operation into a JsonLogic expression and evaluates it through python-jsonlogic.
 
-The differential test compares:
+The evaluated case is:
 
 ```
-Native Reference → EvalResult
-ZEN Adapter     → EvalResult
-                  ↓
-             compatibility comparator
+a = 10, weight = 0.6
+b = 4,  weight = 0.4
+
+10 × 0.6 + 4 × 0.4 = 7.6
 ```
 
-The evaluated case:
-
-- `a = 10`, weight `0.6`
-- `b = 4`, weight `0.4`
-- expected result = `7.6`
-- contributions = `6.0 + 1.6`
-
-The candidate matches the frozen reference contract.
+The candidate result matches the frozen Native Reference through the existing compatibility comparator.
 
 Evidence:
 
-- `tests/scorecard/engines/zen.py`
-- `tests/scorecard/test_zen_evaluation.py::test_zen_weighted_sum_matches_native_reference`
+- `tests/scorecard/engines/python_jsonlogic.py`
+- `tests/scorecard/test_python_jsonlogic_evaluation.py::test_python_jsonlogic_weighted_sum_matches_native_reference`
+
+The candidate's published 0.2.0 documentation describes parsing a JSON Logic expression into an operator tree and evaluating it against data; the package also supports JSON-Schema-based typechecking. citeturn0search1turn0search6
 
 ### 2. UNKNOWN / partial semantics — PASS WITH DOMAIN ADAPTER
 
-This is deliberately **not** delegated to the OSS engine.
+UNKNOWN is handled before candidate evaluation.
 
-When a canonical measurement is UNKNOWN, the adapter does not pass a fabricated numeric zero to ZEN. It preserves the domain UNKNOWN result and the declared lineage.
+If one measurement is UNKNOWN, the adapter returns the domain UNKNOWN result instead of passing a fabricated numeric zero into python-jsonlogic.
 
-This is important because:
+Therefore:
 
-- UNKNOWN ≠ FALSE
 - UNKNOWN ≠ 0
-- UNKNOWN must not silently become observed data
-
-The test proves candidate output remains compatible with the frozen reference semantics.
+- UNKNOWN ≠ FALSE
+- no implicit imputation occurs
 
 Evidence:
 
-`tests/scorecard/test_zen_evaluation.py::test_zen_weighted_sum_preserves_domain_unknown_semantics`
+`tests/scorecard/test_python_jsonlogic_evaluation.py::test_python_jsonlogic_preserves_domain_unknown_semantics`
 
-The distinction matters: this is a **domain compatibility result**, not evidence that ZEN natively implements our UNKNOWN/partial model.
+This is a domain compatibility result, not evidence that python-jsonlogic natively implements the Scorecard UNKNOWN/partial model.
 
 ### 3. Determinism — PASS
 
-The same candidate adapter instance is evaluated twice with the same measurements and weights.
-
-The semantic results are identical.
+Repeated evaluation with the same measurements and weights produces compatible semantic results.
 
 Evidence:
 
-`tests/scorecard/test_zen_evaluation.py::test_zen_weighted_sum_is_deterministic_for_repeated_evaluation`
-
-This satisfies the current deterministic calculation requirement for the evaluated primitive.
+`tests/scorecard/test_python_jsonlogic_evaluation.py::test_python_jsonlogic_weighted_sum_is_deterministic_for_repeated_evaluation`
 
 ### 4. Lineage — PASS WITH DOMAIN ADAPTER
 
-The Scorecard domain owns lineage.
+The adapter retains KPI IDs as canonical lineage.
 
-ZEN returns the arithmetic result; the adapter reconstructs:
-
-```
-declared KPI IDs
-      ↓
-Scorecard EvalResult.lineage
-```
-
-This is preferable to allowing an engine-specific trace format to become the Scorecard contract.
+The candidate expression engine is therefore not allowed to define the Scorecard lineage contract.
 
 Evidence:
 
-- frozen `engine_contract.py`
-- frozen `compatibility.py`
-- `tests/scorecard/test_zen_evaluation.py`
+`tests/scorecard/test_python_jsonlogic_evaluation.py::test_python_jsonlogic_weighted_sum_matches_native_reference`
 
 ### 5. Contribution — PASS WITH DOMAIN ADAPTER
 
-Contribution semantics are also domain-owned.
-
-For the evaluated case:
+Contribution details are reconstructed from canonical domain inputs:
 
 ```
 a: 10 × 0.6 = 6.0
@@ -213,62 +193,58 @@ b:  4 × 0.4 = 1.6
 total = 7.6
 ```
 
-The adapter reconstructs the canonical `ContributionDetail` objects and the differential contract accepts them.
+The candidate is used for arithmetic evaluation; contribution semantics remain domain-owned.
 
 Evidence:
 
-`tests/scorecard/test_zen_evaluation.py::test_zen_adapter_reconstructs_contribution_semantics_from_domain_inputs`
+`tests/scorecard/test_python_jsonlogic_evaluation.py::test_python_jsonlogic_reconstructs_domain_contribution_semantics`
 
-This avoids coupling Scorecard contribution semantics to an engine-specific explanation/trace format.
+### 6. Definition / version isolation — PASS WITH DOMAIN ADAPTER
 
-### 6. Version isolation — PASS WITH DOMAIN ADAPTER
+The same adapter is evaluated against two different calculation definitions:
 
-The candidate is evaluated with two different weight definitions using the same adapter instance:
-
-- definition A → `0.6 / 0.4` → `7.6`
-- definition B → `0.2 / 0.8` → `5.2`
+```
+0.6 / 0.4 → 7.6
+0.2 / 0.8 → 5.2
+```
 
 The second evaluation does not inherit the first definition.
 
 Evidence:
 
-`tests/scorecard/test_zen_evaluation.py::test_zen_adapter_keeps_definition_inputs_isolated_between_evaluations`
+`tests/scorecard/test_python_jsonlogic_evaluation.py::test_python_jsonlogic_keeps_definition_inputs_isolated_between_evaluations`
 
-This is evidence of calculation-definition isolation. The authoritative Scorecard `scorecard_version` binding remains outside ZEN.
+This demonstrates calculation-definition isolation. Authoritative Scorecard version binding remains outside the candidate.
 
 ### 7. Adapter complexity — ACCEPTABLE WITH CAVEAT
 
-The candidate adapter is intentionally isolated under:
+The adapter is isolated under:
 
-`tests/scorecard/engines/zen.py`
+`tests/scorecard/engines/python_jsonlogic.py`
 
-It does not modify:
-
-- Scorecard contracts
-- reference semantics
-- production pipeline
-- production dependencies
-- domain risk policy
-
-The main cost is translation:
+The translation path is:
 
 ```
-Scorecard semantic operation
+Scorecard weighted-sum semantics
         ↓
 candidate adapter
         ↓
-ZEN JDM graph / expression
+JsonLogic expression
         ↓
-ZEN result
+python-jsonlogic operator tree
+        ↓
+candidate result
         ↓
 candidate adapter
         ↓
 Scorecard EvalResult
 ```
 
-The adapter therefore remains a real integration boundary rather than allowing ZEN's internal model to leak into the domain.
+The adapter is small and does not modify Scorecard contracts or production pipeline behavior.
 
-Caveat: the current implementation constructs the candidate decision graph for the evaluated calculation path. A production implementation would need to assess decision compilation/reuse and configuration lifecycle before adoption.
+A specific integration detail was required for this candidate: KPI references are emitted using JSON Pointer form such as `/a`. The python-jsonlogic documentation defines JSON Pointer variable references as an alternative to its dot-like notation, including support for keys containing dots or slashes. citeturn0search2
+
+This is an adapter concern, not a reason to change the Scorecard domain contract.
 
 ### 8. Dependency cost — ACCEPTABLE FOR EVALUATION
 
@@ -279,39 +255,44 @@ The candidate is pinned separately in:
 with:
 
 ```
-zen-engine==2.1.2
+python-jsonlogic==0.2.0
 ```
 
-Current PyPI metadata for 2.1.2 reports:
+Published PyPI metadata for 0.2.0 reports:
 
 - MIT license
-- Rust core with native Python bindings
-- Python >= 3.7
-- prebuilt wheels for Windows x86-64, Linux x86-64/ARM64, and macOS architectures
-- Windows x86-64 wheel: approximately 11.0 MB
-- Linux x86-64 wheel: approximately 10.7 MB
+- Python >=3.10
+- OS-independent distribution
+- 26.5 kB wheel
+- 107.2 kB source distribution
+- 133.7 kB total release size
 
-This is acceptable for candidate evaluation.
+citeturn0search0
 
-It is **not** yet a production dependency decision.
+This is attractive from a dependency-size and platform-neutrality perspective.
+
+It is still **candidate evaluation evidence**, not production dependency approval.
 
 ### 9. Operational cost — ACCEPTABLE FOR EVALUATION
 
-ZEN is an embeddable native rules engine with prebuilt wheels, which reduces installation friction compared with requiring a local Rust build toolchain.
+The published package is a `py3-none-any` wheel, so the candidate does not introduce a native platform wheel or Rust toolchain requirement for normal installation. citeturn0search0
 
-The current evaluation also keeps the dependency outside the normal Privacy Auditor runtime dependency set.
+The library also exposes an operator registry and extensible operator model, which may be relevant if future Scorecard expression coverage requires controlled domain-specific operators. citeturn0search3turn0search5
 
-Operational questions intentionally left for a later adoption review include:
+However, that capability has **not** been evaluated as a production extension strategy yet.
 
-- compiled-decision lifecycle/reuse strategy
-- process/resource behavior under expected Scorecard workloads
-- packaging impact
-- production upgrade policy
+Operational questions still open:
+
+- expression compilation/reuse lifecycle
+- larger expression graphs
 - failure/error mapping into Scorecard contracts
+- performance under expected Scorecard workloads
+- typechecking policy and whether it should be mandatory
+- production packaging and upgrade policy
 
-These are adoption concerns, not reasons to alter the frozen semantic suite.
+These are adoption questions and do not justify changing the frozen semantic suite.
 
-## Policy resolution boundary
+# Policy resolution boundary
 
 The Scorecard policy contract defines semantics for:
 
@@ -323,54 +304,39 @@ The Scorecard policy contract defines semantics for:
 - evaluated rule identity
 - deterministic resolution
 
-Those semantics are currently implemented by the domain-neutral reference policy engine.
-
-The current ZEN candidate adapter **does not claim to replace that policy engine**.
+Neither current candidate adapter delegates those semantics to the OSS library.
 
 Therefore:
 
-**Policy resolution = not yet candidate-evaluated.**
+> **Policy resolution = not yet candidate-evaluated.**
 
-This is deliberate. We do not turn a candidate's rule language into the Scorecard domain contract merely because the candidate is a business rules engine.
+This is intentional. A candidate's expression/rules capability must not silently become the Scorecard domain contract.
 
-## Current verdict
+# Current combined verdict
 
-### ZEN
+| Candidate | Current verdict | Keep evaluating? | Selected? |
+|---|---|---:|---:|
+| GoRules ZEN 2.1.2 | **Conditional calculation primitive** | Yes | **No** |
+| python-jsonlogic 0.2.0 | **Conditional calculation primitive** | Yes | **No** |
+| Native Reference | **Baseline / semantic oracle** | N/A | **Not an adoption candidate** |
+| simpleeval | Not evaluated | Pending | No |
 
-**Conditional calculation primitive**
+## Important comparison observation
 
-Meaning:
+At this stage, python-jsonlogic has a potentially attractive **dependency/operational profile** relative to ZEN:
 
-- ✅ passes the evaluated arithmetic compatibility gate
-- ✅ preserves UNKNOWN at the domain adapter boundary
-- ✅ deterministic for the evaluated path
-- ✅ contribution and lineage can remain domain-owned
-- ✅ calculation-definition isolation demonstrated
-- ✅ dependency characteristics acceptable for further evaluation
-- ⚠️ current evidence does not establish full Scorecard-engine compatibility
-- ⚠️ policy-resolution execution is not delegated/evaluated
-- ⚠️ no production adoption decision
+- python-jsonlogic: pure Python, `py3-none-any`, 26.5 kB wheel
+- ZEN: native Rust core with platform-specific prebuilt wheels
 
-## Candidate matrix
+But this is **not yet an engine-selection argument**.
 
-See:
+The decisive missing evidence is calculation coverage beyond the single evaluated weighted-sum path, plus lifecycle/error behavior and any future policy/expression requirements.
 
-`tests/scorecard/oss_evaluation_matrix.json`
+Therefore the correct conclusion is:
 
-Current candidates:
+> **python-jsonlogic has passed the same first compatibility gate as ZEN for the evaluated calculation primitive, but neither candidate has earned engine-selection status.**
 
-- Native Reference — baseline
-- GoRules ZEN 2.1.2 — conditional calculation primitive
-- python-jsonlogic — not evaluated
-- simpleeval — not evaluated
-
-## External candidate facts
-
-Current package facts are based on the published `zen-engine 2.1.2` package metadata: MIT licensing, native Rust/Python implementation, prebuilt platform wheels, and the published wheel sizes.
-
-These facts are external evaluation evidence, not project-domain semantics.
-
-## Scope guard
+# Scope guard
 
 This evaluation does not decide:
 
@@ -381,14 +347,17 @@ This evaluation does not decide:
 - parked KPIs
 - B2B/B2C product strategy
 - OSS/commercial product boundary
-- production adoption of ZEN
+- production adoption of either candidate
 
 Those remain outside this evaluation artifact.
 
-## Next candidate-evaluation step
+# Current evaluation state
 
 The generic `tests/scorecard` semantic suite remains **frozen**.
 
-No new generic semantic test layer is required merely because ZEN has been evaluated.
+No new generic semantic layer was added for python-jsonlogic. Candidate-specific evidence remains isolated in:
 
-The next OSS work should use the same frozen oracle and evaluate another candidate through a separate adapter, with the same compatibility/operational matrix.
+- `tests/scorecard/engines/python_jsonlogic.py`
+- `tests/scorecard/test_python_jsonlogic_evaluation.py`
+
+The next OSS work should continue with the same frozen oracle and the same matrix, rather than expanding the generic suite simply because another candidate was added.
