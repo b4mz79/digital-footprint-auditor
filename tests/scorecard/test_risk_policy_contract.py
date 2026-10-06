@@ -103,6 +103,13 @@ def _assert_risk_policy_contract(data: dict) -> None:
         assert mapping["no_match_behavior"]
         assert "default_risk_band" not in mapping
 
+        # A condition evaluation that is itself unknown must remain distinct
+        # from a definitive no-match. The concrete fallback behavior remains
+        # policy-defined and implementation-neutral.
+        assert isinstance(mapping.get("condition_unknown_behavior"), str)
+        assert mapping["condition_unknown_behavior"]
+        assert mapping["condition_unknown_behavior"] != mapping["no_match_behavior"]
+
         # Overlapping conditions must resolve deterministically. Priority
         # identity alone is insufficient unless the policy also states how
         # priorities are interpreted and how matching terminates.
@@ -241,6 +248,7 @@ def _active_mapping_with_rules(rules: list[dict]) -> dict:
         "status": "active",
         "deterministic": True,
         "no_match_behavior": "policy_defined",
+        "condition_unknown_behavior": "condition_unknown_policy_defined",
         "resolution_strategy": "first_match_by_priority",
         "priority_order": "ascending",
         "rules": rules,
@@ -262,8 +270,8 @@ def test_active_rules_have_unique_identity_priority_condition_and_valid_band() -
 def test_active_rules_reject_duplicate_rule_ids() -> None:
     data = _active_mapping_with_rules(
         [
-            {"rule_id": "rule-1", "priority": 10, "then": "low"},
-            {"rule_id": "rule-1", "priority": 20, "then": "medium"},
+            _active_rule("rule-1", 10, "low"),
+            _active_rule("rule-1", 20, "medium"),
         ]
     )
 
@@ -403,3 +411,36 @@ def test_active_mapping_resolution_is_independent_of_numeric_thresholds() -> Non
 
     _assert_risk_policy_contract(data)
     assert "thresholds" not in data["mapping"]
+
+
+def test_active_mapping_requires_explicit_condition_unknown_behavior() -> None:
+    data = _active_mapping_with_rules(
+        [_active_rule("rule-1", 10, "low")]
+    )
+    data["mapping"].pop("condition_unknown_behavior")
+
+    with pytest.raises(AssertionError):
+        _assert_risk_policy_contract(data)
+
+
+def test_active_mapping_does_not_collapse_condition_unknown_into_no_match() -> None:
+    data = _active_mapping_with_rules(
+        [_active_rule("rule-1", 10, "low")]
+    )
+    data["mapping"]["condition_unknown_behavior"] = data["mapping"]["no_match_behavior"]
+
+    with pytest.raises(AssertionError):
+        _assert_risk_policy_contract(data)
+
+
+def test_condition_parameters_are_structural_not_executable_policy_code() -> None:
+    data = _active_mapping_with_rules(
+        [_active_rule("rule-1", 10, "low")]
+    )
+    condition = data["mapping"]["rules"][0]["condition"]
+
+    assert isinstance(condition["type"], str)
+    assert isinstance(condition["parameters"], dict)
+    assert "expression" not in condition
+    assert "script" not in condition
+    assert "code" not in condition
