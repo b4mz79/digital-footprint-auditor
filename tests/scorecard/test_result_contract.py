@@ -104,6 +104,8 @@ def _assert_scorecard_result_contract(data: dict[str, Any]) -> None:
     assert isinstance(policy_refs, dict)
     assert isinstance(policy_refs.get("risk_policy"), str)
     assert policy_refs["risk_policy"]
+    assert isinstance(policy_refs.get("risk_policy_version"), str)
+    assert policy_refs["risk_policy_version"]
 
     # Contributions are stage-specific additive decomposition details. They
     # must not be assumed to sum to the reported score when a later affine
