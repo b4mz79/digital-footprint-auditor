@@ -102,6 +102,12 @@ def _assert_risk_policy_contract(data: dict) -> None:
         assert isinstance(mapping.get("no_match_behavior"), str)
         assert mapping["no_match_behavior"]
         assert "default_risk_band" not in mapping
+
+        # Overlapping conditions must resolve deterministically. Priority
+        # identity alone is insufficient unless the policy also states how
+        # priorities are interpreted and how matching terminates.
+        assert mapping.get("resolution_strategy") == "first_match_by_priority"
+        assert mapping.get("priority_order") == "ascending"
     else:
         assert "rules" not in mapping
         assert "deterministic" not in mapping
@@ -235,6 +241,8 @@ def _active_mapping_with_rules(rules: list[dict]) -> dict:
         "status": "active",
         "deterministic": True,
         "no_match_behavior": "policy_defined",
+        "resolution_strategy": "first_match_by_priority",
+        "priority_order": "ascending",
         "rules": rules,
     }
     return data
@@ -343,3 +351,65 @@ def test_active_mapping_keeps_no_match_behavior_implementation_neutral() -> None
     data["mapping"]["no_match_behavior"] = "future-explicit-policy"
 
     _assert_risk_policy_contract(data)
+
+
+def test_active_mapping_requires_explicit_resolution_strategy() -> None:
+    data = _active_mapping_with_rules(
+        [_active_rule("rule-1", 10, "low")]
+    )
+    data["mapping"].pop("resolution_strategy")
+
+    with pytest.raises(AssertionError):
+        _assert_risk_policy_contract(data)
+
+
+def test_active_mapping_requires_explicit_priority_order() -> None:
+    data = _active_mapping_with_rules(
+        [_active_rule("rule-1", 10, "low")]
+    )
+    data["mapping"].pop("priority_order")
+
+    with pytest.raises(AssertionError):
+        _assert_risk_policy_contract(data)
+
+
+def test_active_mapping_rejects_ambiguous_resolution_strategy() -> None:
+    data = _active_mapping_with_rules(
+        [_active_rule("rule-1", 10, "low")]
+    )
+    data["mapping"]["resolution_strategy"] = "any_match"
+
+    with pytest.raises(AssertionError):
+        _assert_risk_policy_contract(data)
+
+
+def test_active_mapping_rejects_ambiguous_priority_order() -> None:
+    data = _active_mapping_with_rules(
+        [_active_rule("rule-1", 10, "low")]
+    )
+    data["mapping"]["priority_order"] = "unspecified"
+
+    with pytest.raises(AssertionError):
+        _assert_risk_policy_contract(data)
+
+
+def test_active_mapping_resolution_is_independent_of_numeric_thresholds() -> None:
+    data = _active_mapping_with_rules(
+        [
+            _active_rule("rule-1", 10, "low"),
+            _active_rule("rule-2", 100, "medium"),
+        ]
+    )
+
+    _assert_risk_policy_contract(data)
+    assert "thresholds" not in data["mapping"]
+
+        assert isinstance(mapping.get("no_match_behavior"), str)
+        assert mapping["no_match_behavior"]
+        assert "default_risk_band" not in mapping
+
+        # Overlapping conditions must resolve deterministically. Priority
+        # identity alone is insufficient unless the policy also states how
+        # priorities are interpreted and how matching terminates.
+        assert mapping.get("resolution_strategy") == "first_match_by_priority"
+        assert mapping.get("priority_order") == "ascending"
