@@ -19,6 +19,27 @@
       }
     },
     {
+      "measurement_id": "measurement-security-evidence-001",
+      "kpi_id": "relevant_security_evidence",
+      "measurement_type": "quantitative",
+      "unit": "count",
+      "value": 4,
+      "state": "observed",
+      "source": "contextual_filter_dump",
+      "observed_at": "2026-10-07T00:00:00+07:00",
+      "evidence_ids": [
+        "evidence-security-1"
+      ],
+      "provenance": {
+        "method": "contextual_security_evidence_count",
+        "method_version": "1",
+        "derivation": "derived",
+        "input_refs": [
+          "evidence-security-1"
+        ]
+      }
+    },
+    {
       "measurement_id": "measurement-url-state-001",
       "kpi_id": "url_accessibility_state",
       "measurement_type": "categorical",
@@ -27,12 +48,16 @@
       "state": "observed",
       "source": "evidence_verification",
       "observed_at": "2026-10-07T00:00:01+07:00",
-      "evidence_ids": ["evidence-security-1"],
+      "evidence_ids": [
+        "evidence-security-1"
+      ],
       "provenance": {
         "method": "url_accessibility_verification",
         "method_version": "1",
         "derivation": "derived",
-        "input_refs": ["evidence-security-1"]
+        "input_refs": [
+          "evidence-security-1"
+        ]
       }
     },
     {
@@ -48,12 +73,16 @@
       "state": "observed",
       "source": "evidence_verification",
       "observed_at": "2026-10-07T00:00:02+07:00",
-      "evidence_ids": ["evidence-security-1"],
+      "evidence_ids": [
+        "evidence-security-1"
+      ],
       "provenance": {
         "method": "url_accessibility_distribution",
         "method_version": "1",
         "derivation": "derived",
-        "input_refs": ["evidence-security-1"]
+        "input_refs": [
+          "evidence-security-1"
+        ]
       }
     },
     {
