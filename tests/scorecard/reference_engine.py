@@ -118,10 +118,25 @@ def evaluate_formula(
             lineage=lineage,
             contributions=contributions,
             contribution_details=contribution_details,
+            coverage=0.0,
         )
 
     if left.value is None or right.value is None:
-        raise ValueError("observed formula requires numeric values")
+        raise ValueError("formula requires numeric values")
+
+    input_coverages = [
+        1.0 if result.state == "observed" else result.coverage
+        for result in (left, right)
+    ]
+    if any(coverage is None for coverage in input_coverages):
+        raise ValueError("partial formula input requires coverage")
+    normalized_coverages = [
+        _numeric(coverage, label="formula input coverage")
+        for coverage in input_coverages
+    ]
+    if any(coverage < 0.0 or coverage > 1.0 for coverage in normalized_coverages):
+        raise ValueError("formula input coverage must be within [0, 1]")
+    coverage = min(normalized_coverages)
 
     if operation == "sum":
         value = left.value + right.value
@@ -140,12 +155,14 @@ def evaluate_formula(
     else:
         raise ValueError(f"Unsupported synthetic formula: {operation}")
 
+    state = "observed" if coverage == 1.0 else "partial"
     return EvalResult(
         value=_numeric(value, label=f"formula[{operation}]"),
-        state="observed",
+        state=state,
         lineage=lineage,
         contributions=contributions,
         contribution_details=contribution_details,
+        coverage=coverage,
     )
 
 
@@ -281,7 +298,14 @@ def evaluate_normalization(
     contribution_details = result.contribution_details
 
     if result.state == "unknown" or result.value is None:
-        return EvalResult(None, "unknown", lineage, contributions, contribution_details)
+        return EvalResult(None, "unknown", lineage, contributions, contribution_details, coverage=0.0)
+
+    coverage = 1.0 if result.state == "observed" else result.coverage
+    if coverage is None:
+        raise ValueError("partial normalization input requires coverage")
+    coverage = _numeric(coverage, label="normalization input coverage")
+    if coverage < 0.0 or coverage > 1.0:
+        raise ValueError("normalization input coverage must be within [0, 1]")
 
     value = _numeric(result.value, label="normalization input")
     lower = _numeric(source_min, label="source_min")
@@ -296,12 +320,14 @@ def evaluate_normalization(
         value = min(max(value, lower), upper)
 
     normalized = round((value - lower) / (upper - lower), 2)
+    state = "observed" if coverage == 1.0 else "partial"
     return EvalResult(
         value=_numeric(normalized, label="normalized score"),
-        state="observed",
+        state=state,
         lineage=lineage,
         contributions=contributions,
         contribution_details=contribution_details,
+        coverage=coverage,
     )
 
 
@@ -316,19 +342,35 @@ def evaluate_dependency(
     contributions = left.contributions + right.contributions
     contribution_details = left.contribution_details + right.contribution_details
     if left.state == "unknown" or right.state == "unknown":
-        return EvalResult(None, "unknown", lineage, contributions, contribution_details)
+        return EvalResult(None, "unknown", lineage, contributions, contribution_details, coverage=0.0)
     if left.value is None or right.value is None:
-        raise ValueError("observed dependency requires numeric values")
+        raise ValueError("dependency requires numeric values")
+
+    input_coverages = [
+        1.0 if result.state == "observed" else result.coverage
+        for result in (left, right)
+    ]
+    if any(coverage is None for coverage in input_coverages):
+        raise ValueError("partial dependency input requires coverage")
+    normalized_coverages = [
+        _numeric(coverage, label="dependency input coverage")
+        for coverage in input_coverages
+    ]
+    if any(coverage < 0.0 or coverage > 1.0 for coverage in normalized_coverages):
+        raise ValueError("dependency input coverage must be within [0, 1]")
+    coverage = min(normalized_coverages)
     if relation == "sum":
         value = left.value + right.value
     elif relation == "max":
         value = max(left.value, right.value)
     else:
         raise ValueError(f"Unsupported synthetic relation: {relation}")
+    state = "observed" if coverage == 1.0 else "partial"
     return EvalResult(
         value=_numeric(value, label=f"dependency[{relation}]"),
-        state="observed",
+        state=state,
         lineage=lineage,
         contributions=contributions,
         contribution_details=contribution_details,
+        coverage=coverage,
     )
