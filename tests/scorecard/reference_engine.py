@@ -7,7 +7,11 @@ from typing import Any, Iterable
 
 @dataclass(frozen=True, slots=True)
 class ContributionDetail:
-    """Explicit contribution lineage for compatibility tests only."""
+    """Additive contribution detail for the current calculation result.
+
+    This is narrower than lineage: it is meaningful only when the producing
+    operation admits an additive decomposition.
+    """
     kpi_id: str
     value: float
     weight: float
@@ -37,6 +41,27 @@ def _numeric(value: Any, *, label: str) -> float:
 
 def _weight(weight: Any, *, kpi_id: str) -> float:
     return _numeric(weight, label=f"weight[{kpi_id}]")
+
+
+def _scale_contribution_details(
+    details: Iterable[ContributionDetail],
+    factor: float,
+) -> tuple[ContributionDetail, ...]:
+    return tuple(
+        ContributionDetail(
+            detail.kpi_id,
+            detail.value,
+            detail.weight * factor,
+            detail.contribution * factor,
+        )
+        for detail in details
+    )
+
+
+def _details_to_contributions(
+    details: Iterable[ContributionDetail],
+) -> tuple[tuple[str, float], ...]:
+    return tuple((detail.kpi_id, detail.contribution) for detail in details)
 
 
 def _unknown_result(results: Iterable[EvalResult]) -> EvalResult:
@@ -140,19 +165,25 @@ def evaluate_formula(
 
     if operation == "sum":
         value = left.value + right.value
+        derived_details = contribution_details
     elif operation == "difference":
         value = left.value - right.value
+        derived_details = (
+            left.contribution_details
+            + _scale_contribution_details(right.contribution_details, -1.0)
+        )
     elif operation == "ratio":
         if right.value == 0:
             return EvalResult(
                 value=None,
                 state="unknown",
                 lineage=lineage,
-                contributions=contributions,
-                contribution_details=contribution_details,
+                contributions=(),
+                contribution_details=(),
                 coverage=0.0,
             )
         value = left.value / right.value
+        derived_details = ()
     else:
         raise ValueError(f"Unsupported synthetic formula: {operation}")
 
@@ -161,8 +192,8 @@ def evaluate_formula(
         value=_numeric(value, label=f"formula[{operation}]"),
         state=state,
         lineage=lineage,
-        contributions=contributions,
-        contribution_details=contribution_details,
+        contributions=_details_to_contributions(derived_details),
+        contribution_details=derived_details,
         coverage=coverage,
     )
 
@@ -246,12 +277,20 @@ def evaluate_aggregation(
             )
 
         state = "observed" if unknown_weight == 0.0 else "partial"
+        derived_details = tuple(
+            detail
+            for index, result in enumerate(results)
+            for detail in _scale_contribution_details(
+                result.contribution_details, numeric_weights[index]
+            )
+            if result.value is not None and result.state != "unknown"
+        )
         return EvalResult(
             value=_numeric(sum(weighted_values), label=f"aggregation[{operation}]"),
             state=state,
             lineage=lineage,
-            contributions=contributions,
-            contribution_details=contribution_details,
+            contributions=_details_to_contributions(derived_details),
+            contribution_details=derived_details,
             coverage=known_weight / total_weight,
             known_weight=known_weight,
             unknown_weight=unknown_weight,
@@ -277,12 +316,18 @@ def evaluate_aggregation(
     values = [_numeric(result.value, label="aggregation input") for result in results]
     if operation == "sum":
         value = sum(values)
+        derived_details = contribution_details
     elif operation == "mean":
         value = sum(values) / len(values)
+        derived_details = _scale_contribution_details(
+            contribution_details, 1.0 / len(values)
+        )
     elif operation == "min":
         value = min(values)
+        derived_details = ()
     elif operation == "max":
         value = max(values)
+        derived_details = ()
     else:
         raise ValueError(f"Unsupported synthetic aggregation: {operation}")
 
@@ -291,8 +336,8 @@ def evaluate_aggregation(
         value=_numeric(value, label=f"aggregation[{operation}]"),
         state=state,
         lineage=lineage,
-        contributions=contributions,
-        contribution_details=contribution_details,
+        contributions=_details_to_contributions(derived_details),
+        contribution_details=derived_details,
         coverage=coverage,
     )
 
@@ -338,12 +383,14 @@ def evaluate_normalization(
 
     normalized = round((value - lower) / (upper - lower), 2)
     state = "observed" if coverage == 1.0 else "partial"
+    # Min-max normalization may introduce an affine offset, so carrying
+    # leaf additive contributions forward would be mathematically misleading.
     return EvalResult(
         value=_numeric(normalized, label="normalized score"),
         state=state,
         lineage=lineage,
-        contributions=contributions,
-        contribution_details=contribution_details,
+        contributions=(),
+        contribution_details=(),
         coverage=coverage,
     )
 
@@ -378,8 +425,10 @@ def evaluate_dependency(
     coverage = min(normalized_coverages)
     if relation == "sum":
         value = left.value + right.value
+        derived_details = contribution_details
     elif relation == "max":
         value = max(left.value, right.value)
+        derived_details = ()
     else:
         raise ValueError(f"Unsupported synthetic relation: {relation}")
     state = "observed" if coverage == 1.0 else "partial"
@@ -387,7 +436,7 @@ def evaluate_dependency(
         value=_numeric(value, label=f"dependency[{relation}]"),
         state=state,
         lineage=lineage,
-        contributions=contributions,
-        contribution_details=contribution_details,
+        contributions=_details_to_contributions(derived_details),
+        contribution_details=derived_details,
         coverage=coverage,
     )
