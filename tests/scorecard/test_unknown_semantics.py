@@ -16,6 +16,20 @@ def test_unknown_is_not_coerced_to_zero() -> None:
     assert result.state == "unknown"
     assert result.lineage == ("a", "b")
 
+def test_unknown_weighted_sum_lineage_keeps_all_declared_inputs() -> None:
+    result = evaluate_weighted_sum(
+        {
+            "a": {"unit": "count", "value": None, "state": "unknown"},
+            "b": {"unit": "count", "value": 5, "state": "observed"},
+        },
+        {"a": 0.5, "b": 0.5},
+    )
+
+    assert result.value is None
+    assert result.state == "unknown"
+    assert result.lineage == ("a", "b")
+
+
 def test_zero_weight_unknown_does_not_reduce_observed_coverage() -> None:
     observed = evaluate_weighted_sum(
         {"a": {"unit": "count", "value": 10, "state": "observed"}}, {"a": 1.0}
