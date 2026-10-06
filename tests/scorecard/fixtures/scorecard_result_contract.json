@@ -7,7 +7,7 @@
   "calculated_at": "2026-10-07T00:01:00+07:00",
   "state": "observed",
   "score": 0.76,
-  "risk_band": "medium",
+  "risk_band": "unknown",
   "dimension_results": [
     {
       "dimension_id": "digital_footprint",
