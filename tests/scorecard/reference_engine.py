@@ -6,11 +6,21 @@ from typing import Any, Iterable
 
 
 @dataclass(frozen=True, slots=True)
+class ContributionDetail:
+    """Explicit contribution lineage for compatibility tests only."""
+    kpi_id: str
+    value: float
+    weight: float
+    contribution: float
+
+
+@dataclass(frozen=True, slots=True)
 class EvalResult:
     value: float | None
     state: str
     lineage: tuple[str, ...]
     contributions: tuple[tuple[str, float], ...] = ()
+    contribution_details: tuple[ContributionDetail, ...] = ()
 
 
 def _numeric(value: Any, *, label: str) -> float:
@@ -37,6 +47,11 @@ def _unknown_result(results: Iterable[EvalResult]) -> EvalResult:
             for result in items
             for contribution in result.contributions
         ),
+        contribution_details=tuple(
+            detail
+            for result in items
+            for detail in result.contribution_details
+        ),
     )
 
 
@@ -53,6 +68,7 @@ def evaluate_weighted_sum(
     policy concerns and must remain configurable above this calculation layer.
     """
     contributions: list[tuple[str, float]] = []
+    contribution_details: list[ContributionDetail] = []
     lineage: list[str] = []
 
     for kpi_id, weight in weights.items():
@@ -68,6 +84,7 @@ def evaluate_weighted_sum(
         value = _numeric(item["value"], label=kpi_id)
         weighted = value * _weight(weight, kpi_id=kpi_id)
         contributions.append((kpi_id, weighted))
+        contribution_details.append(ContributionDetail(kpi_id, value, float(weight), weighted))
         lineage.append(kpi_id)
 
     return EvalResult(
@@ -75,6 +92,7 @@ def evaluate_weighted_sum(
         state="observed",
         lineage=tuple(lineage),
         contributions=tuple(contributions),
+        contribution_details=tuple(contribution_details),
     )
 
 
@@ -87,6 +105,7 @@ def evaluate_formula(
     """Neutral binary formula primitives for compatibility tests only."""
     lineage = tuple(sorted(set(left.lineage) | set(right.lineage)))
     contributions = left.contributions + right.contributions
+    contribution_details = left.contribution_details + right.contribution_details
 
     if left.state == "unknown" or right.state == "unknown":
         return EvalResult(
@@ -94,6 +113,7 @@ def evaluate_formula(
             state="unknown",
             lineage=lineage,
             contributions=contributions,
+            contribution_details=contribution_details,
         )
 
     if left.value is None or right.value is None:
@@ -110,6 +130,7 @@ def evaluate_formula(
                 state="unknown",
                 lineage=lineage,
                 contributions=contributions,
+                contribution_details=contribution_details,
             )
         value = left.value / right.value
     else:
@@ -120,6 +141,7 @@ def evaluate_formula(
         state="observed",
         lineage=lineage,
         contributions=contributions,
+        contribution_details=contribution_details,
     )
 
 
@@ -142,6 +164,11 @@ def evaluate_aggregation(
         contribution
         for result in results
         for contribution in result.contributions
+    )
+    contribution_details = tuple(
+        detail
+        for result in results
+        for detail in result.contribution_details
     )
 
     if operation == "sum":
@@ -170,6 +197,7 @@ def evaluate_aggregation(
         state="observed",
         lineage=lineage,
         contributions=contributions,
+        contribution_details=contribution_details,
     )
 
 
@@ -188,9 +216,10 @@ def evaluate_normalization(
     """
     lineage = result.lineage
     contributions = result.contributions
+    contribution_details = result.contribution_details
 
     if result.state == "unknown" or result.value is None:
-        return EvalResult(None, "unknown", lineage, contributions)
+        return EvalResult(None, "unknown", lineage, contributions, contribution_details)
 
     value = _numeric(result.value, label="normalization input")
     lower = _numeric(source_min, label="source_min")
@@ -210,6 +239,7 @@ def evaluate_normalization(
         state="observed",
         lineage=lineage,
         contributions=contributions,
+        contribution_details=contribution_details,
     )
 
 
@@ -222,6 +252,7 @@ def evaluate_dependency(
     """Small dependency primitive for testing UNKNOWN and lineage propagation."""
     lineage = tuple(sorted(set(left.lineage) | set(right.lineage)))
     contributions = left.contributions + right.contributions
+    contribution_details = left.contribution_details + right.contribution_details
     if left.state == "unknown" or right.state == "unknown":
         return EvalResult(None, "unknown", lineage, contributions)
     if left.value is None or right.value is None:
@@ -237,4 +268,5 @@ def evaluate_dependency(
         state="observed",
         lineage=lineage,
         contributions=contributions,
+        contribution_details=contribution_details,
     )
