@@ -66,9 +66,21 @@ def _assert_scorecard_result_contract(data: dict[str, Any]) -> None:
 
     lineage = data.get("calculation_lineage")
     assert isinstance(lineage, dict)
+    assert lineage.get("schema_version") == "scorecard-lineage-v1"
     assert isinstance(lineage.get("inputs"), list)
-    assert isinstance(lineage.get("operations"), list)
+    assert all(isinstance(item, str) and item for item in lineage["inputs"])
+    assert isinstance(lineage.get("steps"), list) and lineage["steps"]
     assert isinstance(lineage.get("output"), str) and lineage["output"]
+
+    for step in lineage["steps"]:
+        assert isinstance(step, dict)
+        assert isinstance(step.get("id"), str) and step["id"]
+        assert isinstance(step.get("operation"), str) and step["operation"]
+        assert isinstance(step.get("inputs"), list) and step["inputs"]
+        assert all(isinstance(item, str) and item for item in step["inputs"])
+        parameters = step.get("parameters")
+        assert isinstance(parameters, dict)
+        assert isinstance(step.get("output"), str) and step["output"]
 
     policy_refs = data.get("policy_refs")
     assert isinstance(policy_refs, dict)
@@ -121,3 +133,30 @@ def test_scorecard_result_does_not_treat_pre_normalization_contributions_as_fina
         rel_tol=0.0,
         abs_tol=1e-12,
     )
+
+def test_calculation_lineage_captures_replay_parameters() -> None:
+    data = _load()
+    steps = data["calculation_lineage"]["steps"]
+
+    weighted = next(step for step in steps if step["operation"] == "weighted_sum")
+    assert weighted["parameters"]["weights"] == {
+        "service_discovery_count": 0.6,
+        "relevant_security_evidence": 0.4,
+    }
+
+    normalization = next(step for step in steps if step["operation"] == "normalization")
+    assert normalization["parameters"] == {
+        "source_min": 0.0,
+        "source_max": 10.0,
+        "clamp": False,
+        "rounding": "half_even",
+        "precision": 2,
+    }
+
+
+def test_calculation_lineage_is_parameterized_not_operation_only() -> None:
+    data = _load()
+    lineage = data["calculation_lineage"]
+
+    assert "operations" not in lineage
+    assert all(step.get("parameters") for step in lineage["steps"])
