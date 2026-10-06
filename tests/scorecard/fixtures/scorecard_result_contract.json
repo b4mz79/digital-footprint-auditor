@@ -1,0 +1,37 @@
+{
+  "schema_version": "scorecard-result-v1",
+  "result_id": "result-synthetic-basic-001",
+  "assessment_id": "synthetic-basic",
+  "scorecard_id": "synthetic-scorecard",
+  "scorecard_version": "synthetic-v1",
+  "calculated_at": "2026-10-07T00:01:00+07:00",
+  "state": "observed",
+  "score": 0.76,
+  "risk_band": "medium",
+  "dimension_results": [
+    {
+      "dimension_id": "digital_footprint",
+      "state": "observed",
+      "score": 0.70
+    }
+  ],
+  "contributions": [
+    {
+      "kpi_id": "service_discovery_count",
+      "value": 10.0,
+      "weight": 0.6,
+      "contribution": 0.6
+    }
+  ],
+  "measurement_refs": [
+    "measurement-service-count-001"
+  ],
+  "calculation_lineage": {
+    "inputs": ["measurement-service-count-001"],
+    "operations": ["weighted_sum", "normalization"],
+    "output": "score"
+  },
+  "policy_refs": {
+    "score_policy": "synthetic-v1"
+  }
+}
