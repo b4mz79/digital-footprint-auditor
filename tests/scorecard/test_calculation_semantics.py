@@ -589,7 +589,7 @@ def test_difference_flips_right_hand_contribution_sign() -> None:
         {"b": {"unit": "count", "value": 4, "state": "observed"}}, {"b": 0.4}
     )
     result = evaluate_formula(left, right, operation="difference")
-    assert result.value == 5.2
+    assert result.value == 4.4
     assert result.contribution_details == (
         ContributionDetail("a", 10.0, 0.6, 6.0),
         ContributionDetail("b", 4.0, -0.4, -1.6),
