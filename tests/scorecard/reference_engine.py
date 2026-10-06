@@ -194,12 +194,25 @@ def evaluate_aggregation(
 
         for index, result in enumerate(results):
             weight = numeric_weights[index]
-            is_unknown = result.state == "unknown" or result.value is None
-            if is_unknown:
+            if result.value is None or result.state == "unknown":
                 unknown_weight += weight
                 continue
+
             value = _numeric(result.value, label="aggregation input")
-            known_weight += weight
+            if result.state == "partial":
+                result_coverage = result.coverage
+                if result_coverage is None:
+                    raise ValueError("partial aggregation input requires coverage")
+                result_coverage = _numeric(
+                    result_coverage, label="partial input coverage"
+                )
+                if result_coverage < 0.0 or result_coverage > 1.0:
+                    raise ValueError("partial input coverage must be within [0, 1]")
+                known_weight += weight * result_coverage
+                unknown_weight += weight * (1.0 - result_coverage)
+            else:
+                known_weight += weight
+
             weighted_values.append(value * weight)
 
         if known_weight == 0.0:
