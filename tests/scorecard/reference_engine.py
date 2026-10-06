@@ -173,6 +173,46 @@ def evaluate_aggregation(
     )
 
 
+def evaluate_normalization(
+    result: EvalResult,
+    *,
+    source_min: float,
+    source_max: float,
+    clamp: bool = False,
+) -> EvalResult:
+    """Normalize an observed result to the canonical [0.0, 1.0] range.
+
+    This is a neutral calculation primitive for compatibility tests only.
+    Source bounds and out-of-range behavior are explicit configuration; the
+    primitive does not infer score direction or risk thresholds.
+    """
+    lineage = result.lineage
+    contributions = result.contributions
+
+    if result.state == "unknown" or result.value is None:
+        return EvalResult(None, "unknown", lineage, contributions)
+
+    value = _numeric(result.value, label="normalization input")
+    lower = _numeric(source_min, label="source_min")
+    upper = _numeric(source_max, label="source_max")
+
+    if lower >= upper:
+        raise ValueError("source_min must be less than source_max")
+
+    if value < lower or value > upper:
+        if not clamp:
+            raise ValueError("normalization input is outside source range")
+        value = min(max(value, lower), upper)
+
+    normalized = (value - lower) / (upper - lower)
+    return EvalResult(
+        value=_numeric(normalized, label="normalized score"),
+        state="observed",
+        lineage=lineage,
+        contributions=contributions,
+    )
+
+
 def evaluate_dependency(
     left: EvalResult,
     right: EvalResult,
