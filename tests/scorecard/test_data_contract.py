@@ -57,3 +57,19 @@ def test_unknown_assessment_fixture_preserves_unknown_semantics() -> None:
 
 def test_interlink_fixture_matches_canonical_contract() -> None:
     _assert_assessment_contract(_load("assessment_interlink.json"))
+
+
+def test_scorecard_definition_contract_locks_canonical_score_policy() -> None:
+    data = _load("scorecard_definition_basic.json")
+    assert data["schema_version"] == "scorecard-definition-v1"
+    assert isinstance(data["scorecard_id"], str) and data["scorecard_id"]
+    assert isinstance(data["version"], str) and data["version"]
+
+    score = data["score"]
+    assert score["canonical_range"] == {"min": 0.0, "max": 1.0}
+    assert score["precision"] == 2
+    assert score["rounding"] == "half_even"
+
+    aggregation = data["aggregation"]
+    assert aggregation["operation"] == "weighted_sum"
+    assert aggregation["weights"] == {"a": 0.6, "b": 0.4}
