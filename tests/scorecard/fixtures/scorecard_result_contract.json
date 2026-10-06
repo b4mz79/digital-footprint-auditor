@@ -31,13 +31,13 @@
   ],
   "measurement_refs": [
     "measurement-service-count-001",
-    "measurement-url-state-001"
+    "measurement-security-evidence-001"
   ],
   "calculation_lineage": {
     "schema_version": "scorecard-lineage-v1",
     "inputs": [
       "measurement-service-count-001",
-      "measurement-url-state-001"
+      "measurement-security-evidence-001"
     ],
     "steps": [
       {
@@ -45,7 +45,7 @@
         "operation": "weighted_sum",
         "inputs": [
           "measurement-service-count-001",
-          "measurement-url-state-001"
+          "measurement-security-evidence-001"
         ],
         "parameters": {
           "weights": {
@@ -74,7 +74,8 @@
     "output": "score"
   },
   "policy_refs": {
-    "risk_policy": "synthetic-risk-policy-v1",
+    "risk_policy": "synthetic-risk-policy",
+    "risk_policy_version": "synthetic-v1",
     "score_policy": "synthetic-v1"
   },
   "contribution_stage": "pre_normalization"
