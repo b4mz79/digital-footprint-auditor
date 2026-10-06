@@ -153,6 +153,15 @@ def test_normalization_uses_canonical_zero_to_one_range() -> None:
     assert normalized.contributions == (("score", 75.0),)
 
 
+def test_normalization_rounds_to_two_decimal_places() -> None:
+    result = evaluate_weighted_sum(
+        {"score": {"unit": "points", "value": 1, "state": "observed"}},
+        {"score": 1.0},
+    )
+    normalized = evaluate_normalization(result, source_min=0, source_max=3)
+    assert normalized.value == 0.33
+
+
 def test_normalization_preserves_exact_boundaries() -> None:
     low = evaluate_weighted_sum(
         {"score": {"unit": "points", "value": 0, "state": "observed"}},
