@@ -57,7 +57,14 @@ class PythonJsonLogicReferenceAdapter:
             if not isinstance(weight, (int, float)) or isinstance(weight, bool):
                 raise TypeError(f"weight[{kpi_id}] must be numeric")
 
-            # python-jsonlogic 0.2.x resolves variable references using JSON Pointer\n            # semantics when the reference starts with "/". Using the bare\n            # JsonLogic reference here is parsed as a dot-like path and makes a\n            # single-segment KPI id resolve incorrectly (e.g. "a" -> [""]).\n            pointer_key = kpi_id.replace("~", "~0").replace("/", "~1")\n            expression_terms.append(\n                {"*": [{"var": f"/{pointer_key}"}, float(weight)]}\n            )
+            # python-jsonlogic 0.2.x resolves variable references using JSON
+            # Pointer semantics when the reference starts with "/". Using the
+            # bare JsonLogic reference here is parsed as a dot-like path and
+            # makes a single-segment KPI id resolve incorrectly (e.g. "a").
+            pointer_key = kpi_id.replace("~", "~0").replace("/", "~1")
+            expression_terms.append(
+                {"*": [{"var": f"/{pointer_key}"}, float(weight)]}
+            )
 
             contribution_details.append(
                 ContributionDetail(
