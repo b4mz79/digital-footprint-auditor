@@ -447,3 +447,82 @@ def test_unknown_dependency_preserves_known_contribution_details() -> None:
     assert result.value is None
     assert result.lineage == ("a", "b")
     assert result.contribution_details == (ContributionDetail("a", 10.0, 0.6, 6.0),)
+
+
+def test_formula_propagates_partial_state_and_conservative_coverage() -> None:
+    observed = evaluate_weighted_sum(
+        {"a": {"unit": "count", "value": 10, "state": "observed"}}, {"a": 1.0}
+    )
+    partial = evaluate_aggregation(
+        [
+            evaluate_weighted_sum(
+                {"b": {"unit": "count", "value": 5, "state": "observed"}}, {"b": 1.0}
+            ),
+            evaluate_weighted_sum(
+                {"c": {"unit": "count", "value": None, "state": "unknown"}}, {"c": 1.0}
+            ),
+        ],
+        operation="weighted_sum",
+        weights=[0.6, 0.4],
+    )
+    result = evaluate_formula(observed, partial, operation="sum")
+    assert result.value == 13.0
+    assert result.state == "partial"
+    assert result.coverage == 0.6
+    assert result.lineage == ("a", "b", "c")
+
+
+def test_formula_unknown_input_remains_unknown() -> None:
+    observed = evaluate_weighted_sum(
+        {"a": {"unit": "count", "value": 10, "state": "observed"}}, {"a": 1.0}
+    )
+    unknown = evaluate_weighted_sum(
+        {"b": {"unit": "count", "value": None, "state": "unknown"}}, {"b": 1.0}
+    )
+    result = evaluate_formula(observed, unknown, operation="sum")
+    assert result.value is None
+    assert result.state == "unknown"
+    assert result.coverage == 0.0
+
+
+def test_normalization_preserves_partial_state_and_coverage() -> None:
+    partial = evaluate_aggregation(
+        [
+            evaluate_weighted_sum(
+                {"score": {"unit": "points", "value": 60, "state": "observed"}},
+                {"score": 1.0},
+            ),
+            evaluate_weighted_sum(
+                {"missing": {"unit": "points", "value": None, "state": "unknown"}},
+                {"missing": 1.0},
+            ),
+        ],
+        operation="weighted_sum",
+        weights=[0.6, 0.4],
+    )
+    normalized = evaluate_normalization(partial, source_min=0, source_max=100)
+    assert normalized.value == 0.36
+    assert normalized.state == "partial"
+    assert normalized.coverage == 0.6
+
+
+def test_dependency_propagates_partial_state_and_coverage() -> None:
+    observed = evaluate_weighted_sum(
+        {"a": {"unit": "count", "value": 10, "state": "observed"}}, {"a": 1.0}
+    )
+    partial = evaluate_aggregation(
+        [
+            evaluate_weighted_sum(
+                {"b": {"unit": "count", "value": 5, "state": "observed"}}, {"b": 1.0}
+            ),
+            evaluate_weighted_sum(
+                {"c": {"unit": "count", "value": None, "state": "unknown"}}, {"c": 1.0}
+            ),
+        ],
+        operation="weighted_sum",
+        weights=[0.6, 0.4],
+    )
+    result = evaluate_dependency(observed, partial, relation="sum")
+    assert result.value == 13.0
+    assert result.state == "partial"
+    assert result.coverage == 0.6
