@@ -118,7 +118,7 @@ def test_candidate_surface_normalization_preserves_partial_semantics() -> None:
     assert result.value == 0.36
     assert result.state == "partial"
     assert result.coverage == 0.6
-    assert result.lineage == ("score", "missing")
+    assert result.lineage == ("missing", "score")
 
 
 def test_candidate_surface_dependency_preserves_partial_state_and_lineage() -> None:
