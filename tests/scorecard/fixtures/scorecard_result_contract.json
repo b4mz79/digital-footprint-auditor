@@ -74,6 +74,7 @@
     "output": "score"
   },
   "policy_refs": {
+    "risk_policy": "synthetic-risk-policy-v1",
     "score_policy": "synthetic-v1"
   },
   "contribution_stage": "pre_normalization"
