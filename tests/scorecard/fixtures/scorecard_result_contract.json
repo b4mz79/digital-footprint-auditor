@@ -34,13 +34,42 @@
     "measurement-url-state-001"
   ],
   "calculation_lineage": {
+    "schema_version": "scorecard-lineage-v1",
     "inputs": [
       "measurement-service-count-001",
       "measurement-url-state-001"
     ],
-    "operations": [
-      "weighted_sum",
-      "normalization"
+    "steps": [
+      {
+        "id": "weighted_sum-1",
+        "operation": "weighted_sum",
+        "inputs": [
+          "measurement-service-count-001",
+          "measurement-url-state-001"
+        ],
+        "parameters": {
+          "weights": {
+            "service_discovery_count": 0.6,
+            "relevant_security_evidence": 0.4
+          }
+        },
+        "output": "weighted_sum-1"
+      },
+      {
+        "id": "normalization-1",
+        "operation": "normalization",
+        "inputs": [
+          "weighted_sum-1"
+        ],
+        "parameters": {
+          "source_min": 0,
+          "source_max": 10,
+          "clamp": false,
+          "rounding": "half_even",
+          "precision": 2
+        },
+        "output": "score"
+      }
     ],
     "output": "score"
   },
