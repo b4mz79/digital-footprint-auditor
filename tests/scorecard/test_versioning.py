@@ -3,11 +3,20 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
 def _load(name: str) -> dict:
     return json.loads((FIXTURES / name).read_text(encoding="utf-8"))
+
+
+def _assert_result_version_matches_assessment(
+    assessment: dict, result: dict
+) -> None:
+    assert result["assessment_id"] == assessment["assessment_id"]
+    assert result["scorecard_version"] == assessment["scorecard_definition_version"]
 
 
 def test_scorecard_definition_version_is_explicit() -> None:
@@ -28,15 +37,13 @@ def test_result_binds_to_the_assessment_definition_version() -> None:
     assessment = _load("assessment_basic.json")
     result = _load("scorecard_result_contract.json")
 
-    assert result["assessment_id"] == assessment["assessment_id"]
-    assert result["scorecard_version"] == assessment["scorecard_definition_version"]
+    _assert_result_version_matches_assessment(assessment, result)
 
 
-def test_result_version_is_not_allowed_to_drift_from_replay_definition() -> None:
+def test_result_version_drift_is_rejected_for_the_same_assessment() -> None:
     assessment = _load("assessment_basic.json")
     result = _load("scorecard_result_contract.json")
-
     result["scorecard_version"] = "synthetic-v2"
 
-    assert result["assessment_id"] == assessment["assessment_id"]
-    assert result["scorecard_version"] != assessment["scorecard_definition_version"]
+    with pytest.raises(AssertionError):
+        _assert_result_version_matches_assessment(assessment, result)
