@@ -150,6 +150,7 @@ def evaluate_formula(
                 lineage=lineage,
                 contributions=contributions,
                 contribution_details=contribution_details,
+                coverage=0.0,
             )
         value = left.value / right.value
     else:
@@ -259,6 +260,20 @@ def evaluate_aggregation(
     if any(result.state == "unknown" or result.value is None for result in results):
         return _unknown_result(results)
 
+    input_coverages = [
+        1.0 if result.state == "observed" else result.coverage
+        for result in results
+    ]
+    if any(coverage is None for coverage in input_coverages):
+        raise ValueError("partial aggregation input requires coverage")
+    normalized_coverages = [
+        _numeric(coverage, label="aggregation input coverage")
+        for coverage in input_coverages
+    ]
+    if any(coverage < 0.0 or coverage > 1.0 for coverage in normalized_coverages):
+        raise ValueError("aggregation input coverage must be within [0, 1]")
+    coverage = min(normalized_coverages)
+
     values = [_numeric(result.value, label="aggregation input") for result in results]
     if operation == "sum":
         value = sum(values)
@@ -271,12 +286,14 @@ def evaluate_aggregation(
     else:
         raise ValueError(f"Unsupported synthetic aggregation: {operation}")
 
+    state = "observed" if coverage == 1.0 else "partial"
     return EvalResult(
         value=_numeric(value, label=f"aggregation[{operation}]"),
-        state="observed",
+        state=state,
         lineage=lineage,
         contributions=contributions,
         contribution_details=contribution_details,
+        coverage=coverage,
     )
 
 
