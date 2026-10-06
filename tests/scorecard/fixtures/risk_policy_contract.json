@@ -1,0 +1,33 @@
+{
+  "schema_version": "risk-policy-v1",
+  "risk_policy_id": "synthetic-risk-policy",
+  "version": "synthetic-v1",
+  "scope": {
+    "scorecard_id": "synthetic-scorecard",
+    "scorecard_version": "synthetic-v1"
+  },
+  "input": {
+    "score_range": {
+      "min": 0.0,
+      "max": 1.0
+    },
+    "states": [
+      "observed",
+      "partial",
+      "unknown"
+    ]
+  },
+  "output": {
+    "risk_bands": [
+      "high",
+      "medium",
+      "low",
+      "unknown"
+    ]
+  },
+  "unknown_behavior": "propagate",
+  "mapping": {
+    "type": "configured_rules",
+    "deterministic": true
+  }
+}
