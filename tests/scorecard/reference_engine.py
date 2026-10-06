@@ -40,10 +40,6 @@ def _unknown_result(results: Iterable[EvalResult]) -> EvalResult:
     )
 
 
-def _require_observed(results: list[EvalResult]) -> None:
-    if any(result.state == "unknown" or result.value is None for result in results):
-        raise ValueError("observed aggregation requires known numeric values")
-
 
 def evaluate_weighted_sum(
     measurements: dict[str, dict[str, Any]],
@@ -125,7 +121,7 @@ def evaluate_aggregation(
     results: list[EvalResult],
     *,
     operation: str,
-    weights: dict[str, float] | None = None,
+    weights: list[float] | None = None,
 ) -> EvalResult:
     """Neutral aggregation primitives for compatibility tests only."""
     if not results:
@@ -157,7 +153,7 @@ def evaluate_aggregation(
             raise ValueError("weighted_sum weights must match result count")
         weighted_values: list[float] = []
         for index, result in enumerate(results):
-            weight = _numeric(weights.get(str(index)), label=f"weight[{index}]")
+            weight = _numeric(weights[index], label=f"weight[{index}]")
             weighted_values.append(result.value * weight)  # type: ignore[operator]
         value = sum(weighted_values)
     else:
@@ -178,4 +174,21 @@ def evaluate_dependency(
     relation: str,
 ) -> EvalResult:
     """Small dependency primitive for testing UNKNOWN and lineage propagation."""
-    return evaluate_formula(left, right, operation=relation if relation != "max" else "max")
+    lineage = tuple(sorted(set(left.lineage) | set(right.lineage)))
+    contributions = left.contributions + right.contributions
+    if left.state == "unknown" or right.state == "unknown":
+        return EvalResult(None, "unknown", lineage, contributions)
+    if left.value is None or right.value is None:
+        raise ValueError("observed dependency requires numeric values")
+    if relation == "sum":
+        value = left.value + right.value
+    elif relation == "max":
+        value = max(left.value, right.value)
+    else:
+        raise ValueError(f"Unsupported synthetic relation: {relation}")
+    return EvalResult(
+        value=_numeric(value, label=f"dependency[{relation}]"),
+        state="observed",
+        lineage=lineage,
+        contributions=contributions,
+    )
