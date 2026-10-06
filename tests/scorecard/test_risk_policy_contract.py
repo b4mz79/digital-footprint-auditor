@@ -74,7 +74,15 @@ def _assert_risk_policy_contract(data: dict) -> None:
     mapping = data.get("mapping")
     assert isinstance(mapping, dict)
     assert mapping.get("type") == "configured_rules"
-    assert mapping.get("deterministic") is True
+    assert mapping.get("status") in {"definition_only", "active"}
+    if mapping["status"] == "active":
+        assert mapping.get("deterministic") is True
+        rules = mapping.get("rules")
+        assert isinstance(rules, list)
+        assert rules
+    else:
+        assert "rules" not in mapping
+        assert "deterministic" not in mapping
 
 
 def test_risk_policy_contract_is_explicit_and_versioned() -> None:
@@ -110,14 +118,22 @@ def test_risk_policy_preserves_unknown_as_unknown() -> None:
     assert data["unknown_behavior"] == "propagate"
 
 
-def test_risk_policy_mapping_is_configured_and_deterministic() -> None:
+def test_risk_policy_mapping_has_explicit_maturity_state() -> None:
+    data = _load()
+    _assert_risk_policy_contract(data)
+
+    assert data["mapping"]["status"] == "definition_only"
+
+
+def test_risk_policy_definition_only_does_not_claim_executable_rules() -> None:
     data = _load()
     _assert_risk_policy_contract(data)
 
     mapping = data["mapping"]
 
-    assert mapping["type"] == "configured_rules"
-    assert mapping["deterministic"] is True
+    assert mapping["status"] == "definition_only"
+    assert "rules" not in mapping
+    assert "deterministic" not in mapping
 
 
 def test_risk_policy_contract_does_not_define_thresholds() -> None:
@@ -152,8 +168,20 @@ def test_risk_policy_rejects_unknown_as_low_semantics() -> None:
         _assert_risk_policy_contract(data)
 
 
-def test_risk_policy_rejects_nondeterministic_mapping() -> None:
+def test_risk_policy_rejects_active_mapping_without_rules() -> None:
     data = _load()
+    data["mapping"]["status"] = "active"
+
+    with pytest.raises(AssertionError):
+        _assert_risk_policy_contract(data)
+
+
+def test_risk_policy_rejects_nondeterministic_active_mapping() -> None:
+    data = _load()
+    data["mapping"]["status"] = "active"
+    data["mapping"]["rules"] = [
+        {"rule_id": "synthetic-rule-1", "then": "unknown"}
+    ]
     data["mapping"]["deterministic"] = False
 
     with pytest.raises(AssertionError):
