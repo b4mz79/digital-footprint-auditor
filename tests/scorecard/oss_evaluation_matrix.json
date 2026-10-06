@@ -1,0 +1,52 @@
+{
+  "schema_version": "scorecard-oss-evaluation-v1",
+  "status": "evaluation_ready",
+  "comparison_scope": [
+    "calculation_semantics",
+    "unknown_partial_semantics",
+    "determinism",
+    "lineage",
+    "contribution",
+    "version_isolation",
+    "adapter_complexity",
+    "dependency_cost",
+    "operational_cost"
+  ],
+  "candidates": [
+    {
+      "id": "native-reference",
+      "kind": "reference",
+      "status": "baseline"
+    },
+    {
+      "id": "gorules-zen",
+      "kind": "oss-candidate",
+      "status": "not_evaluated"
+    },
+    {
+      "id": "python-jsonlogic",
+      "kind": "oss-candidate",
+      "status": "not_evaluated"
+    },
+    {
+      "id": "simpleeval",
+      "kind": "oss-candidate",
+      "status": "not_evaluated"
+    }
+  ],
+  "verdicts": {
+    "native-reference": "baseline_only",
+    "gorules-zen": "not_evaluated",
+    "python-jsonlogic": "not_evaluated",
+    "simpleeval": "not_evaluated"
+  },
+  "decision_rule": {
+    "compatibility_gate": "candidate_must_match_domain_semantics",
+    "adoption_gate": "compatibility_pass_plus_acceptable_operational_tradeoffs",
+    "reference_engine_is_not_an_adoption_candidate": true
+  },
+  "evidence": {
+    "compatibility": "tests/scorecard",
+    "candidate_specific_evidence": "must_be_recorded_during_evaluation"
+  }
+}
