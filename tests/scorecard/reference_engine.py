@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
-from typing import Any
+from typing import Any, Iterable
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,6 +24,25 @@ def _numeric(value: Any, *, label: str) -> float:
 
 def _weight(weight: Any, *, kpi_id: str) -> float:
     return _numeric(weight, label=f"weight[{kpi_id}]")
+
+
+def _unknown_result(results: Iterable[EvalResult]) -> EvalResult:
+    items = tuple(results)
+    return EvalResult(
+        value=None,
+        state="unknown",
+        lineage=tuple(sorted({item for result in items for item in result.lineage})),
+        contributions=tuple(
+            contribution
+            for result in items
+            for contribution in result.contributions
+        ),
+    )
+
+
+def _require_observed(results: list[EvalResult]) -> None:
+    if any(result.state == "unknown" or result.value is None for result in results):
+        raise ValueError("observed aggregation requires known numeric values")
 
 
 def evaluate_weighted_sum(
@@ -57,6 +76,101 @@ def evaluate_weighted_sum(
     )
 
 
+def evaluate_formula(
+    left: EvalResult,
+    right: EvalResult,
+    *,
+    operation: str,
+) -> EvalResult:
+    """Neutral binary formula primitives for compatibility tests only."""
+    lineage = tuple(sorted(set(left.lineage) | set(right.lineage)))
+    contributions = left.contributions + right.contributions
+
+    if left.state == "unknown" or right.state == "unknown":
+        return EvalResult(
+            value=None,
+            state="unknown",
+            lineage=lineage,
+            contributions=contributions,
+        )
+
+    if left.value is None or right.value is None:
+        raise ValueError("observed formula requires numeric values")
+
+    if operation == "sum":
+        value = left.value + right.value
+    elif operation == "difference":
+        value = left.value - right.value
+    elif operation == "ratio":
+        if right.value == 0:
+            return EvalResult(
+                value=None,
+                state="unknown",
+                lineage=lineage,
+                contributions=contributions,
+            )
+        value = left.value / right.value
+    else:
+        raise ValueError(f"Unsupported synthetic formula: {operation}")
+
+    return EvalResult(
+        value=_numeric(value, label=f"formula[{operation}]"),
+        state="observed",
+        lineage=lineage,
+        contributions=contributions,
+    )
+
+
+def evaluate_aggregation(
+    results: list[EvalResult],
+    *,
+    operation: str,
+    weights: dict[str, float] | None = None,
+) -> EvalResult:
+    """Neutral aggregation primitives for compatibility tests only."""
+    if not results:
+        raise ValueError("aggregation requires at least one result")
+
+    if any(result.state == "unknown" or result.value is None for result in results):
+        return _unknown_result(results)
+
+    values = [_numeric(result.value, label="aggregation input") for result in results]
+    lineage = tuple(sorted({item for result in results for item in result.lineage}))
+    contributions = tuple(
+        contribution
+        for result in results
+        for contribution in result.contributions
+    )
+
+    if operation == "sum":
+        value = sum(values)
+    elif operation == "mean":
+        value = sum(values) / len(values)
+    elif operation == "min":
+        value = min(values)
+    elif operation == "max":
+        value = max(values)
+    elif operation == "weighted_sum":
+        if weights is None:
+            raise ValueError("weighted_sum aggregation requires weights")
+        if len(weights) != len(results):
+            raise ValueError("weighted_sum weights must match result count")
+        weighted_values: list[float] = []
+        for index, result in enumerate(results):
+            weight = _numeric(weights.get(str(index)), label=f"weight[{index}]")
+            weighted_values.append(result.value * weight)  # type: ignore[operator]
+        value = sum(weighted_values)
+    else:
+        raise ValueError(f"Unsupported synthetic aggregation: {operation}")
+
+    return EvalResult(
+        value=_numeric(value, label=f"aggregation[{operation}]"),
+        state="observed",
+        lineage=lineage,
+        contributions=contributions,
+    )
+
+
 def evaluate_dependency(
     left: EvalResult,
     right: EvalResult,
@@ -64,28 +178,4 @@ def evaluate_dependency(
     relation: str,
 ) -> EvalResult:
     """Small dependency primitive for testing UNKNOWN and lineage propagation."""
-    lineage = tuple(sorted(set(left.lineage) | set(right.lineage)))
-    if left.state == "unknown" or right.state == "unknown":
-        return EvalResult(
-            value=None,
-            state="unknown",
-            lineage=lineage,
-            contributions=left.contributions + right.contributions,
-        )
-
-    if left.value is None or right.value is None:
-        raise ValueError("observed dependency requires numeric values")
-
-    if relation == "sum":
-        value = left.value + right.value
-    elif relation == "max":
-        value = max(left.value, right.value)
-    else:
-        raise ValueError(f"Unsupported synthetic relation: {relation}")
-
-    return EvalResult(
-        value=value,
-        state="observed",
-        lineage=lineage,
-        contributions=left.contributions + right.contributions,
-    )
+    return evaluate_formula(left, right, operation=relation if relation != "max" else "max")
