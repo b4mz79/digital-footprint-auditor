@@ -20,13 +20,13 @@
       "kpi_id": "service_discovery_count",
       "value": 10,
       "weight": 0.6,
-      "contribution": 0.6
+      "contribution": 6
     },
     {
       "kpi_id": "relevant_security_evidence",
       "value": 4,
       "weight": 0.4,
-      "contribution": 0.16
+      "contribution": 1.6
     }
   ],
   "measurement_refs": [
@@ -46,5 +46,6 @@
   },
   "policy_refs": {
     "score_policy": "synthetic-v1"
-  }
+  },
+  "contribution_stage": "pre_normalization"
 }
