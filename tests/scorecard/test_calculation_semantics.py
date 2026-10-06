@@ -31,6 +31,18 @@ def test_reference_engine_keeps_weighted_contributions() -> None:
     assert result.contributions == (("a", 20.0), ("b", -2.0))
 
 
+def test_weights_are_not_implicitly_normalized() -> None:
+    result = evaluate_weighted_sum(_measurements(), {"a": 2.0, "b": 3.0})
+    assert result.value == 32.0
+    assert result.contributions == (("a", 20.0), ("b", 12.0))
+
+
+def test_zero_weight_is_a_valid_zero_contribution() -> None:
+    result = evaluate_weighted_sum(_measurements(), {"a": 0.0, "b": 1.0})
+    assert result.value == 4.0
+    assert result.contributions == (("a", 0.0), ("b", 4.0))
+
+
 def test_reference_engine_dependency_preserves_lineage_and_contributions() -> None:
     left = evaluate_weighted_sum(_measurements(), {"a": 1.0})
     right = evaluate_weighted_sum(_measurements(), {"b": 1.0})
