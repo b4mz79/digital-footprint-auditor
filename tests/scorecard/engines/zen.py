@@ -43,12 +43,7 @@ class ZenReferenceAdapter:
     def _graph(expression: str) -> dict[str, Any]:
         return {
             "nodes": [
-                {
-                    "id": "scorecard-input",
-                    "type": "inputNode",
-                    "position": {"x": 180, "y": 240},
-                    "name": "Request",
-                },
+                {"id": "scorecard-input", "type": "inputNode", "position": {"x": 180, "y": 240}, "name": "Request"},
                 {
                     "id": "scorecard-expression",
                     "type": "expressionNode",
@@ -56,34 +51,15 @@ class ZenReferenceAdapter:
                     "name": "weighted_sum",
                     "content": {
                         "expressions": [
-                            {
-                                "id": "scorecard-expression-value",
-                                "key": "score",
-                                "value": expression,
-                            }
+                            {"id": "scorecard-expression-value", "key": "score", "value": expression}
                         ]
                     },
                 },
-                {
-                    "id": "scorecard-output",
-                    "type": "outputNode",
-                    "position": {"x": 780, "y": 240},
-                    "name": "Response",
-                },
+                {"id": "scorecard-output", "type": "outputNode", "position": {"x": 780, "y": 240}, "name": "Response"},
             ],
             "edges": [
-                {
-                    "id": "scorecard-edge-input",
-                    "sourceId": "scorecard-input",
-                    "type": "edge",
-                    "targetId": "scorecard-expression",
-                },
-                {
-                    "id": "scorecard-edge-output",
-                    "sourceId": "scorecard-expression",
-                    "type": "edge",
-                    "targetId": "scorecard-output",
-                },
+                {"id": "scorecard-edge-input", "sourceId": "scorecard-input", "type": "edge", "targetId": "scorecard-expression"},
+                {"id": "scorecard-edge-output", "sourceId": "scorecard-expression", "type": "edge", "targetId": "scorecard-output"},
             ],
         }
 
@@ -107,8 +83,6 @@ class ZenReferenceAdapter:
             value = _numeric(item["value"], label=kpi_id)
             known.append((kpi_id, value, numeric_weight))
 
-        # UNKNOWN semantics belong to our domain contract, not to ZEN arithmetic.
-        # Do not coerce missing values into zero.
         if unknown:
             details = tuple(
                 ContributionDetail(kpi_id, value, weight, value * weight)
@@ -118,9 +92,7 @@ class ZenReferenceAdapter:
                 value=None,
                 state="unknown",
                 lineage=lineage,
-                contributions=tuple(
-                    (detail.kpi_id, detail.contribution) for detail in details
-                ),
+                contributions=tuple((d.kpi_id, d.contribution) for d in details),
                 contribution_details=details,
             )
 
@@ -134,7 +106,6 @@ class ZenReferenceAdapter:
         response = decision.evaluate(
             {kpi_id: value for kpi_id, value, _weight in known}
         )
-
         raw_result = response.get("result") if isinstance(response, dict) else None
         if not isinstance(raw_result, dict) or "score" not in raw_result:
             raise ValueError(f"unexpected ZEN response: {response!r}")
@@ -148,11 +119,6 @@ class ZenReferenceAdapter:
             value=value,
             state="observed",
             lineage=lineage,
-            contributions=tuple(
-                (detail.kpi_id, detail.contribution) for detail in details
-            ),
+            contributions=tuple((d.kpi_id, d.contribution) for d in details),
             contribution_details=details,
-            coverage=1.0,
-            known_weight=sum(weight for _kpi, _value, weight in known),
-            unknown_weight=0.0,
         )
