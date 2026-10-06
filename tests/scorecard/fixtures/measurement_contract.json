@@ -39,7 +39,7 @@
       "measurement_id": "measurement-url-distribution-001",
       "kpi_id": "url_accessibility_state",
       "measurement_type": "distribution",
-      "unit": "verification_state",
+      "unit": "count",
       "value": {
         "reachable": 7,
         "unreachable": 1,
