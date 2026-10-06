@@ -255,7 +255,7 @@ def evaluate_dependency(
     contributions = left.contributions + right.contributions
     contribution_details = left.contribution_details + right.contribution_details
     if left.state == "unknown" or right.state == "unknown":
-        return EvalResult(None, "unknown", lineage, contributions)
+        return EvalResult(None, "unknown", lineage, contributions, contribution_details)
     if left.value is None or right.value is None:
         raise ValueError("observed dependency requires numeric values")
     if relation == "sum":
