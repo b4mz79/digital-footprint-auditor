@@ -526,3 +526,38 @@ def test_dependency_propagates_partial_state_and_coverage() -> None:
     assert result.value == 13.0
     assert result.state == "partial"
     assert result.coverage == 0.6
+
+
+def test_non_weighted_aggregation_propagates_partial_state_and_coverage() -> None:
+    observed = evaluate_weighted_sum(
+        {"a": {"unit": "count", "value": 10, "state": "observed"}}, {"a": 1.0}
+    )
+    partial = evaluate_aggregation(
+        [
+            evaluate_weighted_sum(
+                {"b": {"unit": "count", "value": 5, "state": "observed"}}, {"b": 1.0}
+            ),
+            evaluate_weighted_sum(
+                {"c": {"unit": "count", "value": None, "state": "unknown"}}, {"c": 1.0}
+            ),
+        ],
+        operation="weighted_sum",
+        weights=[0.6, 0.4],
+    )
+    result = evaluate_aggregation([observed, partial], operation="sum")
+    assert result.value == 13.0
+    assert result.state == "partial"
+    assert result.coverage == 0.6
+
+
+def test_ratio_by_zero_is_unknown_with_zero_coverage() -> None:
+    left = evaluate_weighted_sum(
+        {"a": {"unit": "count", "value": 10, "state": "observed"}}, {"a": 1.0}
+    )
+    zero = evaluate_weighted_sum(
+        {"b": {"unit": "count", "value": 0, "state": "observed"}}, {"b": 1.0}
+    )
+    result = evaluate_formula(left, zero, operation="ratio")
+    assert result.value is None
+    assert result.state == "unknown"
+    assert result.coverage == 0.0
