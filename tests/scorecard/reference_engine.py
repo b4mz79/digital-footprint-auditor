@@ -79,6 +79,7 @@ def evaluate_weighted_sum(
                 state="unknown",
                 lineage=tuple(sorted({*lineage, kpi_id})),
                 contributions=tuple(contributions),
+                contribution_details=tuple(contribution_details),
             )
 
         value = _numeric(item["value"], label=kpi_id)
