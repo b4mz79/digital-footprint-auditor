@@ -1,6 +1,6 @@
 {
   "schema_version": "scorecard-oss-evaluation-v1",
-  "status": "evaluation_ready",
+  "status": "evaluation_in_progress",
   "comparison_scope": [
     "calculation_semantics",
     "unknown_partial_semantics",
@@ -21,7 +21,58 @@
     {
       "id": "gorules-zen",
       "kind": "oss-candidate",
-      "status": "not_evaluated"
+      "status": "evaluated_conditional",
+      "version": "2.1.2",
+      "compatibility": {
+        "calculation_semantics": {
+          "status": "pass",
+          "evidence": "tests/scorecard/test_zen_evaluation.py::test_zen_weighted_sum_matches_native_reference"
+        },
+        "unknown_partial_semantics": {
+          "status": "pass_with_domain_adapter",
+          "evidence": "tests/scorecard/test_zen_evaluation.py::test_zen_weighted_sum_preserves_domain_unknown_semantics",
+          "note": "UNKNOWN is intentionally handled by the Scorecard adapter before ZEN evaluation; ZEN is not allowed to coerce missing domain measurements to zero."
+        },
+        "determinism": {
+          "status": "pass",
+          "evidence": "tests/scorecard/test_zen_evaluation.py::test_zen_weighted_sum_is_deterministic_for_repeated_evaluation"
+        },
+        "lineage": {
+          "status": "pass_with_domain_adapter",
+          "evidence": "tests/scorecard/test_zen_evaluation.py::test_zen_weighted_sum_matches_native_reference",
+          "note": "Lineage is reconstructed from canonical KPI inputs by the adapter; ZEN is not the owner of Scorecard lineage."
+        },
+        "contribution": {
+          "status": "pass_with_domain_adapter",
+          "evidence": "tests/scorecard/test_zen_evaluation.py::test_zen_adapter_reconstructs_contribution_semantics_from_domain_inputs",
+          "note": "Contribution details are reconstructed from canonical inputs and weights; the engine result is treated only as the arithmetic result."
+        },
+        "version_isolation": {
+          "status": "pass_with_domain_adapter",
+          "evidence": "tests/scorecard/test_zen_evaluation.py::test_zen_adapter_keeps_definition_inputs_isolated_between_evaluations",
+          "note": "Each evaluation compiles a decision from the supplied calculation definition. Scorecard definition/policy version binding remains domain-owned."
+        },
+        "adapter_complexity": {
+          "status": "acceptable_with_caveat",
+          "evidence": "tests/scorecard/engines/zen.py",
+          "note": "The adapter is small and candidate-specific, but it must construct a JDM graph and reconstruct domain metadata because ZEN does not own our Scorecard semantics."
+        },
+        "dependency_cost": {
+          "status": "acceptable_for_evaluation",
+          "evidence": "requirements-scorecard-oss.txt plus PyPI zen-engine 2.1.2 metadata",
+          "note": "Pinned candidate-only dependency. The published Windows x86-64 wheel is 11.0 MB; Linux x86-64 is 10.7 MB. ZEN 2.1.2 is MIT licensed and ships prebuilt wheels."
+        },
+        "operational_cost": {
+          "status": "acceptable_for_evaluation",
+          "evidence": "PyPI zen-engine 2.1.2 metadata",
+          "note": "Rust core with native Python bindings and prebuilt Windows/Linux/macOS wheels; no Rust toolchain is required for normal wheel installation. This is candidate evidence, not production deployment approval."
+        }
+      },
+      "policy_resolution": {
+        "status": "not_evaluated_as_candidate_owned_semantics",
+        "note": "The current ZEN adapter evaluates calculation primitives only. Policy rule ordering, MATCH/NO_MATCH/UNKNOWN semantics and applied-rule identity remain domain-owned and are not delegated to ZEN by this evaluation artifact."
+      },
+      "verdict": "conditional_calculation_primitive"
     },
     {
       "id": "python-jsonlogic",
@@ -36,17 +87,24 @@
   ],
   "verdicts": {
     "native-reference": "baseline_only",
-    "gorules-zen": "not_evaluated",
+    "gorules-zen": "conditional_calculation_primitive",
     "python-jsonlogic": "not_evaluated",
     "simpleeval": "not_evaluated"
   },
   "decision_rule": {
     "compatibility_gate": "candidate_must_match_domain_semantics",
     "adoption_gate": "compatibility_pass_plus_acceptable_operational_tradeoffs",
-    "reference_engine_is_not_an_adoption_candidate": true
+    "reference_engine_is_not_an_adoption_candidate": true,
+    "partial_evaluation_is_not_a_full_engine_adoption_verdict": true
   },
   "evidence": {
     "compatibility": "tests/scorecard",
-    "candidate_specific_evidence": "must_be_recorded_during_evaluation"
+    "candidate_specific_evidence": {
+      "gorules-zen": [
+        "tests/scorecard/engines/zen.py",
+        "tests/scorecard/test_zen_evaluation.py",
+        "requirements-scorecard-oss.txt"
+      ]
+    }
   }
 }
