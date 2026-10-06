@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import pytest
 
+from tests.scorecard.engine_contract import (
+    assert_eval_result_semantics,
+    assert_weighted_sum_semantics,
+)
 from tests.scorecard.engines.native import NativeReferenceAdapter
 
 
@@ -157,3 +161,28 @@ def test_candidate_surface_does_not_implicitly_normalize_weights() -> None:
 
     assert result.value == 32.0
     assert result.contributions == (("a", 20.0), ("b", 12.0))
+
+
+def test_candidate_surface_enforces_common_eval_result_semantics() -> None:
+    engine = NativeReferenceAdapter()
+    result = engine.weighted_sum(
+        {"a": _observed(10), "b": _observed(4)},
+        {"a": 0.6, "b": 0.4},
+    )
+
+    assert_eval_result_semantics(result)
+
+
+def test_candidate_surface_enforces_weighted_sum_lineage_and_unknown_contract() -> None:
+    engine = NativeReferenceAdapter()
+    measurements = {
+        "a": _observed(10),
+        "b": _unknown(),
+    }
+    weights = {"a": 0.6, "b": 0.4}
+
+    result = engine.weighted_sum(measurements, weights)
+
+    assert_weighted_sum_semantics(result, measurements, weights)
+    assert result.value is None
+    assert result.state == "unknown"
