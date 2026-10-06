@@ -28,6 +28,6 @@
   "unknown_behavior": "propagate",
   "mapping": {
     "type": "configured_rules",
-    "deterministic": true
+    "status": "definition_only"
   }
 }
