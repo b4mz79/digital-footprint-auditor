@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 import json
 import math
 from pathlib import Path
@@ -14,6 +15,13 @@ def _load() -> dict[str, Any]:
     )
 
 
+def _assert_timezone_aware_iso8601(value: Any) -> None:
+    assert isinstance(value, str) and value
+    parsed = datetime.fromisoformat(value)
+    assert parsed.tzinfo is not None
+    assert parsed.utcoffset() is not None
+
+
 def _assert_scorecard_result_contract(data: dict[str, Any]) -> None:
     assert data["schema_version"] == "scorecard-result-v1"
     for field in (
@@ -24,6 +32,8 @@ def _assert_scorecard_result_contract(data: dict[str, Any]) -> None:
         "calculated_at",
     ):
         assert isinstance(data.get(field), str) and data[field]
+
+    _assert_timezone_aware_iso8601(data["calculated_at"])
 
     assert data["state"] in {"observed", "partial", "unknown"}
     assert data["risk_band"] in {"high", "medium", "low", "unknown"}
@@ -42,6 +52,14 @@ def _assert_scorecard_result_contract(data: dict[str, Any]) -> None:
         assert isinstance(dimension, dict)
         assert isinstance(dimension.get("dimension_id"), str) and dimension["dimension_id"]
         assert dimension.get("state") in {"observed", "partial", "unknown"}
+        dimension_score = dimension.get("score")
+        if dimension["state"] == "unknown":
+            assert dimension_score is None
+        else:
+            assert isinstance(dimension_score, (int, float))
+            assert not isinstance(dimension_score, bool)
+            assert math.isfinite(float(dimension_score))
+            assert 0.0 <= float(dimension_score) <= 1.0
 
     contributions = data.get("contributions")
     assert isinstance(contributions, list)
@@ -160,3 +178,36 @@ def test_calculation_lineage_is_parameterized_not_operation_only() -> None:
 
     assert "operations" not in lineage
     assert all(step.get("parameters") for step in lineage["steps"])
+
+
+def test_scorecard_result_contract_requires_timezone_for_calculated_at() -> None:
+    data = _load()
+    valid = data["calculated_at"]
+    _assert_timezone_aware_iso8601(valid)
+
+    data["calculated_at"] = "2026-10-07"
+    try:
+        _assert_timezone_aware_iso8601(data["calculated_at"])
+    except (AssertionError, ValueError):
+        pass
+    else:
+        raise AssertionError("date-only calculated_at must be rejected")
+
+    data["calculated_at"] = "2026-10-07T00:01:00"
+    try:
+        _assert_timezone_aware_iso8601(data["calculated_at"])
+    except AssertionError:
+        pass
+    else:
+        raise AssertionError("timezone-naive calculated_at must be rejected")
+
+
+def test_dimension_result_score_preserves_state_semantics() -> None:
+    data = _load()
+    _assert_scorecard_result_contract(data)
+
+    unknown = dict(data["dimension_results"][0])
+    unknown["state"] = "unknown"
+    unknown["score"] = None
+    data["dimension_results"] = [unknown]
+    _assert_scorecard_result_contract(data)
