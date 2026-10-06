@@ -132,6 +132,66 @@ def test_weighted_aggregation_returns_partial_value_and_coverage() -> None:
     assert result.lineage == ("a", "b")
 
 
+def test_partial_aggregation_does_not_renormalize_known_contribution() -> None:
+    observed = evaluate_weighted_sum(
+        {"a": {"unit": "count", "value": 10, "state": "observed"}}, {"a": 1.0}
+    )
+    unknown = evaluate_weighted_sum(
+        {"b": {"unit": "count", "value": None, "state": "unknown"}}, {"b": 1.0}
+    )
+    result = evaluate_aggregation(
+        [observed, unknown], operation="weighted_sum", weights=[0.6, 0.4]
+    )
+    assert result.value == 6.0
+    assert result.value != result.value / result.coverage
+
+
+def test_weighted_aggregation_propagates_nested_partial_coverage() -> None:
+    inner_observed = evaluate_weighted_sum(
+        {"a": {"unit": "count", "value": 10, "state": "observed"}}, {"a": 1.0}
+    )
+    inner_unknown = evaluate_weighted_sum(
+        {"b": {"unit": "count", "value": None, "state": "unknown"}}, {"b": 1.0}
+    )
+    partial = evaluate_aggregation(
+        [inner_observed, inner_unknown],
+        operation="weighted_sum",
+        weights=[0.6, 0.4],
+    )
+
+    outer_observed = evaluate_weighted_sum(
+        {"c": {"unit": "count", "value": 5, "state": "observed"}}, {"c": 1.0}
+    )
+    result = evaluate_aggregation(
+        [partial, outer_observed],
+        operation="weighted_sum",
+        weights=[0.5, 0.5],
+    )
+
+    assert result.value == 5.0
+    assert result.state == "partial"
+    assert result.coverage == 0.8
+    assert result.known_weight == 0.8
+    assert result.unknown_weight == 0.2
+
+
+def test_zero_weight_unknown_does_not_reduce_coverage() -> None:
+    observed = evaluate_weighted_sum(
+        {"a": {"unit": "count", "value": 10, "state": "observed"}}, {"a": 1.0}
+    )
+    unknown = evaluate_weighted_sum(
+        {"b": {"unit": "count", "value": None, "state": "unknown"}}, {"b": 1.0}
+    )
+    result = evaluate_aggregation(
+        [observed, unknown], operation="weighted_sum", weights=[1.0, 0.0]
+    )
+    assert result.value == 10.0
+    assert result.state == "observed"
+    assert result.coverage == 1.0
+    assert result.known_weight == 1.0
+    assert result.unknown_weight == 0.0
+
+
 def test_weighted_aggregation_is_complete_when_all_inputs_are_observed() -> None:
     observed_a = evaluate_weighted_sum(
         {"a": {"unit": "count", "value": 10, "state": "observed"}}, {"a": 1.0}
