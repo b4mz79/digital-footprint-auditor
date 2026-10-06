@@ -87,6 +87,21 @@ def _assert_risk_policy_contract(data: dict) -> None:
         assert all(isinstance(priority, int) and not isinstance(priority, bool) for priority in priorities)
         assert len(set(priorities)) == len(priorities)
         assert all(rule.get("then") in risk_bands for rule in rules)
+
+        # Conditions are part of the policy rule contract, but their actual
+        # predicate language remains implementation-neutral at this stage.
+        for rule in rules:
+            condition = rule.get("condition")
+            assert isinstance(condition, dict)
+            assert isinstance(condition.get("type"), str) and condition["type"]
+            assert isinstance(condition.get("parameters"), dict)
+
+        # A rule set must declare what happens when no rule matches. The
+        # concrete behavior is intentionally not fixed yet; importantly, a
+        # silent default risk band is not allowed.
+        assert isinstance(mapping.get("no_match_behavior"), str)
+        assert mapping["no_match_behavior"]
+        assert "default_risk_band" not in mapping
     else:
         assert "rules" not in mapping
         assert "deterministic" not in mapping
@@ -195,22 +210,41 @@ def test_risk_policy_rejects_nondeterministic_active_mapping() -> None:
         _assert_risk_policy_contract(data)
 
 
+def _active_rule(
+    rule_id: str,
+    priority: int,
+    then: str,
+    *,
+    condition_type: str = "predicate",
+) -> dict:
+    return {
+        "rule_id": rule_id,
+        "priority": priority,
+        "condition": {
+            "type": condition_type,
+            "parameters": {},
+        },
+        "then": then,
+    }
+
+
 def _active_mapping_with_rules(rules: list[dict]) -> dict:
     data = _load()
     data["mapping"] = {
         "type": "configured_rules",
         "status": "active",
         "deterministic": True,
+        "no_match_behavior": "policy_defined",
         "rules": rules,
     }
     return data
 
 
-def test_active_rules_have_unique_identity_priority_and_valid_band() -> None:
+def test_active_rules_have_unique_identity_priority_condition_and_valid_band() -> None:
     data = _active_mapping_with_rules(
         [
-            {"rule_id": "rule-1", "priority": 10, "then": "low"},
-            {"rule_id": "rule-2", "priority": 20, "then": "medium"},
+            _active_rule("rule-1", 10, "low"),
+            _active_rule("rule-2", 20, "medium"),
         ]
     )
 
@@ -250,3 +284,51 @@ def test_active_rules_reject_invalid_risk_band() -> None:
 
     with pytest.raises(AssertionError):
         _assert_risk_policy_contract(data)
+
+def test_active_rules_reject_missing_condition() -> None:
+    data = _active_mapping_with_rules(
+        [_active_rule("rule-1", 10, "low")]
+    )
+    data["mapping"]["rules"][0].pop("condition")
+
+    with pytest.raises(AssertionError):
+        _assert_risk_policy_contract(data)
+
+
+def test_active_rules_reject_empty_condition_type() -> None:
+    data = _active_mapping_with_rules(
+        [_active_rule("rule-1", 10, "low")]
+    )
+    data["mapping"]["rules"][0]["condition"]["type"] = ""
+
+    with pytest.raises(AssertionError):
+        _assert_risk_policy_contract(data)
+
+
+def test_active_mapping_requires_explicit_no_match_behavior() -> None:
+    data = _active_mapping_with_rules(
+        [_active_rule("rule-1", 10, "low")]
+    )
+    data["mapping"].pop("no_match_behavior")
+
+    with pytest.raises(AssertionError):
+        _assert_risk_policy_contract(data)
+
+
+def test_active_mapping_rejects_implicit_default_risk_band() -> None:
+    data = _active_mapping_with_rules(
+        [_active_rule("rule-1", 10, "low")]
+    )
+    data["mapping"]["default_risk_band"] = "low"
+
+    with pytest.raises(AssertionError):
+        _assert_risk_policy_contract(data)
+
+
+def test_active_mapping_keeps_no_match_behavior_implementation_neutral() -> None:
+    data = _active_mapping_with_rules(
+        [_active_rule("rule-1", 10, "low")]
+    )
+    data["mapping"]["no_match_behavior"] = "future-explicit-policy"
+
+    _assert_risk_policy_contract(data)
