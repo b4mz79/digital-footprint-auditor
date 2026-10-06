@@ -45,7 +45,13 @@ def evaluate_weighted_sum(
     measurements: dict[str, dict[str, Any]],
     weights: dict[str, float],
 ) -> EvalResult:
-    """Neutral reference semantics for engine compatibility tests only."""
+    """Neutral reference semantics for engine compatibility tests only.
+
+    Weight semantics are deliberately primitive: each weight is an explicit
+    coefficient applied to its KPI value. The reference engine does not
+    normalize weights or impose risk-direction semantics. Those are scorecard
+    policy concerns and must remain configurable above this calculation layer.
+    """
     contributions: list[tuple[str, float]] = []
     lineage: list[str] = []
 
