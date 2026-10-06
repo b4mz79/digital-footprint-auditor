@@ -1,0 +1,73 @@
+{
+  "schema_version": "risk-policy-v1",
+  "risk_policy_id": "synthetic-risk-policy-active",
+  "version": "synthetic-v1",
+  "scope": {
+    "scorecard_id": "synthetic-scorecard",
+    "scorecard_version": "synthetic-v1"
+  },
+  "input": {
+    "score_range": {
+      "min": 0.0,
+      "max": 1.0
+    },
+    "states": [
+      "observed",
+      "partial",
+      "unknown"
+    ]
+  },
+  "output": {
+    "risk_bands": [
+      "high",
+      "medium",
+      "low",
+      "unknown"
+    ]
+  },
+  "unknown_behavior": "propagate",
+  "mapping": {
+    "type": "configured_rules",
+    "status": "active",
+    "deterministic": true,
+    "no_match_behavior": "no_decision",
+    "condition_unknown_behavior": "condition_unknown",
+    "resolution_strategy": "first_match_by_priority",
+    "priority_order": "ascending",
+    "rules": [
+      {
+        "rule_id": "rule-low",
+        "priority": 10,
+        "condition": {
+          "type": "synthetic_predicate",
+          "parameters": {
+            "result": "no_match"
+          }
+        },
+        "then": "low"
+      },
+      {
+        "rule_id": "rule-medium",
+        "priority": 20,
+        "condition": {
+          "type": "synthetic_predicate",
+          "parameters": {
+            "result": "match"
+          }
+        },
+        "then": "medium"
+      },
+      {
+        "rule_id": "rule-high",
+        "priority": 30,
+        "condition": {
+          "type": "synthetic_predicate",
+          "parameters": {
+            "result": "match"
+          }
+        },
+        "then": "high"
+      }
+    ]
+  }
+}
