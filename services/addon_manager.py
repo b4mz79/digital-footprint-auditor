@@ -5,6 +5,7 @@ import json
 import os
 import re
 import shutil
+import sys
 import tempfile
 import zipfile
 from dataclasses import dataclass
@@ -159,20 +160,32 @@ class AddonManager:
         package_root = self.root / addon_id
         entrypoint = self._safe_entrypoint(package_root, addon["entrypoint"])
         module_name = f"_privacy_auditor_addon_{addon_id}_{uuid4().hex}"
-        spec = importlib.util.spec_from_file_location(module_name, entrypoint)
+        spec = importlib.util.spec_from_file_location(
+            module_name,
+            entrypoint,
+            submodule_search_locations=[str(package_root)],
+        )
         if spec is None or spec.loader is None:
             raise ValueError(f"cannot load add-on entrypoint: {addon_id}")
 
         module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
+        sys.modules[module_name] = module
+        try:
+            spec.loader.exec_module(module)
 
-        runner = getattr(module, "run", None)
-        if not callable(runner):
-            raise ValueError(
-                f"add-on entrypoint must expose run(context): {addon_id}"
-            )
+            runner = getattr(module, "run", None)
+            if not callable(runner):
+                raise ValueError(
+                    f"add-on entrypoint must expose run(context): {addon_id}"
+                )
 
-        return addon, runner(context)
+            return addon, runner(context)
+        finally:
+            for loaded_name in tuple(sys.modules):
+                if loaded_name == module_name or loaded_name.startswith(
+                    module_name + "."
+                ):
+                    sys.modules.pop(loaded_name, None)
 
     def _set_active(self, addon_id: str, active: bool) -> dict[str, Any]:
         addon = self.get(addon_id)
