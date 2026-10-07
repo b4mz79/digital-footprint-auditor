@@ -155,14 +155,39 @@ def run_scan(
         """Dispatch one canonical lifecycle event without knowing any add-on domain."""
         try:
             addon_manager = get_addon_manager()
-            results = addon_manager.dispatch_event(
-                event_name,
-                {
-                    "state": state,
-                    "event": event_name,
-                    "data": dict(data or {}),
-                },
-            )
+            base_context = {
+                "state": state,
+                "event": event_name,
+                "data": dict(data or {}),
+            }
+            results = []
+            for addon in addon_manager.list():
+                addon_id = str(addon.get("id", "")).strip()
+                if (
+                    not addon_id
+                    or not bool(addon.get("active"))
+                    or addon.get("invocation", {}).get("mode") != "on_event"
+                    or not any(
+                        event.get("name") == event_name
+                        for event in addon.get("events", [])
+                    )
+                ):
+                    continue
+
+                addon_context = dict(base_context)
+                extra_context = (addon_contexts or {}).get(addon_id)
+                if extra_context is not None:
+                    if not isinstance(extra_context, Mapping):
+                        raise TypeError(
+                            f"context add-on {addon_id!r} harus berupa mapping"
+                        )
+                    addon_context.update(dict(extra_context))
+
+                event_results = addon_manager.dispatch_event(
+                    event_name,
+                    addon_context,
+                )
+                results.extend(event_results)
         except Exception as exc:
             logger.warning(
                 "[Pipeline] Add-on event dispatch failed for %s: %s",
