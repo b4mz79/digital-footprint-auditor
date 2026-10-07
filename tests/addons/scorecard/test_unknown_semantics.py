@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from tests.scorecard.reference_engine import (
+from tests.addons.scorecard.reference_engine import (
     evaluate_aggregation,
     evaluate_dependency,
     evaluate_weighted_sum,
