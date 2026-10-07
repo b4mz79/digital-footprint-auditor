@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from tests.scorecard.fixture_loader import (
+from tests.addons.scorecard.fixture_loader import (
     accepted_contextual_records,
     contextual_security_evidence_measurement,
     load_contextual_filter_dump,
