@@ -15,6 +15,7 @@ from services.pipeline import (
     run_scan as run_scan_pipeline,
 )
 from utils.logging_setup import configure_logging
+from utils.risk import normalize_risk, risk_icon
 from utils.translations import t
 
 configure_logging()
