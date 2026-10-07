@@ -7,7 +7,7 @@
   "type": "hybrid",
   "invocation": {
     "function": "run",
-    "mode": "on_demand",
+    "mode": "on_event",
     "input": {
       "required": true
     },
@@ -20,7 +20,18 @@
     "entrypoint": "ui.py",
     "function": "render"
   },
-  "events": [],
+  "events": [
+    {
+      "name": "evidence.verified",
+      "input": {
+        "required": true
+      },
+      "return": {
+        "type": "result",
+        "required": true
+      }
+    }
+  ],
   "result_key": "scorecard",
   "ai_context": true,
   "default_active": true
