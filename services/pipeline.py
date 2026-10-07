@@ -7,6 +7,7 @@ import re
 from typing import Any, Callable
 
 from cache_security import clear_cache_files, purge_expired
+from services.addon_manager import get_addon_manager
 from services.ai_agent import (
     CACHE_DIR as AI_CACHE_DIR,
     CACHE_WRITE_LOCK,
@@ -73,6 +74,7 @@ def run_scan(
     enable_scorecard: bool = False,
     scorecard_definition: dict[str, Any] | None = None,
     scorecard_risk_policy: dict[str, Any] | None = None,
+    enabled_addons: tuple[str, ...] | list[str] = (),
     on_event: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     tenant_id = tenant_id or get_tenant_id()
@@ -100,6 +102,7 @@ def run_scan(
         "ai_lang": None,
         "scorecard": None,
         "scorecard_input": None,
+        "addons": {},
     }
     events: list[dict[str, Any]] = state["events"]
 
@@ -245,39 +248,58 @@ def run_scan(
         {"evidence": list(state["evidence"])},
     )
 
-    # Optional Scorecard add-on. The existing pipeline state is the source;
-    # the add-on is downstream and failure-isolated. When disabled, no scorecard
-    # code path is invoked and the existing AI payload remains unchanged.
-    if enable_scorecard:
-        # Lazy import keeps the existing pipeline independent from the optional
-        # add-on when Scorecard is disabled or absent.
-        from services.scorecard.integration import evaluate_pipeline_scorecard
+    # Optional add-ons. The application supplies only the IDs that are active;
+    # the manager owns discovery, loading, activation and invocation.
+    addon_ids = list(enabled_addons)
+    if enable_scorecard and not addon_ids:
+        # Backward-compatible bridge for existing callers. New callers should
+        # use enabled_addons so the pipeline remains add-on-name agnostic.
+        addon_ids.append("scorecard")
 
-        emit(_event("info", text="Memulai Scorecard Add-on...", stage="scorecard"))
-        try:
-            if not isinstance(scorecard_definition, dict):
-                raise ValueError("scorecard_definition is required when Scorecard is enabled")
-            if not isinstance(scorecard_risk_policy, dict):
-                raise ValueError("scorecard_risk_policy is required when Scorecard is enabled")
+    if addon_ids:
+        addon_manager = get_addon_manager()
+        for addon_id in dict.fromkeys(str(item) for item in addon_ids if str(item).strip()):
+            addon = None
+            try:
+                addon, addon_output = addon_manager.invoke(
+                    addon_id,
+                    {"state": state},
+                )
+                if not isinstance(addon_output, dict):
+                    raise TypeError(
+                        f"add-on {addon_id!r} returned an invalid result "
+                        f"({type(addon_output).__name__})"
+                    )
 
-            scorecard_input, scorecard_result = evaluate_pipeline_scorecard(
-                state,
-                scorecard_definition=scorecard_definition,
-                risk_policy=scorecard_risk_policy,
-            )
-            state["scorecard_input"] = scorecard_input.to_dict()
-            state["scorecard"] = scorecard_result.to_dict()
-            emit(
-                _event("success", text="Scorecard Add-on selesai.", stage="scorecard"),
-                {"scorecard": state["scorecard"]},
-            )
-        except Exception as exc:
-            # Scorecard is optional. A broken add-on must not suppress the
-            # existing Privacy Auditor result or AI analysis.
-            state["scorecard"] = None
-            state["scorecard_input"] = None
-            logger.warning("[Pipeline] Scorecard Add-on failed: %s", exc)
-            emit(_event("error", text=f"Error Scorecard Add-on: {exc}", stage="scorecard"))
+                state["addons"][addon_id] = addon_output
+                result_key = addon.get("result_key") if addon else None
+                if result_key:
+                    result_value = addon_output.get(result_key)
+                    state[result_key] = result_value
+                    if result_key == "scorecard":
+                        state["scorecard_input"] = addon_output.get("scorecard_input")
+
+                stage = (addon or {}).get("pipeline_stage") or f"addon:{addon_id}"
+                emit(
+                    _event(
+                        "success",
+                        text=f"Add-on {addon_id} selesai.",
+                        stage=stage,
+                    ),
+                    {"addon": addon_id, "result": addon_output},
+                )
+            except Exception as exc:
+                stage = (addon or {}).get("pipeline_stage") or f"addon:{addon_id}"
+                logger.warning("[Pipeline] Add-on %s failed: %s", addon_id, exc)
+                if addon and addon.get("result_key"):
+                    state[addon["result_key"]] = None
+                emit(
+                    _event(
+                        "error",
+                        text=f"Error Add-on {addon_id}: {exc}",
+                        stage=stage,
+                    )
+                )
 
     if with_ai:
         run_ai(
