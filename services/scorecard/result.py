@@ -80,6 +80,7 @@ def build_scorecard_result(
     policy_decision: PolicyDecision,
     dimension_results: tuple[Mapping[str, Any], ...] = (),
     contribution_stage: str | None = None,
+    contribution_details: tuple[ContributionDetail, ...] | None = None,
 ) -> ScorecardResult:
     if policy_decision.status == "matched":
         risk_band = policy_decision.risk_band
@@ -96,7 +97,11 @@ def build_scorecard_result(
         score=calculation.value,
         risk_band=risk_band or "unknown",
         dimension_results=tuple(dict(item) for item in dimension_results),
-        contributions=calculation.contribution_details,
+        contributions=(
+            calculation.contribution_details
+            if contribution_details is None
+            else contribution_details
+        ),
         measurement_refs=measurement_refs,
         calculation_lineage=dict(lineage),
         policy_refs=dict(policy_refs),
