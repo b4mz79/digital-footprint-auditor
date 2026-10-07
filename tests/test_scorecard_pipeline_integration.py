@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from services import pipeline
+from services.evidence.models import EvidenceDirectness, EvidenceRecord, EvidenceRelation
 
 DUMP_PATH = Path("cache/evidence/contextual_filter_dump.md")
 
@@ -104,32 +105,32 @@ def _patch_pipeline(monkeypatch) -> None:
         contextual = []
         for index, item in enumerate(_load_contextual_dump_records()):
             contextual.append(
-                {
-                    "evidence_id": str(
+                EvidenceRecord(
+                    evidence_id=str(
                         item.get("evidence_id") or f"dump-contextual-{index + 1}"
                     ),
-                    "source": str(
+                    source=str(
                         item.get("source")
                         or item.get("publisher")
                         or "contextual_filter_dump"
                     ),
-                    "source_type": "security_publication",
-                    "relation": "security_publication",
-                    "directness": "contextual",
-                    "confidence": 0.8,
-                    "observed_at": "2026-10-07T01:00:00+00:00",
-                    "published_at": item.get("published_at"),
-                    "domain": str(item.get("domain") or "example.com"),
-                    "url": str(item.get("url") or ""),
-                    "title": str(item.get("title") or ""),
-                    "summary": str(item.get("summary") or item.get("text") or ""),
-                    "provenance": {"source": "contextual_filter_dump"},
-                    "metadata": {"finding_type": "security_context"},
-                    "assertion_scope": "contextual",
-                    "verification_scope": "url_accessibility",
-                    "verification_state": "unknown",
-                    "verification_observed_at": None,
-                }
+                    source_type="security_publication",
+                    relation=EvidenceRelation.SECURITY_PUBLICATION,
+                    directness=EvidenceDirectness.CONTEXTUAL,
+                    confidence=0.8,
+                    observed_at="2026-10-07T01:00:00+00:00",
+                    published_at=item.get("published_at"),
+                    domain=str(item.get("domain") or "example.com"),
+                    url=str(item.get("url") or ""),
+                    title=str(item.get("title") or ""),
+                    summary=str(item.get("summary") or item.get("text") or ""),
+                    provenance={"source": "contextual_filter_dump"},
+                    metadata={"finding_type": "security_context"},
+                    assertion_scope="contextual",
+                    verification_scope="url_accessibility",
+                    verification_state="unknown",
+                    verification_observed_at=None,
+                )
             )
         return list(records) + contextual
 
