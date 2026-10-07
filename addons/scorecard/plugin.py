@@ -24,8 +24,20 @@ def run(context: Mapping[str, Any]) -> dict[str, Any]:
     if not isinstance(state, Mapping):
         raise TypeError("scorecard add-on requires context['state']")
 
-    definition = _load_json("definition.json")
-    risk_policy = _load_json("risk_policy.json")
+    # Package configuration is the add-on default. The host may supply an
+    # explicit definition/policy when invoking the legacy scorecard bridge or
+    # an equivalent configured integration path.
+    definition = context.get("scorecard_definition")
+    if definition is None:
+        definition = _load_json("definition.json")
+    if not isinstance(definition, Mapping):
+        raise TypeError("scorecard_definition must be a mapping")
+
+    risk_policy = context.get("scorecard_risk_policy")
+    if risk_policy is None:
+        risk_policy = _load_json("risk_policy.json")
+    if not isinstance(risk_policy, Mapping):
+        raise TypeError("scorecard_risk_policy must be a mapping")
 
     scorecard_input, scorecard_result = evaluate_pipeline_scorecard(
         state,
