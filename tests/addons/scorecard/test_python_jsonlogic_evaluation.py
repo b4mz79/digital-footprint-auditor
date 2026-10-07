@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-from tests.scorecard.compatibility import compare_eval_results
-from tests.scorecard.engines.native import NativeReferenceAdapter
-from tests.scorecard.engines.python_jsonlogic import PythonJsonLogicReferenceAdapter
+from tests.addons.scorecard.compatibility import compare_eval_results
+from tests.addons.scorecard.engines.native import NativeReferenceAdapter
+from tests.addons.scorecard.engines.python_jsonlogic import PythonJsonLogicReferenceAdapter
 
 
 pytest.importorskip("jsonlogic")
