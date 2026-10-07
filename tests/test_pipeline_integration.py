@@ -169,3 +169,39 @@ def test_pipeline_passes_enriched_evidence_to_ai(monkeypatch) -> None:
     assert contextual["provenance"]["assertion_scope"] == "security_publication_context_only"
     assert contextual["verification_scope"] == "url_accessibility"
     assert contextual["verification_state"] == "unknown"
+
+
+def test_pipeline_ai_failure_is_observable(monkeypatch) -> None:
+    monkeypatch.setattr(
+        pipeline,
+        "scan_osint_footprint",
+        lambda email, lang="id": [
+            {
+                "name": "Example",
+                "domain": "example.com",
+                "source": "OSINT / Holehe",
+                "subject": "Active account detected",
+            }
+        ],
+    )
+
+    def fail_ai(**kwargs):
+        raise RuntimeError("synthetic AI failure")
+
+    monkeypatch.setattr(pipeline, "analyze_smart_cache", fail_ai)
+
+    state = pipeline.run_scan(
+        email="subject@example.org",
+        enable_imap=False,
+        enable_osint=True,
+        enable_breach=False,
+        with_ai=True,
+    )
+
+    assert state["ai"] is None
+    assert any(
+        event.get("stage") == "ai"
+        and event.get("level") == "error"
+        and "RuntimeError" in (event.get("text") or "")
+        for event in state["events"]
+    )
