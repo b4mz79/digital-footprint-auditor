@@ -66,17 +66,21 @@ class PythonJsonLogicReferenceAdapter:
         lineage = tuple(weights)
         details: list[ContributionDetail] = []
         terms: list[dict[str, Any]] = []
+        has_unknown = False
         for kpi_id, weight in weights.items():
             numeric_weight = _weight(weight, kpi_id=kpi_id)
             if numeric_weight < 0:
                 raise ValueError("python-jsonlogic adapter requires non-negative weights")
             item = measurements.get(kpi_id)
             if not isinstance(item, dict) or item.get("state") == "unknown" or item.get("value") is None:
-                return EvalResult(None, "unknown", lineage,
-                    tuple((d.kpi_id, d.contribution) for d in details), tuple(details))
+                has_unknown = True
+                continue
             value = _numeric(item["value"], label=kpi_id)
             terms.append({"*": [{"var": self._pointer(kpi_id)}, numeric_weight]})
             details.append(ContributionDetail(kpi_id, value, numeric_weight, value * numeric_weight))
+        if has_unknown:
+            return EvalResult(None, "unknown", lineage,
+                tuple((d.kpi_id, d.contribution) for d in details), tuple(details))
         if not terms:
             raise ValueError("weighted_sum requires at least one observed measurement")
         expression = terms[0] if len(terms) == 1 else {"+": terms}
@@ -192,7 +196,12 @@ class PythonJsonLogicReferenceAdapter:
 
     def normalization(self, result: EvalResult, *, source_min: float, source_max: float, clamp: bool = False) -> EvalResult:
         if result.state == "unknown" or result.value is None:
-            return EvalResult(None, "unknown", result.lineage, coverage=0.0)
+            return EvalResult(
+                None, "unknown", result.lineage,
+                result.contributions,
+                result.contribution_details,
+                coverage=0.0,
+            )
         value = _numeric(result.value, label="normalization input")
         lower = _numeric(source_min, label="source_min")
         upper = _numeric(source_max, label="source_max")
@@ -212,7 +221,12 @@ class PythonJsonLogicReferenceAdapter:
     def dependency(self, left: EvalResult, right: EvalResult, *, relation: str) -> EvalResult:
         lineage = self._lineage(left, right)
         if left.state == "unknown" or right.state == "unknown":
-            return EvalResult(None, "unknown", lineage, coverage=0.0)
+            return EvalResult(
+                None, "unknown", lineage,
+                left.contributions + right.contributions,
+                left.contribution_details + right.contribution_details,
+                coverage=0.0,
+            )
         left_value = _numeric(left.value, label="dependency left")
         right_value = _numeric(right.value, label="dependency right")
         coverage = min(self._coverage(left), self._coverage(right))
