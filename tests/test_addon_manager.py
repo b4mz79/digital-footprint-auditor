@@ -72,6 +72,30 @@ def test_install_after_uninstall(tmp_path: Path) -> None:
     assert installed["active"] is False
 
 
+def test_invoke_loads_addon_as_isolated_package(tmp_path: Path) -> None:
+    manager = AddonManager(tmp_path / "addons")
+    plugin = "from .helper import VALUE\n\ndef run(context):\n    return {'value': VALUE}\n"
+    buffer = io.BytesIO()
+    manifest = {
+        "id": "package-addon",
+        "name": "Package Add-on",
+        "caption": "Package",
+        "version": "1.0.0",
+        "entrypoint": "plugin.py",
+        "default_active": False,
+    }
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("package-addon/manifest.json", json.dumps(manifest))
+        archive.writestr("package-addon/plugin.py", plugin)
+        archive.writestr("package-addon/helper.py", "VALUE = 42\n")
+
+    manager.install_zip(buffer.getvalue())
+    manager.activate("package-addon")
+
+    _, result = manager.invoke("package-addon", {})
+    assert result == {"value": 42}
+
+
 def test_install_rejects_duplicate(tmp_path: Path) -> None:
     manager = AddonManager(tmp_path / "addons")
     payload = _zip_package()
