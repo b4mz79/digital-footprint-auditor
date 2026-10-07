@@ -94,7 +94,11 @@ class PipelineAssessmentAdapter:
         for item in service_evidence:
             provenance = item.get("provenance")
             provenance = provenance if isinstance(provenance, Mapping) else {}
-            service_name = cls._text(provenance.get("service_name"))
+            metadata = item.get("metadata")
+            metadata = metadata if isinstance(metadata, Mapping) else {}
+            service_name = cls._text(
+                metadata.get("service_name") or provenance.get("service_name")
+            )
             domain = cls._text(item.get("domain"))
             if service_name:
                 evidence_backed_keys.add(cls._service_key({"service": service_name}))
