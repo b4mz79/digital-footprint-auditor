@@ -350,6 +350,42 @@ def evaluate_aggregation(
     )
 
 
+def evaluate_conditional(
+    condition: bool | None,
+    when_true: EvalResult,
+    when_false: EvalResult,
+) -> EvalResult:
+    lineage = tuple(sorted(set(when_true.lineage) | set(when_false.lineage)))
+    if condition is None:
+        return EvalResult(None, "unknown", lineage, coverage=0.0)
+
+    chosen = when_true if condition else when_false
+    if chosen.state == "unknown" or chosen.value is None:
+        return EvalResult(
+            None,
+            "unknown",
+            lineage,
+            chosen.contributions,
+            chosen.contribution_details,
+            coverage=0.0,
+        )
+
+    coverage = 1.0 if chosen.state == "observed" else chosen.coverage
+    if coverage is None:
+        raise ValueError("partial conditional input requires coverage")
+    coverage = _numeric(coverage, label="conditional coverage")
+    return EvalResult(
+        value=_numeric(chosen.value, label="conditional"),
+        state="observed" if coverage == 1.0 else "partial",
+        lineage=lineage,
+        contributions=chosen.contributions,
+        contribution_details=chosen.contribution_details,
+        coverage=coverage,
+        known_weight=chosen.known_weight,
+        unknown_weight=chosen.unknown_weight,
+    )
+
+
 def evaluate_normalization(
     result: EvalResult,
     *,
