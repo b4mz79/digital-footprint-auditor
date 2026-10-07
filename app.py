@@ -902,6 +902,7 @@ state = st.session_state.get("scan_state")
 # On rerun (download, language change, cache clear, etc.), render the stored
 # result in the same pipeline order as the first run.
 if state and not scan_executed:
+    render_services(state)
     render_breach(state)
     render_evidence(state)
     render_addon_uis(state)
@@ -909,5 +910,4 @@ if state and not scan_executed:
     if not state["services"] and not state["breach"]["findings"]:
         st.warning(t("warn_no_services", lang=lang))
 
-    render_services(state)
     render_ai(state)
