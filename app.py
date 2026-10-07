@@ -287,7 +287,7 @@ def render_addon_uis(scan_state: dict, addon_slots=None) -> None:
         try:
             ui_context = {
                 "state": scan_state,
-                "result": addon_results[addon_id],
+                "result": addon_results.get(addon_id),
                 "lang": lang,
             }
             if slot is not None:
