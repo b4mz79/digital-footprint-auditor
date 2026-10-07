@@ -111,7 +111,12 @@ class AddonManager:
             staging = self.root / f".install-{manifest.addon_id}-{uuid4().hex}"
             try:
                 shutil.copytree(package_root, staging)
-                staging.replace(target)
+                # Do not rename/replace the directory on Windows.  Replacing
+                # a non-empty directory via Path.replace()/os.replace() can
+                # raise WinError 5 even when the installation target is valid.
+                # Copy the validated staging tree into the final package path
+                # instead; the target was checked above and must not exist.
+                shutil.copytree(staging, target)
             finally:
                 if staging.exists():
                     shutil.rmtree(staging, ignore_errors=True)
