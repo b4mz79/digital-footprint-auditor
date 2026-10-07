@@ -528,12 +528,105 @@ def _sanitize_evidence_records(evidence_records: list | None) -> list[dict[str, 
     return out
 
 
+MAX_SCORECARD_RESULT_CHARS = 20_000
+MAX_SCORECARD_ITEMS = 50
+
+
+def _sanitize_scorecard_result(
+    scorecard_result: Mapping[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Keep deterministic Scorecard output bounded before it enters the AI payload."""
+    if scorecard_result is None:
+        return None
+    if not isinstance(scorecard_result, Mapping):
+        raise TypeError("scorecard_result must be a mapping")
+
+    out: dict[str, Any] = {}
+    scalar_keys = (
+        "schema_version",
+        "result_id",
+        "assessment_id",
+        "scorecard_id",
+        "scorecard_version",
+        "calculated_at",
+        "state",
+        "score",
+        "risk_band",
+        "contribution_stage",
+    )
+    for key in scalar_keys:
+        if key in scorecard_result:
+            value = scorecard_result[key]
+            if isinstance(value, (str, int, float, bool)) or value is None:
+                out[key] = value
+
+    refs = scorecard_result.get("measurement_refs")
+    if isinstance(refs, (list, tuple)):
+        out["measurement_refs"] = [
+            _safe_component(str(value), 128)
+            for value in refs[:MAX_SCORECARD_ITEMS]
+            if str(value)
+        ]
+
+    contributions = scorecard_result.get("contributions")
+    if isinstance(contributions, (list, tuple)):
+        cleaned_contributions: list[dict[str, Any]] = []
+        for item in contributions[:MAX_SCORECARD_ITEMS]:
+            if not isinstance(item, Mapping):
+                continue
+            cleaned: dict[str, Any] = {}
+            for key in ("kpi_id", "value", "weight", "contribution"):
+                if key in item and isinstance(item[key], (str, int, float)) and not isinstance(item[key], bool):
+                    cleaned[key] = item[key]
+            if cleaned:
+                cleaned_contributions.append(cleaned)
+        out["contributions"] = cleaned_contributions
+
+    dimensions = scorecard_result.get("dimension_results")
+    if isinstance(dimensions, (list, tuple)):
+        out["dimension_results"] = [
+            dict(item)
+            for item in dimensions[:MAX_SCORECARD_ITEMS]
+            if isinstance(item, Mapping)
+        ]
+
+    policy_refs = scorecard_result.get("policy_refs")
+    if isinstance(policy_refs, Mapping):
+        out["policy_refs"] = {
+            _safe_component(str(key), 128): _safe_component(str(value), 256)
+            for key, value in list(policy_refs.items())[:20]
+            if key and value is not None
+        }
+
+    lineage = scorecard_result.get("calculation_lineage")
+    if isinstance(lineage, Mapping):
+        out["calculation_lineage"] = {
+            "schema_version": _safe_component(str(lineage.get("schema_version", "")), 128),
+            "inputs": [
+                _safe_component(str(value), 128)
+                for value in lineage.get("inputs", [])[:MAX_SCORECARD_ITEMS]
+            ] if isinstance(lineage.get("inputs"), list) else [],
+            "steps": [
+                dict(step)
+                for step in lineage.get("steps", [])[:MAX_SCORECARD_ITEMS]
+                if isinstance(step, Mapping)
+            ] if isinstance(lineage.get("steps"), list) else [],
+            "output": _safe_component(str(lineage.get("output", "")), 128),
+        }
+
+    encoded = json.dumps(out, ensure_ascii=False, separators=(",", ":"))
+    if len(encoded) > MAX_SCORECARD_RESULT_CHARS:
+        raise ValueError("scorecard_result terlalu besar")
+    return out
+
+
 def build_user_prompt(
     email: str,
     found_services: list,
     phone: str = "",
     lang: str = "id",
     evidence_records: list | None = None,
+    scorecard_result: Mapping[str, Any] | None = None,
     scan_status: dict[str, Any] | None = None,
 ) -> str:
     lang = _validate_lang(lang)
@@ -541,8 +634,14 @@ def build_user_prompt(
     # DSR identity is inserted locally after the model response returns.
     safe_services = _sanitize_service_records(found_services)
     safe_evidence = _sanitize_evidence_records(evidence_records)
+    safe_scorecard = _sanitize_scorecard_result(scorecard_result)
     services_payload = json.dumps(safe_services, ensure_ascii=False, separators=(",", ":"))
     evidence_payload = json.dumps(safe_evidence, ensure_ascii=False, separators=(",", ":"))
+    scorecard_payload = json.dumps(
+        safe_scorecard or {},
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
 
     status = scan_status if isinstance(scan_status, dict) else {}
     status_payload = {
@@ -568,6 +667,13 @@ def build_user_prompt(
         "<SCAN_STATUS>\n"
         f"{status_json}\n"
         "</SCAN_STATUS>\n\n"
+        "<SCORECARD_RESULT>\n"
+        f"{scorecard_payload}\n"
+        "</SCORECARD_RESULT>\n\n"
+        "SCORECARD_RESULT is deterministic analytical output from the optional "
+        "Scorecard Add-on. Treat its score, risk_band, contributions, and lineage "
+        "as supplied analytical facts; do not recalculate or invent them. "
+        "If the scorecard result is absent, do not infer that Scorecard was run.\n"
         "SCAN_STATUS is system metadata, not target evidence. "
         "If breach_scan_complete is false, do not describe the absence of breach findings "
         "as evidence that no breach or incident exists. Say only that no breach_evidence "
@@ -2002,6 +2108,7 @@ def _input_fingerprint(
     services: list[dict],
     findings: list[dict],
     evidence_records: list | None = None,
+    scorecard_result: Mapping[str, Any] | None = None,
     scan_status: dict[str, Any] | None = None,
 ) -> str:
     """Identify every analysis input, including provenance evidence, for cache safety."""
@@ -2026,6 +2133,7 @@ def _input_fingerprint(
         json.dumps(item, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         for item in _sanitize_evidence_records(evidence_records)
     )
+    scorecard_part = _sanitize_scorecard_result(scorecard_result) or {}
 
     status = scan_status if isinstance(scan_status, dict) else {}
     status_part = {
@@ -2038,7 +2146,14 @@ def _input_fingerprint(
     }
 
     blob = json.dumps(
-        [ANALYSIS_SCHEMA_VERSION, svc_part, find_part, evidence_part, status_part],
+        [
+            ANALYSIS_SCHEMA_VERSION,
+            svc_part,
+            find_part,
+            evidence_part,
+            scorecard_part,
+            status_part,
+        ],
         ensure_ascii=False,
         separators=(",", ":"),
     )
@@ -2058,6 +2173,7 @@ async def analyze_smart_cache(
     tenant_id: str = "default",
     breach_findings: list | None = None,
     evidence_records: list | None = None,
+    scorecard_result: Mapping[str, Any] | None = None,
     scan_status: dict[str, Any] | None = None,
     on_analysis_item: Callable[[dict[str, Any]], None] | None = None,
     on_analysis_reset: Callable[[], None] | None = None,
@@ -2088,12 +2204,19 @@ async def analyze_smart_cache(
         else []
     )
     evidence = _sanitize_evidence_records(evidence_records)
+    scorecard = _sanitize_scorecard_result(scorecard_result)
     scan_status = scan_status if isinstance(scan_status, dict) else {
         "breach_scan_complete": False,
         "failed_engines": [],
     }
 
-    fingerprint = _input_fingerprint(services, findings, evidence, scan_status)
+    fingerprint = _input_fingerprint(
+        services,
+        findings,
+        evidence,
+        scorecard,
+        scan_status,
+    )
 
     safe_preview = _safe_component(mask_pii(email), 64)
 
@@ -2201,6 +2324,7 @@ async def analyze_smart_cache(
         phone,
         lang,
         evidence_records=evidence,
+        scorecard_result=scorecard,
         scan_status=scan_status,
     )
 
