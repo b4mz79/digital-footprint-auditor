@@ -647,16 +647,12 @@ if run_scan:
     else:
         scan_executed = True
 
-        # One stable UI surface per pipeline stage. A completed stage replaces
-        # its own placeholder content instead of creating a second copy.
-        with st.container():
-            progress_status = st.empty()
-            services_area = st.empty()
-            breach_area = st.empty()
-            evidence_area = st.empty()
-            scorecard_area = st.empty()
-            ai_status_area = st.empty()
-            ai_results_area = st.empty()
+        # Use two top-level placeholders only: one for the scan stages and
+        # one for AI. Each callback replaces the complete content of its own
+        # surface. This avoids nested placeholder/container lifecycles and
+        # guarantees that IMAP results remain visible while later stages run.
+        stage_area = st.empty()
+        ai_area = st.empty()
 
         live_state = {
             "email": target_email.strip(),
@@ -674,74 +670,118 @@ if run_scan:
             },
             "ai": None,
             "scorecard": None,
+            "ai_status": None,
         }
 
         ui_state = {
             "ai_live_items": [],
         }
 
-        def _render_into(placeholder, renderer, state):
-            placeholder.empty()
-            with placeholder.container():
-                renderer(state)
+        def _render_live_stages() -> None:
+            stage_area.empty()
+            with stage_area.container():
+                if live_state["services"]:
+                    render_services(live_state)
+                if live_state["breach"].get("enabled"):
+                    render_breach(live_state)
+                if live_state["evidence"]:
+                    render_evidence(live_state)
+                if live_state["scorecard"]:
+                    render_scorecard(live_state)
 
-        def _render_live_services() -> None:
-            _render_into(services_area, render_services, live_state)
+        def _render_live_ai() -> None:
+            ai_area.empty()
+            with ai_area.container():
+                status = live_state.get("ai_status")
+                if status:
+                    level = status.get("level", "info")
+                    message = status.get("message")
+                    if message:
+                        getattr(st, level, st.info)(message)
 
-        def _render_live_breach() -> None:
-            _render_into(breach_area, render_breach, live_state)
-
-        def _render_live_evidence() -> None:
-            _render_into(evidence_area, render_evidence, live_state)
-
-        def _render_live_scorecard() -> None:
-            _render_into(scorecard_area, render_scorecard, live_state)
+                items = ui_state["ai_live_items"]
+                if items:
+                    st.divider()
+                    st.subheader(t("ai_title", lang=lang))
+                    for live_item in items:
+                        risk_key = (
+                            normalize_risk(live_item.get("risk_key"))
+                            or normalize_risk(live_item.get("risk_level"))
+                            or "unknown"
+                        )
+                        risk_label = t(f"risk_{risk_key}", lang=lang)
+                        st.markdown(
+                            f"**{risk_icon(risk_key)} "
+                            f"{_md_escape(live_item.get('service', ''))}** - "
+                            f"*{t('risk_level_label', lang=lang)}: {risk_label}*"
+                        )
+                        st.write(
+                            f"**{t('reason_label', lang=lang)}:** "
+                            f"{live_item.get('reason', '')}"
+                        )
+                        delete_url = live_item.get("delete_url", "-")
+                        if delete_url and delete_url != "-":
+                            if (
+                                isinstance(delete_url, str)
+                                and delete_url.startswith("https://")
+                            ):
+                                st.markdown(
+                                    t(
+                                        "delete_link_label",
+                                        lang=lang,
+                                        url=delete_url,
+                                    )
+                                )
+                            else:
+                                st.write(f"🔗 {delete_url}")
+                        st.caption("---")
 
         def push_event(event: dict) -> None:
             stage = event.get("stage")
             live_data = event.get("_live", {})
 
-            # IMAP/OSINT each emit their complete stage result. Update the same
-            # services placeholder so the table grows incrementally.
+            # Discovery stages publish their complete result only after the
+            # scanner returns. Re-render the whole stage surface so IMAP stays
+            # visible while OSINT/breach/enrichment continue.
             if stage in ("imap", "osint") and "services" in live_data:
                 live_state["services"].extend(live_data["services"])
-                _render_live_services()
+                _render_live_stages()
                 return
 
-            # Breach is a single stage: render it as soon as the stage finishes.
             if stage == "breach" and "breach" in live_data:
                 live_state["breach"] = live_data["breach"]
-                _render_live_breach()
+                _render_live_stages()
                 return
 
             if stage == "evidence_start":
+                live_state["ai_status"] = None
                 message = event.get("text") or "Memulai Evidence & Enrichment..."
-                evidence_area.empty()
-                with evidence_area.container():
-                    st.info(f"⏳ {message}")
+                live_state["evidence_status"] = message
+                _render_live_stages()
                 return
 
             if stage == "evidence" and "evidence" in live_data:
                 live_state["evidence"] = live_data["evidence"]
-                _render_live_evidence()
+                live_state.pop("evidence_status", None)
+                _render_live_stages()
                 return
 
             if stage == "scorecard" and "scorecard" in live_data:
                 live_state["scorecard"] = live_data["scorecard"]
-                _render_live_scorecard()
+                _render_live_stages()
                 return
 
-            # AI uses separate status/result surfaces so callbacks cannot
-            # destroy provider progress while provisional results are rendered.
             if stage == "ai":
                 if live_data.get("ai_reset"):
                     ui_state["ai_live_items"].clear()
-                    ai_results_area.empty()
+                    _render_live_ai()
                     return
 
                 if "ai_item" in live_data:
                     item = live_data["ai_item"]
-                    service_key = str(item.get("service") or item.get("name") or "").strip().casefold()
+                    service_key = str(
+                        item.get("service") or item.get("name") or ""
+                    ).strip().casefold()
                     replaced = False
                     if service_key:
                         for index, existing in enumerate(ui_state["ai_live_items"]):
@@ -754,47 +794,12 @@ if run_scan:
                                 break
                     if not replaced:
                         ui_state["ai_live_items"].append(item)
-
-                    ai_results_area.empty()
-                    with ai_results_area.container():
-                        st.divider()
-                        st.subheader(t("ai_title", lang=lang))
-                        for live_item in ui_state["ai_live_items"]:
-                            risk_key = (
-                                normalize_risk(live_item.get("risk_key"))
-                                or normalize_risk(live_item.get("risk_level"))
-                                or "unknown"
-                            )
-                            risk_label = t(f"risk_{risk_key}", lang=lang)
-                            st.markdown(
-                                f"**{risk_icon(risk_key)} "
-                                f"{_md_escape(live_item.get('service', ''))}** - "
-                                f"*{t('risk_level_label', lang=lang)}: {risk_label}*"
-                            )
-                            st.write(
-                                f"**{t('reason_label', lang=lang)}:** "
-                                f"{live_item.get('reason', '')}"
-                            )
-                            delete_url = live_item.get("delete_url", "-")
-                            if delete_url and delete_url != "-":
-                                if (
-                                    isinstance(delete_url, str)
-                                    and delete_url.startswith("https://")
-                                ):
-                                    st.markdown(
-                                        t(
-                                            "delete_link_label",
-                                            lang=lang,
-                                            url=delete_url,
-                                        )
-                                    )
-                                else:
-                                    st.write(f"🔗 {delete_url}")
-                            st.caption("---")
+                    _render_live_ai()
                     return
 
                 if "ai" in live_data:
                     live_state["ai"] = live_data["ai"]
+                    live_state["ai_status"] = None
                     return
 
                 message = event.get("text")
@@ -804,15 +809,13 @@ if run_scan:
                         lang=lang,
                         **event.get("args", {}),
                     )
-                ai_status_area.empty()
-                if message:
-                    level = event.get("level", "info")
-                    with ai_status_area.container():
-                        getattr(st, level, st.info)(message)
+                live_state["ai_status"] = {
+                    "level": event.get("level", "info"),
+                    "message": message,
+                }
+                _render_live_ai()
                 return
 
-            # Generic progress/status events remain visible in the main
-            # progress placeholder without creating result sections.
             message = event.get("text")
             if not message and event.get("key"):
                 message = t(
@@ -821,10 +824,16 @@ if run_scan:
                     **event.get("args", {}),
                 )
             if message:
-                level = event.get("level", "info")
-                progress_status.empty()
-                with progress_status.container():
-                    getattr(st, level, st.info)(message)
+                progress = {"level": event.get("level", "info"), "message": message}
+                stage_area.empty()
+                with stage_area.container():
+                    getattr(st, progress["level"], st.info)(progress["message"])
+                # Restore the already-completed stage content below the progress
+                # message on the same surface.
+                _render_live_stages()
+
+        progress_status = st.empty()
+        progress_status.info(t("spinner_processing", lang=lang))
 
         progress_status.info(t("spinner_processing", lang=lang))
 
@@ -848,37 +857,25 @@ if run_scan:
         progress_status.empty()
         st.session_state["scan_state"] = final_state
 
-        # Final pipeline state is authoritative. Reconcile into the SAME
-        # placeholders used by progressive rendering; do not append sections.
+        # Final pipeline state is authoritative. Reconcile both surfaces once
+        # so the completed result replaces the progressive view without adding
+        # duplicate sections.
         live_state["services"] = list(final_state.get("services") or [])
         live_state["evidence"] = list(final_state.get("evidence") or [])
         live_state["breach"] = final_state.get("breach") or live_state["breach"]
         live_state["scorecard"] = final_state.get("scorecard")
+        live_state["ai"] = final_state.get("ai")
+        live_state.pop("evidence_status", None)
+        live_state["ai_status"] = None
 
-        services_area.empty()
-        if live_state["services"]:
-            _render_live_services()
+        _render_live_stages()
 
-        breach_area.empty()
-        if live_state["breach"]:
-            _render_live_breach()
-
-        evidence_area.empty()
-        if live_state["evidence"]:
-            _render_live_evidence()
-
-        scorecard_area.empty()
-        if live_state["scorecard"]:
-            _render_live_scorecard()
-
-        ai_status_area.empty()
-        ai_results_area.empty()
-
+        ai_area.empty()
         if final_state.get("ai"):
-            with ai_results_area.container():
+            with ai_area.container():
                 render_ai(final_state)
         elif not final_state["services"] and not final_state["breach"]["findings"]:
-            with ai_results_area.container():
+            with ai_area.container():
                 st.warning(t("warn_no_services", lang=lang))
 
 
