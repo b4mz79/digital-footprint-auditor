@@ -273,7 +273,7 @@ def render_evidence(scan_state: dict) -> None:
             st.caption("---")
 
 
-_ADDON_UI_ANCHOR_ORDER = ("discovery", "breach", "evidence", "final")
+_ADDON_UI_ANCHOR_ORDER = ("discovery_imap", "discovery_osint", "breach", "evidence", "final")
 
 
 def _addon_ui_anchor(addon: Mapping[str, object]) -> str:
@@ -284,8 +284,10 @@ def _addon_ui_anchor(addon: Mapping[str, object]) -> str:
         for event in events
         if isinstance(event, Mapping)
     }
-    if names & {"discovery.imap.completed", "discovery.osint.completed"}:
-        return "discovery"
+    if "discovery.imap.completed" in names:
+        return "discovery_imap"
+    if "discovery.osint.completed" in names:
+        return "discovery_osint"
     if "breach.scan.completed" in names:
         return "breach"
     if names & {"evidence.enriched", "evidence.verified"}:
@@ -732,10 +734,16 @@ if run_scan:
             "addons": {},
         }
 
-        # Reserve result anchors once. Each add-on slot is physically
-        # created in the same visual region as the event that produces it.
+        # Reserve the live pipeline in the same visual order as the
+        # established main-branch UX. Discovery is intentionally progressive:
+        # IMAP terminal status -> IMAP Add-On UI -> OSINT terminal status ->
+        # OSINT Add-On UI -> combined IMAP+OSINT services table -> downstream stages.
         with live_area:
-            services_slot = st.empty()
+            progress_status = st.empty()
+
+            discovery_status_slots = {
+                "imap": st.empty() if enable_imap else None,
+            }
 
             addon_ui_slots = {
                 anchor: {}
@@ -748,11 +756,29 @@ if run_scan:
                     not addon_id
                     or not addon.get("active")
                     or addon.get("type") == "backend"
-                    or _addon_ui_anchor(addon) != "discovery"
+                    or _addon_ui_anchor(addon) != "discovery_imap"
                 ):
                     continue
-                addon_ui_slots["discovery"][addon_id] = st.empty()
+                addon_ui_slots["discovery_imap"][addon_id] = st.empty()
 
+            discovery_status_slots["osint"] = (
+                st.empty() if enable_osint else None
+            )
+
+            for addon in addon_manager.list():
+                addon_id = str(addon.get("id", "")).strip()
+                if (
+                    not addon_id
+                    or not addon.get("active")
+                    or addon.get("type") == "backend"
+                    or _addon_ui_anchor(addon) != "discovery_osint"
+                ):
+                    continue
+                addon_ui_slots["discovery_osint"][addon_id] = st.empty()
+
+            services_slot = st.empty()
+
+            breach_status_slot = st.empty() if enable_breach else None
             breach_slot = st.empty()
 
             for addon in addon_manager.list():
@@ -766,6 +792,7 @@ if run_scan:
                     continue
                 addon_ui_slots["breach"][addon_id] = st.empty()
 
+            evidence_status_slot = st.empty()
             evidence_slot = st.empty()
 
             for addon in addon_manager.list():
@@ -779,8 +806,6 @@ if run_scan:
                     continue
                 addon_ui_slots["evidence"][addon_id] = st.empty()
 
-            # Add-ons without a known application event anchor, plus
-            # on-demand add-ons, occupy the final region immediately before AI.
             for addon in addon_manager.list():
                 addon_id = str(addon.get("id", "")).strip()
                 if (
@@ -792,28 +817,15 @@ if run_scan:
                     continue
                 addon_ui_slots["final"][addon_id] = st.empty()
 
+            ai_status_slot = st.empty()
             ai_slot = st.empty()
 
-        # Transient progress/status is deliberately separated from result
-        # anchors. It is replaced/cleared per stage and therefore cannot become
-        # a permanent result row after the scan completes.
-        progress_status = st.empty()
-        stage_status = {
-            "imap": st.empty() if enable_imap else None,
-            "osint": st.empty() if enable_osint else None,
-            "breach": st.empty() if enable_breach else None,
-            "evidence": st.empty(),
-            "ai": st.empty(),
+        status_slots = {
+            "breach": breach_status_slot,
+            "evidence": evidence_status_slot,
+            "ai": ai_status_slot,
         }
 
-        discovery_pending = {
-            stage
-            for stage, enabled in (
-                ("imap", bool(enable_imap)),
-                ("osint", bool(enable_osint)),
-            )
-            if enabled
-        }
         def _event_message(event: dict) -> str:
             message = event.get("text")
             if not message and event.get("key"):
@@ -825,13 +837,13 @@ if run_scan:
             return str(message or "")
 
         def _clear_status(stage: str) -> None:
-            slot = stage_status.get(stage)
+            slot = status_slots.get(stage)
             if slot is not None:
                 slot.empty()
 
         def _show_status(stage: str, event: dict) -> None:
             message = _event_message(event)
-            slot = stage_status.get(stage)
+            slot = status_slots.get(stage)
             if slot is None or not message:
                 return
 
@@ -852,19 +864,28 @@ if run_scan:
             stage = event.get("stage")
             live_data = event.get("_live") or {}
 
-            # Discovery has explicit terminal events from pipeline.py.
-            # Results are accumulated first, then rendered exactly once after
-            # every enabled discovery stage has terminated.
+            # Discovery deliberately preserves the main-branch UX:
+            # terminal IMAP/OSINT messages remain visible, while the combined
+            # services table is rendered only after the final enabled discovery
+            # stage completes.
             if stage in ("imap", "osint"):
                 if "services" in live_data:
                     live_state["services"].extend(live_data["services"])
 
+                slot = discovery_status_slots.get(stage)
+                message = _event_message(event)
+                if slot is not None and message:
+                    with slot.container():
+                        renderer = getattr(
+                            st,
+                            event.get("level", "info"),
+                            st.info,
+                        )
+                        renderer(message)
+
                 if event.get("level") in {"success", "warning", "error"}:
-                    _clear_status(stage)
-                    discovery_pending.discard(stage)
-                    _render_services()
-                else:
-                    _show_status(stage, event)
+                    if stage == "osint" or not enable_osint:
+                        _render_services()
                 return
 
             # Downstream result anchors are positioned according to the
@@ -972,7 +993,6 @@ if run_scan:
             }
         )
 
-        discovery_pending.clear()
         _render_services()
 
         if live_state["breach"].get("enabled"):
@@ -1029,7 +1049,7 @@ if run_scan:
 
         # No transient "Memindai..." state survives a completed pipeline.
         progress_status.empty()
-        for slot in stage_status.values():
+        for slot in status_slots.values():
             if slot is not None:
                 slot.empty()
 
@@ -1041,8 +1061,9 @@ state = st.session_state.get("scan_state")
 # On rerun (download, language change, cache clear, etc.), render the stored
 # result in the same pipeline order as the first run.
 if state and not scan_executed:
+    render_addon_uis(state, anchor="discovery_imap")
+    render_addon_uis(state, anchor="discovery_osint")
     render_services(state)
-    render_addon_uis(state, anchor="discovery")
     render_breach(state)
     render_addon_uis(state, anchor="breach")
     render_evidence(state)
