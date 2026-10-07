@@ -186,6 +186,14 @@ def run_scan(
             addon_id = str(addon["id"])
             event_results[addon_id] = addon_output
             state["addons"][addon_id] = addon_output
+            logger.info(
+                "[Pipeline] Add-on result stored: id=%s result_type=%s result_keys=%s",
+                addon_id,
+                type(addon_output).__name__,
+                sorted(str(key) for key in addon_output.keys())
+                if isinstance(addon_output, Mapping)
+                else [],
+            )
 
             result_key = addon.get("result_key")
             if result_key:
@@ -198,6 +206,12 @@ def run_scan(
                 {result_key: state[result_key]}
                 if result_key
                 else {"addon": addon_id, "result": addon_output}
+            )
+            logger.info(
+                "[Pipeline] Add-on live payload: id=%s result_present=%s payload_keys=%s",
+                addon_id,
+                addon_output is not None,
+                sorted(str(key) for key in live_payload.keys()),
             )
             emit(
                 _event(
