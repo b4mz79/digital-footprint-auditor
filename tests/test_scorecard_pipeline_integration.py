@@ -8,7 +8,7 @@ import pytest
 from services import pipeline
 from services.evidence.models import EvidenceDirectness, EvidenceRecord, EvidenceRelation
 
-DUMP_PATH = Path("cache/evidence/contextual_filter_dump.md")
+DUMP_PATH = Path(__file__).resolve().parent / "scorecard" / "fixtures" / "contextual_filter_dump.md"
 
 
 def _definition() -> dict:
