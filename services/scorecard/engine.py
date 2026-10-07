@@ -50,11 +50,20 @@ class ScorecardEngine:
             "coverage": normalized.coverage,
             "measurements": dict(measurements),
         }
-        decision = self.policy.evaluate(
-            risk_policy,
-            policy_context,
-            condition_evaluator=condition_evaluator,
-        )
+        if normalized.state == "unknown":
+            decision = PolicyDecision(
+                "condition_unknown",
+                None,
+                None,
+                (),
+                (),
+            )
+        else:
+            decision = self.policy.evaluate(
+                risk_policy,
+                policy_context,
+                condition_evaluator=condition_evaluator,
+            )
 
         lineage = {
             "schema_version": "scorecard-lineage-v1",
@@ -96,6 +105,7 @@ class ScorecardEngine:
             scorecard_version=scorecard_version,
             calculated_at=calculated_at or datetime.now(timezone.utc).isoformat(),
             calculation=normalized,
+            contribution_details=raw.contribution_details,
             measurement_refs=measurement_refs,
             lineage=lineage,
             policy_refs=policy_refs,
