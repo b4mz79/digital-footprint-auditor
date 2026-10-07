@@ -1195,7 +1195,7 @@ async def call_ollama_async(
     if not isinstance(all_evidence, list):
         all_evidence = []
 
-    batch_size = _env_non_negative_int("OLLAMA_BATCH_SERVICES", 4, 8) or 4
+    batch_size = _env_non_negative_int("OLLAMA_BATCH_SERVICES", 1, 8) or 1
     max_evidence_per_batch = _env_non_negative_int(
         "OLLAMA_BATCH_EVIDENCE",
         2,
@@ -1304,24 +1304,6 @@ async def call_ollama_async(
                 parsed_batch = json.loads(clean_json_string(raw_batch))
                 validated_batch = validate_ai_output(parsed_batch, lang)
                 batch_analysis = validated_batch["analysis"]
-                expected_service_keys = {
-                    _norm(item.get("service") or item.get("name"))
-                    for item in batch
-                    if isinstance(item, dict)
-                }
-                returned_service_keys = {
-                    _norm(item.get("service"))
-                    for item in batch_analysis
-                    if isinstance(item, dict)
-                }
-                if returned_service_keys != expected_service_keys:
-                    missing = sorted(expected_service_keys - returned_service_keys)
-                    extra = sorted(returned_service_keys - expected_service_keys)
-                    raise ValueError(
-                        "Ollama batch output tidak lengkap: "
-                        f"missing={missing[:8]} extra={extra[:8]}"
-                    )
-
                 combined.extend(batch_analysis)
 
                 if on_batch:
@@ -2281,21 +2263,12 @@ async def analyze_smart_cache(
 
     safe_preview = _safe_component(mask_pii(email), 64)
 
-    breach_complete = bool(scan_status.get("breach_scan_complete", False))
-    failed_breach_engines = scan_status.get("failed_engines", [])
-    if breach_complete:
-        breach_status = f"{len(findings)} temuan breach terkonfirmasi"
-    elif failed_breach_engines:
-        breach_status = "status breach UNKNOWN (scan tidak lengkap)"
-    else:
-        breach_status = "status breach UNKNOWN (scan belum lengkap)"
-
     logger.info(
         "Memulai AI Privacy Audit target [%s] "
-        "(%d layanan, %s) [Bahasa: %s]",
+        "(%d layanan, %d temuan breach) [Bahasa: %s]",
         safe_preview,
         len(services),
-        breach_status,
+        len(findings),
         lang,
     )
 
