@@ -732,8 +732,8 @@ if run_scan:
             "addons": {},
         }
 
-        # Reserve result anchors once. Add-on UI anchors are placed in the
-        # same canonical regions as the events that produce their results.
+        # Reserve result anchors once. Each add-on slot is physically
+        # created in the same visual region as the event that produces it.
         with live_area:
             services_slot = st.empty()
 
@@ -741,22 +741,57 @@ if run_scan:
                 anchor: {}
                 for anchor in _ADDON_UI_ANCHOR_ORDER
             }
+
             for addon in addon_manager.list():
                 addon_id = str(addon.get("id", "")).strip()
                 if (
                     not addon_id
                     or not addon.get("active")
                     or addon.get("type") == "backend"
+                    or _addon_ui_anchor(addon) != "discovery"
                 ):
                     continue
-                anchor = _addon_ui_anchor(addon)
-                addon_ui_slots[anchor][addon_id] = st.empty()
+                addon_ui_slots["discovery"][addon_id] = st.empty()
 
             breach_slot = st.empty()
+
+            for addon in addon_manager.list():
+                addon_id = str(addon.get("id", "")).strip()
+                if (
+                    not addon_id
+                    or not addon.get("active")
+                    or addon.get("type") == "backend"
+                    or _addon_ui_anchor(addon) != "breach"
+                ):
+                    continue
+                addon_ui_slots["breach"][addon_id] = st.empty()
+
             evidence_slot = st.empty()
 
-            # Event-driven add-ons tied to evidence must stay after the
-            # evidence result; final/on-demand UIs stay immediately before AI.
+            for addon in addon_manager.list():
+                addon_id = str(addon.get("id", "")).strip()
+                if (
+                    not addon_id
+                    or not addon.get("active")
+                    or addon.get("type") == "backend"
+                    or _addon_ui_anchor(addon) != "evidence"
+                ):
+                    continue
+                addon_ui_slots["evidence"][addon_id] = st.empty()
+
+            # Add-ons without a known application event anchor, plus
+            # on-demand add-ons, occupy the final region immediately before AI.
+            for addon in addon_manager.list():
+                addon_id = str(addon.get("id", "")).strip()
+                if (
+                    not addon_id
+                    or not addon.get("active")
+                    or addon.get("type") == "backend"
+                    or _addon_ui_anchor(addon) != "final"
+                ):
+                    continue
+                addon_ui_slots["final"][addon_id] = st.empty()
+
             ai_slot = st.empty()
 
         # Transient progress/status is deliberately separated from result
