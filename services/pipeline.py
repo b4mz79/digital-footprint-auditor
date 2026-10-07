@@ -23,7 +23,6 @@ from services.discovery_cache import (
 from services.evidence_enrichment import enrich_evidence
 from services.evidence_verification import verify_evidence_records
 from services.evidence import evidence_to_dicts, service_findings_to_evidence
-from services.scorecard.integration import evaluate_pipeline_scorecard
 from services.imap_scanner import scan_gmail_inbox
 from services.osint_scanner import scan_osint_footprint
 from utils.envutil import env_non_negative_int
@@ -250,6 +249,10 @@ def run_scan(
     # the add-on is downstream and failure-isolated. When disabled, no scorecard
     # code path is invoked and the existing AI payload remains unchanged.
     if enable_scorecard:
+        # Lazy import keeps the existing pipeline independent from the optional
+        # add-on when Scorecard is disabled or absent.
+        from services.scorecard.integration import evaluate_pipeline_scorecard
+
         emit(_event("info", text="Memulai Scorecard Add-on...", stage="scorecard"))
         try:
             if not isinstance(scorecard_definition, dict):
