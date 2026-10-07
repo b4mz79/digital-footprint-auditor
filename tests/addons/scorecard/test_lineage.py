@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from tests.scorecard.reference_engine import evaluate_weighted_sum
+from tests.addons.scorecard.reference_engine import evaluate_weighted_sum
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
