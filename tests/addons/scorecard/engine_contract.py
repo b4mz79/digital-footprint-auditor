@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 from typing import Any, Protocol
 
-from tests.scorecard.reference_engine import EvalResult
+from tests.addons.scorecard.reference_engine import EvalResult
 
 
 VALID_STATES = {"observed", "partial", "unknown"}
