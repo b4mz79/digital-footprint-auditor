@@ -1,6 +1,6 @@
 # Scorecard OSS Selection Decision
 
-Status: TECHNICAL SELECTION — PRE-PRODUCTION
+Status: PRELIMINARY TECHNICAL PREFERENCE — FOCUSED IMPLEMENTATION GATE PENDING
 
 Branch: feat/evidence-enrichment-foundation
 
@@ -12,7 +12,7 @@ Candidates evaluated:
 
 ## Executive decision
 
-**Preferred OSS calculation primitive: python-jsonlogic.**
+**Current preferred candidate: python-jsonlogic — pending the focused full-vocabulary implementation gate.**
 
 The reason is not that it has the largest feature set. ZEN has the larger capability surface. The decision is based on the current Scorecard boundary: the project needs a serializable, deterministic calculation-definition primitive while retaining ownership of UNKNOWN/partial semantics, contribution semantics, lineage, version binding, risk policy, and final ScorecardResult.
 
@@ -196,11 +196,11 @@ It loses because the engineering saved at the expression-evaluation layer is not
 
 It remains useful as a fallback benchmark/reference primitive.
 
-## Final shortlist
+## Final shortlist (pre-gate)
 
 | Rank | Candidate | Decision |
 |---|---|---|
-| 1 | **python-jsonlogic** | **Preferred current OSS calculation primitive** |
+| 1 | **python-jsonlogic** | **Current preference; full-vocabulary gate pending** |
 | 2 | **GoRules ZEN** | Strategic alternative if decision/rule graph capability becomes required |
 | 3 | **simpleeval** | Minimalist fallback for formula-centric scope |
 | Baseline | **Native** | Always-retained reference and fallback |
