@@ -75,9 +75,13 @@ class SQLiteScorecardStore:
 
     def __init__(self, path: str | Path = "scorecard.db") -> None:
         self.path = Path(path)
+        self.initialize()
 
     def initialize(self) -> None:
-        self._connect().executescript(_SCHEMA)
+        if self.path.parent != Path("."):
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+        with self._connect() as connection:
+            connection.executescript(_SCHEMA)
 
     def close(self) -> None:
         # Connections are deliberately short-lived; this is a no-op retained
