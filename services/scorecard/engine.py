@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Mapping
 
-from .calculation import CalculationResult, ScorecardCalculationEngine
+from .calculation import ScorecardCalculationEngine
 from .policy import ConditionEvaluator, PolicyDecision, RiskPolicyEngine
 from .result import ScorecardResult, build_scorecard_result
 
@@ -28,8 +28,7 @@ class ScorecardEngine:
         scorecard_version: str,
         result_id: str,
         measurements: Mapping[str, Mapping[str, Any]],
-        weights: Mapping[str, float],
-        normalization: Mapping[str, Any],
+        scorecard_definition: Mapping[str, Any],
         risk_policy: Mapping[str, Any],
         condition_evaluator: ConditionEvaluator,
         measurement_refs: tuple[str, ...],
@@ -41,10 +40,12 @@ class ScorecardEngine:
             raise ValueError("scorecard definition requires aggregation and score")
         if aggregation.get("operation") != "weighted_sum":
             raise ValueError("current production engine requires weighted_sum aggregation")
+
         weights = aggregation.get("weights")
         canonical_range = score_config.get("canonical_range")
         if not isinstance(weights, Mapping) or not isinstance(canonical_range, Mapping):
             raise ValueError("scorecard definition requires weights and canonical_range")
+
         raw = self.calculation.weighted_sum(measurements, weights)
         normalized = self.calculation.normalization(
             raw,
@@ -61,13 +62,7 @@ class ScorecardEngine:
             "measurements": dict(measurements),
         }
         if normalized.state == "unknown":
-            decision = PolicyDecision(
-                "condition_unknown",
-                None,
-                None,
-                (),
-                (),
-            )
+            decision = PolicyDecision("condition_unknown", None, None, (), ())
         else:
             decision = self.policy.evaluate(
                 risk_policy,
@@ -91,17 +86,18 @@ class ScorecardEngine:
                     "operation": "normalization",
                     "inputs": ["weighted_sum-1"],
                     "parameters": {
-                        "source_min": float(normalization["source_min"]),
-                        "source_max": float(normalization["source_max"]),
-                        "clamp": bool(normalization.get("clamp", False)),
-                        "rounding": normalization.get("rounding", "half_even"),
-                        "precision": int(normalization.get("precision", 2)),
+                        "source_min": float(canonical_range["min"]),
+                        "source_max": float(canonical_range["max"]),
+                        "clamp": False,
+                        "rounding": score_config.get("rounding", "half_even"),
+                        "precision": int(score_config.get("precision", 2)),
                     },
                     "output": "score",
                 },
             ],
             "output": "score",
         }
+
         policy_refs = {
             "risk_policy": str(risk_policy["risk_policy_id"]),
             "risk_policy_version": str(risk_policy["version"]),
@@ -131,8 +127,7 @@ class ScorecardEngine:
         scorecard_version: str,
         result_id: str,
         measurements: Mapping[str, Mapping[str, Any]],
-        weights: Mapping[str, float],
-        normalization: Mapping[str, Any],
+        scorecard_definition: Mapping[str, Any],
         risk_policy: Mapping[str, Any],
         condition_evaluator: ConditionEvaluator,
         measurement_refs: tuple[str, ...],
