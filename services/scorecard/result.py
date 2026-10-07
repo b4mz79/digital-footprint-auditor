@@ -2,8 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from copy import deepcopy
 import math
 from typing import Any, Mapping
+
+from .models import ScorecardResultRecord
 
 from .calculation import CalculationResult, ContributionDetail
 from .policy import PolicyDecision
@@ -28,6 +31,42 @@ class ScorecardResult:
     policy_refs: Mapping[str, str]
     contribution_stage: str | None = None
 
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-ready immutable result snapshot."""
+        return {
+            "schema_version": "scorecard-result-v1",
+            "result_id": self.result_id,
+            "assessment_id": self.assessment_id,
+            "scorecard_id": self.scorecard_id,
+            "scorecard_version": self.scorecard_version,
+            "calculated_at": self.calculated_at,
+            "state": self.state,
+            "score": self.score,
+            "risk_band": self.risk_band,
+            "dimension_results": deepcopy(list(self.dimension_results)),
+            "contributions": [
+                {
+                    "kpi_id": item.kpi_id,
+                    "value": item.value,
+                    "weight": item.weight,
+                    "contribution": item.contribution,
+                }
+                for item in self.contributions
+            ],
+            "measurement_refs": list(self.measurement_refs),
+            "calculation_lineage": deepcopy(dict(self.calculation_lineage)),
+            "policy_refs": dict(self.policy_refs),
+            "contribution_stage": self.contribution_stage,
+        }
+
+    def to_record(self) -> ScorecardResultRecord:
+        return ScorecardResultRecord(
+            result_id=self.result_id,
+            assessment_id=self.assessment_id,
+            calculated_at=self.calculated_at,
+            result=self.to_dict(),
+        )
     def __post_init__(self) -> None:
         if not all(
             isinstance(value, str) and value
