@@ -15,7 +15,7 @@ import time
 import urllib.parse
 import weakref
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 from urllib.parse import urlsplit, urlunsplit
 
 import httpx
