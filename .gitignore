@@ -36,3 +36,9 @@ safe_services.json
 *.zip
 build/
 dist/
+# Scorecard local persistence
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
