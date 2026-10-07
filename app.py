@@ -304,12 +304,17 @@ def render_addon_uis(scan_state: dict, addon_slots=None) -> None:
                 "lang": lang,
             }
             if slot is not None:
+                # A Streamlit empty placeholder is a replacement anchor.
+                # Clear it before recreating its container; otherwise repeated
+                # container() calls can accumulate UI blocks on each event.
+                slot.empty()
                 with slot.container():
                     addon_manager.invoke_ui(addon_id, ui_context)
             else:
                 addon_manager.invoke_ui(addon_id, ui_context)
         except Exception as exc:
             if slot is not None:
+                slot.empty()
                 with slot.container():
                     st.error(
                         f"UI Add-On {addon_id} gagal: "
@@ -828,12 +833,16 @@ if run_scan:
                     }
                     try:
                         if slot is not None:
+                            # Replace the fixed placeholder contents instead of
+                            # appending another UI block for every pipeline event.
+                            slot.empty()
                             with slot.container():
                                 addon_manager.invoke_ui(addon_id, ui_context)
                         else:
                             addon_manager.invoke_ui(addon_id, ui_context)
                     except Exception as exc:
                         if slot is not None:
+                            slot.empty()
                             with slot.container():
                                 st.error(
                                     f"UI Add-On {addon_id} gagal: "
