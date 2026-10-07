@@ -670,6 +670,7 @@ if run_scan:
             },
             "ai": None,
             "scorecard": None,
+            "breach_ready": False,
             "ai_status": None,
         }
 
@@ -685,7 +686,7 @@ if run_scan:
                     st.info(f"⏳ {evidence_status}")
                 if live_state["services"]:
                     render_services(live_state)
-                if live_state["breach"].get("enabled"):
+                if live_state.get("breach_ready"):
                     render_breach(live_state)
                 if live_state["evidence"]:
                     render_evidence(live_state)
@@ -753,6 +754,7 @@ if run_scan:
 
             if stage == "breach" and "breach" in live_data:
                 live_state["breach"] = live_data["breach"]
+                live_state["breach_ready"] = True
                 _render_live_stages()
                 return
 
@@ -865,6 +867,7 @@ if run_scan:
         live_state["services"] = list(final_state.get("services") or [])
         live_state["evidence"] = list(final_state.get("evidence") or [])
         live_state["breach"] = final_state.get("breach") or live_state["breach"]
+        live_state["breach_ready"] = True
         live_state["scorecard"] = final_state.get("scorecard")
         live_state["ai"] = final_state.get("ai")
         live_state.pop("evidence_status", None)
