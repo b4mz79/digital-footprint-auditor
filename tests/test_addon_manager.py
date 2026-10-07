@@ -20,6 +20,7 @@ def _zip_package(
     events: list[dict] | None = None,
     return_type: str = "result",
     return_required: bool = True,
+    ui_body: str | None = None,
 ) -> bytes:
     manifest = {
         "id": addon_id,
@@ -40,6 +41,8 @@ def _zip_package(
         "events": events if events is not None else [],
         "default_active": False,
     }
+    if ui_body is not None:
+        manifest["ui"] = {"entrypoint": "ui.py", "function": "render"}
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
         archive.writestr(
@@ -47,6 +50,8 @@ def _zip_package(
             json.dumps(manifest),
         )
         archive.writestr(f"{addon_id}/{entrypoint}", plugin_body)
+        if ui_body is not None:
+            archive.writestr(f"{addon_id}/ui.py", ui_body)
     return buffer.getvalue()
 
 
@@ -84,6 +89,40 @@ def test_install_discover_activate_invoke_uninstall(tmp_path: Path) -> None:
     manager.uninstall("demo-addon")
     assert manager.get("demo-addon") is None
 
+
+def test_invoke_ui_for_active_non_backend_addon(tmp_path: Path) -> None:
+    manager = AddonManager(tmp_path / "addons")
+    payload = _zip_package(
+        addon_id="hybrid-addon",
+        addon_type="hybrid",
+        ui_body="def render(context):\n    return None\n",
+    )
+    manager.install_zip(payload)
+    manager.activate("hybrid-addon")
+
+    addon, result = manager.invoke_ui(
+        "hybrid-addon",
+        {"result": {"ok": True}},
+    )
+
+    assert addon["id"] == "hybrid-addon"
+    assert addon["type"] == "hybrid"
+    assert result is None
+
+
+def test_backend_addon_has_no_ui_invoker(tmp_path: Path) -> None:
+    manager = AddonManager(tmp_path / "addons")
+    manager.install_zip(_zip_package())
+
+    manager.activate("demo-addon")
+    with pytest.raises(ValueError, match="no UI entrypoint"):
+        manager.invoke_ui("demo-addon", {})
+
+
+def test_ui_addon_requires_ui_contract(tmp_path: Path) -> None:
+    manager = AddonManager(tmp_path / "addons")
+    with pytest.raises(ValueError, match="requires a ui entrypoint"):
+        manager.install_zip(_zip_package(addon_type="ui"))
 
 def test_invoke_rejects_event_only_addon(tmp_path: Path) -> None:
     manager = AddonManager(tmp_path / "addons")
