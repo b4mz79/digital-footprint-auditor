@@ -159,9 +159,9 @@ async def enrich_evidence(
                     )
                     break
         finally:
-            # Persist exactly one complete snapshot after provider orchestration
-            # finishes, including early-stop and exceptional execution paths.
-            await provider.finalize_filter_dump()
+            # Contextual filter dumps are test/diagnostic artifacts only.
+            # Runtime enrichment must not generate or persist them.
+            pass
 
     merged: dict[str, EvidenceRecord] = {
         record.evidence_id: record for record in base
