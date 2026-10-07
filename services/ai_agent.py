@@ -2195,7 +2195,7 @@ def _input_fingerprint(
     services: list[dict],
     findings: list[dict],
     evidence_records: list | None = None,
-    scorecard_result: Mapping[str, Any] | None = None,
+    addon_results: Mapping[str, Any] | None = None,
     scan_status: dict[str, Any] | None = None,
 ) -> str:
     """Identify every analysis input, including provenance evidence, for cache safety."""
@@ -2220,7 +2220,7 @@ def _input_fingerprint(
         json.dumps(item, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         for item in _sanitize_evidence_records(evidence_records)
     )
-    scorecard_part = _sanitize_scorecard_result(scorecard_result) or {}
+    addon_part = _sanitize_addon_results(addon_results)
 
     status = scan_status if isinstance(scan_status, dict) else {}
     status_part = {
@@ -2238,7 +2238,7 @@ def _input_fingerprint(
             svc_part,
             find_part,
             evidence_part,
-            scorecard_part,
+            addon_part,
             status_part,
         ],
         ensure_ascii=False,
@@ -2260,7 +2260,7 @@ async def analyze_smart_cache(
     tenant_id: str = "default",
     breach_findings: list | None = None,
     evidence_records: list | None = None,
-    scorecard_result: Mapping[str, Any] | None = None,
+    addon_results: Mapping[str, Any] | None = None,
     scan_status: dict[str, Any] | None = None,
     on_analysis_item: Callable[[dict[str, Any]], None] | None = None,
     on_analysis_reset: Callable[[], None] | None = None,
@@ -2291,7 +2291,7 @@ async def analyze_smart_cache(
         else []
     )
     evidence = _sanitize_evidence_records(evidence_records)
-    scorecard = _sanitize_scorecard_result(scorecard_result)
+    addons = _sanitize_addon_results(addon_results)
     scan_status = scan_status if isinstance(scan_status, dict) else {
         "breach_scan_complete": False,
         "failed_engines": [],
@@ -2301,7 +2301,7 @@ async def analyze_smart_cache(
         services,
         findings,
         evidence,
-        scorecard,
+        addons,
         scan_status,
     )
 
@@ -2411,7 +2411,7 @@ async def analyze_smart_cache(
         phone,
         lang,
         evidence_records=evidence,
-        scorecard_result=scorecard,
+        addon_results=addons,
         scan_status=scan_status,
     )
 
