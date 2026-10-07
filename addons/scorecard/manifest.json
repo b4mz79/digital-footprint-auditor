@@ -4,8 +4,20 @@
   "caption": "Evidence Sufficiency Scorecard",
   "version": "1.0.0",
   "entrypoint": "plugin.py",
+  "type": "hybrid",
+  "invocation": {
+    "function": "run",
+    "mode": "on_demand",
+    "input": {
+      "required": true
+    },
+    "return": {
+      "type": "result",
+      "required": true
+    }
+  },
+  "events": [],
   "result_key": "scorecard",
-  "pipeline_stage": "scorecard",
   "ai_context": true,
   "default_active": true
 }
