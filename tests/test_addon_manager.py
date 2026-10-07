@@ -21,6 +21,7 @@ def _zip_package(
     return_type: str = "result",
     return_required: bool = True,
     ui_body: str | None = None,
+    lifecycle: dict[str, str | None] | None = None,
 ) -> bytes:
     manifest = {
         "id": addon_id,
@@ -40,6 +41,7 @@ def _zip_package(
         },
         "events": events if events is not None else [],
         "default_active": False,
+        "lifecycle": lifecycle or {},
     }
     if ui_body is not None:
         manifest["ui"] = {"entrypoint": "ui.py", "function": "render"}
@@ -88,6 +90,113 @@ def test_install_discover_activate_invoke_uninstall(tmp_path: Path) -> None:
 
     manager.uninstall("demo-addon")
     assert manager.get("demo-addon") is None
+
+
+def test_manifest_driven_lifecycle_hooks_run_in_order(tmp_path: Path) -> None:
+    manager = AddonManager(tmp_path / "addons")
+    plugin = """from pathlib import Path
+
+_LOG = Path(__file__).with_name("lifecycle.log")
+
+
+def _record(name):
+    with _LOG.open("a", encoding="utf-8") as handle:
+        handle.write(name + "\\n")
+
+
+def run(context):
+    return {"ok": True}
+
+
+def after_install(context):
+    _record("after_install")
+
+
+def before_activate(context):
+    _record("before_activate")
+
+
+def after_activate(context):
+    _record("after_activate")
+
+
+def before_deactivate(context):
+    _record("before_deactivate")
+
+
+def after_deactivate(context):
+    _record("after_deactivate")
+
+
+def before_uninstall(context):
+    _record("before_uninstall")
+"""
+    manager.install_zip(
+        _zip_package(
+            addon_id="lifecycle-addon",
+            plugin_body=plugin,
+            lifecycle={
+                "after_install": "after_install",
+                "before_activate": "before_activate",
+                "after_activate": "after_activate",
+                "before_deactivate": "before_deactivate",
+                "after_deactivate": "after_deactivate",
+                "before_uninstall": "before_uninstall",
+            },
+        )
+    )
+
+    log_path = tmp_path / "addons" / "lifecycle-addon" / "lifecycle.log"
+    assert log_path.read_text(encoding="utf-8").splitlines() == [
+        "after_install"
+    ]
+
+    manager.activate("lifecycle-addon")
+    manager.deactivate("lifecycle-addon")
+    assert log_path.read_text(encoding="utf-8").splitlines() == [
+        "after_install",
+        "before_activate",
+        "after_activate",
+        "before_deactivate",
+        "after_deactivate",
+    ]
+
+    manager.uninstall("lifecycle-addon")
+    assert log_path.exists() is False
+
+
+def test_lifecycle_before_hook_can_veto_state_change(tmp_path: Path) -> None:
+    manager = AddonManager(tmp_path / "addons")
+    plugin = """def run(context):
+    return {"ok": True}
+
+
+def before_activate(context):
+    raise RuntimeError("activation blocked")
+"""
+    manager.install_zip(
+        _zip_package(
+            addon_id="veto-addon",
+            plugin_body=plugin,
+            lifecycle={"before_activate": "before_activate"},
+        )
+    )
+
+    with pytest.raises(RuntimeError, match="activation blocked"):
+        manager.activate("veto-addon")
+    assert manager.get("veto-addon")["active"] is False
+
+
+def test_manifest_rejects_removed_lifecycle_hooks(tmp_path: Path) -> None:
+    manager = AddonManager(tmp_path / "addons")
+    for hook_name in ("before_install", "after_uninstall"):
+        with pytest.raises(ValueError, match="unsupported add-on lifecycle hook"):
+            manager.install_zip(
+                _zip_package(
+                    addon_id=f"invalid-{hook_name.replace('_', '-')}",
+                    lifecycle={hook_name: "hook"},
+                )
+            )
 
 
 def test_invoke_ui_for_active_non_backend_addon(tmp_path: Path) -> None:
