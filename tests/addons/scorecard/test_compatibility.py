@@ -3,19 +3,19 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from tests.scorecard.compatibility import (
+from tests.addons.scorecard.compatibility import (
     compare_eval_results,
     compare_policy_decisions,
     validate_policy_decision,
 )
-from tests.scorecard.engines.native import NativeReferenceAdapter
-from tests.scorecard.policy_engine_contract import (
+from tests.addons.scorecard.engines.native import NativeReferenceAdapter
+from tests.addons.scorecard.policy_engine_contract import (
     CONDITION_MATCH,
     CONDITION_NO_MATCH,
     CONDITION_UNKNOWN,
     PolicyDecision,
 )
-from tests.scorecard.reference_policy_engine import evaluate_policy
+from tests.addons.scorecard.reference_policy_engine import evaluate_policy
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
