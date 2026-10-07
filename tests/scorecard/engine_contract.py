@@ -10,11 +10,7 @@ VALID_STATES = {"observed", "partial", "unknown"}
 
 
 def assert_eval_result_semantics(result: EvalResult) -> None:
-    """Validate the semantic output contract shared by engine adapters.
-
-    This is intentionally independent of any implementation or OSS engine.
-    It checks only invariants owned by the Scorecard domain.
-    """
+    """Validate the semantic output contract shared by engine adapters."""
     assert result.state in VALID_STATES
 
     if result.state == "unknown":
@@ -63,7 +59,6 @@ def assert_weighted_sum_semantics(
     measurements: dict[str, dict[str, Any]],
     weights: dict[str, float],
 ) -> None:
-    """Validate weighted-sum semantics without prescribing implementation."""
     assert_eval_result_semantics(result)
     declared = tuple(weights)
     assert result.lineage == declared
@@ -84,12 +79,7 @@ def assert_weighted_sum_semantics(
 
 
 class ScorecardEngineAdapter(Protocol):
-    """Compatibility surface for reference and candidate calculation engines.
-
-    The adapter deliberately exposes our semantic operations rather than the
-    API of any particular OSS engine. Candidate engines must map into this
-    contract; our domain semantics remain authoritative.
-    """
+    """Engine-neutral calculation surface used by compatibility evaluation."""
 
     name: str
 
@@ -113,6 +103,13 @@ class ScorecardEngineAdapter(Protocol):
         *,
         operation: str,
         weights: list[float] | None = None,
+    ) -> EvalResult: ...
+
+    def conditional(
+        self,
+        condition: bool | None,
+        when_true: EvalResult,
+        when_false: EvalResult,
     ) -> EvalResult: ...
 
     def normalization(
