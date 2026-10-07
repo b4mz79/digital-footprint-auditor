@@ -701,7 +701,7 @@ if run_scan:
             )
             if enabled
         }
-        discovery_rendered = False
+        discovery_rendered = {"value": False}
 
         def _event_message(event: dict) -> str:
             message = event.get("text")
@@ -730,13 +730,12 @@ if run_scan:
                 renderer(message)
 
         def _render_services_once() -> None:
-            nonlocal discovery_rendered
-            if discovery_rendered:
+            if discovery_rendered["value"]:
                 return
             if discovery_pending:
                 return
 
-            discovery_rendered = True
+            discovery_rendered["value"] = True
             with services_slot.container():
                 render_services(live_state)
 
