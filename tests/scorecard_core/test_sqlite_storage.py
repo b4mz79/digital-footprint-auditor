@@ -4,13 +4,13 @@ import sqlite3
 
 import pytest
 
-from services.scorecard.models import (
+from addons.scorecard.models import (
     AssessmentRecord,
     RiskPolicyRecord,
     ScorecardDefinitionRecord,
     ScorecardResultRecord,
 )
-from services.scorecard.sqlite_store import SQLiteScorecardStore
+from addons.scorecard.sqlite_store import SQLiteScorecardStore
 
 
 def make_store(tmp_path):
