@@ -622,6 +622,7 @@ with st.sidebar:
         addon["id"]
         for addon in addon_manager.list()
         if addon["active"]
+        and addon["invocation"]["mode"] == "on_demand"
     )
 
 
