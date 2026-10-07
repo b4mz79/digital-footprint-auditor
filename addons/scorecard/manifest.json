@@ -16,6 +16,10 @@
       "required": true
     }
   },
+  "ui": {
+    "entrypoint": "ui.py",
+    "function": "render"
+  },
   "events": [],
   "result_key": "scorecard",
   "ai_context": true,
