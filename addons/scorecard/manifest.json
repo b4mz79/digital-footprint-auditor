@@ -1,0 +1,11 @@
+{
+  "id": "scorecard",
+  "name": "Scorecard",
+  "caption": "Evidence Sufficiency Scorecard",
+  "version": "1.0.0",
+  "entrypoint": "plugin.py",
+  "result_key": "scorecard",
+  "pipeline_stage": "scorecard",
+  "ai_context": true,
+  "default_active": true
+}
