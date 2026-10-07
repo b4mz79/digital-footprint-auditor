@@ -71,9 +71,6 @@ def run_scan(
     lang: str = "id",
     tenant_id: str | None = None,
     with_ai: bool = True,
-    enable_scorecard: bool = False,
-    scorecard_definition: dict[str, Any] | None = None,
-    scorecard_risk_policy: dict[str, Any] | None = None,
     enabled_addons: tuple[str, ...] | list[str] = (),
     on_event: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
@@ -100,8 +97,6 @@ def run_scan(
         },
         "ai": None,
         "ai_lang": None,
-        "scorecard": None,
-        "scorecard_input": None,
         "addons": {},
     }
     events: list[dict[str, Any]] = state["events"]
@@ -248,25 +243,18 @@ def run_scan(
         {"evidence": list(state["evidence"])},
     )
 
-    # Optional add-ons. The application supplies only the IDs that are active;
-    # the manager owns discovery, loading, activation and invocation.
+    # Optional add-ons. The application supplies only active IDs;
+    # AddonManager owns manifest validation, loading and invocation.
     addon_ids = list(enabled_addons)
-    if enable_scorecard and not addon_ids:
-        # Backward-compatible bridge for existing callers. New callers should
-        # use enabled_addons so the pipeline remains add-on-name agnostic.
-        addon_ids.append("scorecard")
 
     if addon_ids:
         addon_manager = get_addon_manager()
-        for addon_id in dict.fromkeys(str(item) for item in addon_ids if str(item).strip()):
+        for addon_id in dict.fromkeys(
+            str(item) for item in addon_ids if str(item).strip()
+        ):
             addon = None
             try:
                 addon_context: dict[str, Any] = {"state": state}
-                if scorecard_definition is not None:
-                    addon_context["scorecard_definition"] = scorecard_definition
-                if scorecard_risk_policy is not None:
-                    addon_context["scorecard_risk_policy"] = scorecard_risk_policy
-
                 addon, addon_output = addon_manager.invoke(
                     addon_id,
                     addon_context,
@@ -280,14 +268,11 @@ def run_scan(
                 state["addons"][addon_id] = addon_output
                 result_key = addon.get("result_key") if addon else None
                 if result_key:
-                    result_value = addon_output.get(result_key)
-                    state[result_key] = result_value
-                    if result_key == "scorecard":
-                        state["scorecard_input"] = addon_output.get("scorecard_input")
+                    state[result_key] = addon_output.get(result_key)
 
-                stage = (addon or {}).get("pipeline_stage") or f"addon:{addon_id}"
+                stage = f"addon:{addon_id}"
                 live_payload = (
-                    {result_key: result_value}
+                    {result_key: state[result_key]}
                     if result_key
                     else {"addon": addon_id, "result": addon_output}
                 )
@@ -300,7 +285,7 @@ def run_scan(
                     live_payload,
                 )
             except Exception as exc:
-                stage = (addon or {}).get("pipeline_stage") or f"addon:{addon_id}"
+                stage = f"addon:{addon_id}"
                 logger.warning("[Pipeline] Add-on %s failed: %s", addon_id, exc)
                 if addon and addon.get("result_key"):
                     state[addon["result_key"]] = None
@@ -311,7 +296,6 @@ def run_scan(
                         stage=stage,
                     )
                 )
-
     if with_ai:
         run_ai(
             state,
@@ -394,8 +378,6 @@ def run_ai(
             "on_analysis_item": on_analysis_item,
             "on_analysis_reset": on_analysis_reset,
         }
-        if state.get("scorecard") is not None:
-            ai_kwargs["scorecard_result"] = state["scorecard"]
 
         result = asyncio.run(analyze_smart_cache(**ai_kwargs))
         if not isinstance(result, dict):
