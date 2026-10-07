@@ -668,12 +668,6 @@ class FirecrawlSecurityPublicationProvider:
             )
 
             accepted, signals = _contextual_relevance(domain, url=url, title=title, summary=description)
-            candidate_dump = self._dump_item(domain=domain, publisher=publisher, url=url, title=title, summary=description, published_at=published_at, decision="accept" if accepted else "reject", decision_reason=str(signals["reason"]), signals=signals)
-            await self._record_filter_dump(
-                candidate=candidate_dump,
-                accepted=accepted,
-            )
-
             if not accepted:
                 continue
 
