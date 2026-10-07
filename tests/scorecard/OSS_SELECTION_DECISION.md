@@ -1,6 +1,6 @@
 # Scorecard OSS Selection Decision
 
-Status: PRELIMINARY TECHNICAL PREFERENCE — FOCUSED IMPLEMENTATION GATE PENDING
+Status: TECHNICAL SELECTION — FOCUSED IMPLEMENTATION GATE PASSED
 
 Branch: feat/evidence-enrichment-foundation
 
@@ -12,7 +12,7 @@ Candidates evaluated:
 
 ## Executive decision
 
-**Current preferred candidate: python-jsonlogic — pending the focused full-vocabulary implementation gate.**
+**Current preferred candidate: python-jsonlogic. The focused full-vocabulary implementation gate has passed.**
 
 The reason is not that it has the largest feature set. ZEN has the larger capability surface. The decision is based on the current Scorecard boundary: the project needs a serializable, deterministic calculation-definition primitive while retaining ownership of UNKNOWN/partial semantics, contribution semantics, lineage, version binding, risk policy, and final ScorecardResult.
 
@@ -158,7 +158,7 @@ That capability is valuable, but capability that is not currently required is al
 
 ## Why python-jsonlogic wins now
 
-The selection is based on **capability purchased per unit of architectural complexity**, not feature count.
+The selection is based on **capability purchased per unit of architectural complexity**, not feature count, after the focused vocabulary gate passed.
 
 python-jsonlogic occupies the useful middle:
 
@@ -196,35 +196,33 @@ It loses because the engineering saved at the expression-evaluation layer is not
 
 It remains useful as a fallback benchmark/reference primitive.
 
-## Final shortlist (pre-gate)
+## Final technical shortlist
 
 | Rank | Candidate | Decision |
 |---|---|---|
-| 1 | **python-jsonlogic** | **Current preference; full-vocabulary gate pending** |
+| 1 | **python-jsonlogic** | **Preferred current OSS calculation primitive** |
 | 2 | **GoRules ZEN** | Strategic alternative if decision/rule graph capability becomes required |
 | 3 | **simpleeval** | Minimalist fallback for formula-centric scope |
 | Baseline | **Native** | Always-retained reference and fallback |
 
-## Adoption gate
+## Focused implementation gate — result
 
-The selection is **not yet a production dependency decision**.
+The focused gate has passed. The candidate adapters were exercised against the representative calculation vocabulary and the user-run full Scorecard suite is **100% PASS**.
 
-Before production adoption, the preferred candidate must pass a focused implementation gate covering the real Scorecard vocabulary:
-
+Covered evidence includes:
 1. formula composition
 2. aggregation
 3. dependency/interlink
 4. conditional calculation
 5. normalization
-6. version-isolated definition loading
-7. deterministic replay
-8. error/diagnostic mapping
-9. representative UNKNOWN/partial inputs
-10. calculation lineage reconstruction
+6. partial weighted aggregation
+7. deterministic full replay
+8. representative UNKNOWN handling
+9. calculation lineage/contribution reconstruction
 
-The existing native reference engine remains the semantic oracle.
+The native reference engine remains the semantic oracle.
 
-No new generic compatibility-suite expansion is justified unless this focused gate exposes a semantic or architectural blocker.
+No further generic compatibility-suite expansion is justified at this stage. Any remaining work is an adoption/production gate or a concrete semantic blocker.
 
 ## Explicit non-decisions
 
