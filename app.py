@@ -679,8 +679,7 @@ if run_scan:
             # visual mengikuti urutan kerja modul discovery yang sudah ada.
             if stage == "breach" and "breach" in live_data:
                 live_state["breach"] = live_data["breach"]
-                with live_area:
-                    render_breach(live_state)
+                # Breach is rendered once after the pipeline returns.
                 return
 
             if stage == "evidence_start":
@@ -763,8 +762,6 @@ if run_scan:
                     return
 
                 with live_area:
-                    render_services(live_state)
-
                     ai_status = st.empty()
                     ui_state["ai_status"] = ai_status
 
@@ -845,8 +842,9 @@ if run_scan:
             ai_live_placeholder.empty()
 
         with live_area:
-            # Breach was rendered when its stage completed; the completed
-            # evidence, scorecard, and AI results are rendered in pipeline order.
+            # Render completed results exactly once after the pipeline returns.
+            render_breach(final_state)
+            render_services(final_state)
             render_evidence(final_state)
             render_scorecard(final_state)
 
