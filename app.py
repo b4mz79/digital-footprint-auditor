@@ -1,4 +1,5 @@
 import os
+from typing import Mapping
 
 import pandas as pd
 import streamlit as st
@@ -14,11 +15,12 @@ from services.pipeline import (
     purge_expired_caches,
     run_scan as run_scan_pipeline,
 )
-from utils.logging_setup import configure_logging
+from utils.logging_setup import configure_logging, get_logger
 from utils.risk import normalize_risk, risk_icon
 from utils.translations import t
 
 configure_logging()
+logger = get_logger("App")
 addon_manager = get_addon_manager()
 st.set_page_config(
     page_title="Local Digital Footprint & Privacy Auditor",
