@@ -364,7 +364,19 @@ def run_ai(
         if state.get("scorecard") is not None:
             ai_kwargs["scorecard_result"] = state["scorecard"]
 
-        state["ai"] = asyncio.run(analyze_smart_cache(**ai_kwargs))
+        result = asyncio.run(analyze_smart_cache(**ai_kwargs))
+        if not isinstance(result, dict):
+            raise TypeError(
+                "analyze_smart_cache() mengembalikan hasil AI yang tidak valid "
+                f"({type(result).__name__})."
+            )
+        state["ai"] = result
+        logger.info(
+            "[Pipeline] AI result diterima: provider=%s analysis=%d exposures=%d",
+            result.get("provider_used", "Unknown"),
+            len(result.get("analysis", []) or []),
+            len(result.get("exposures", []) or []),
+        )
         emit(
             _event(
                 "success",
@@ -375,7 +387,8 @@ def run_ai(
         )
     except Exception as exc:
         state["ai"] = None
-        emit(_event("error", text=f"Error AI: {exc}", stage="ai"))
+        logger.exception("[Pipeline] AI execution failed")
+        emit(_event("error", text=f"Error AI: {type(exc).__name__}: {exc}", stage="ai"))
 
     state["ai_lang"] = lang
     return state
