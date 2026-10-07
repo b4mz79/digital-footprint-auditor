@@ -741,13 +741,13 @@ if run_scan:
 
                 if "ai_item" in live_data:
                     item = live_data["ai_item"]
-                    service_key = _norm(item.get("service") or item.get("name"))
+                    service_key = str(item.get("service") or item.get("name") or "").strip().casefold()
                     replaced = False
                     if service_key:
                         for index, existing in enumerate(ui_state["ai_live_items"]):
-                            existing_key = _norm(
-                                existing.get("service") or existing.get("name")
-                            )
+                            existing_key = str(
+                                existing.get("service") or existing.get("name") or ""
+                            ).strip().casefold()
                             if existing_key == service_key:
                                 ui_state["ai_live_items"][index] = item
                                 replaced = True
