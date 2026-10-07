@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from tests.scorecard.reference_engine import (
+from tests.addons.scorecard.reference_engine import (
     EvalResult,
     evaluate_aggregation,
     evaluate_conditional,
