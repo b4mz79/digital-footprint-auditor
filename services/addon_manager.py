@@ -195,7 +195,12 @@ class AddonManager:
                 for event in addon["events"]
             ):
                 continue
-            results.append(self._execute(addon, payload))
+            event_spec = next(
+                event
+                for event in addon["events"]
+                if event.get("name") == event_name
+            )
+            results.append(self._execute(addon, payload, invocation=event_spec))
 
         return tuple(results)
 
@@ -203,6 +208,8 @@ class AddonManager:
         self,
         addon: Mapping[str, Any],
         context: Mapping[str, Any],
+        *,
+        invocation: Mapping[str, Any] | None = None,
     ) -> tuple[dict[str, Any], Any]:
         package_root = self.root / str(addon["id"])
         entrypoint = self._safe_entrypoint(
@@ -227,6 +234,7 @@ class AddonManager:
         try:
             spec.loader.exec_module(module)
 
+            invocation_spec = invocation or addon["invocation"]
             function_name = str(addon["invocation"]["function"])
             runner = getattr(module, function_name, None)
             if not callable(runner):
@@ -235,7 +243,7 @@ class AddonManager:
                     f"{function_name}(context): {addon['id']}"
                 )
 
-            if addon["invocation"]["input"]["required"] and not isinstance(
+            if invocation_spec["input"]["required"] and not isinstance(
                 context, Mapping
             ):
                 raise TypeError(
@@ -244,9 +252,9 @@ class AddonManager:
 
             result = runner(context)
             return_required = bool(
-                addon["invocation"]["return"]["required"]
+                invocation_spec["return"]["required"]
             )
-            return_type = str(addon["invocation"]["return"]["type"])
+            return_type = str(invocation_spec["return"]["type"])
             if return_required and result is None:
                 raise ValueError(
                     f"add-on {addon['id']} must return a result"
