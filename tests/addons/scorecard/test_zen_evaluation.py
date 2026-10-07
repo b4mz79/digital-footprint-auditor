@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-from tests.scorecard.compatibility import compare_eval_results
-from tests.scorecard.engines.native import NativeReferenceAdapter
-from tests.scorecard.engines.zen import ZenReferenceAdapter
+from tests.addons.scorecard.compatibility import compare_eval_results
+from tests.addons.scorecard.engines.native import NativeReferenceAdapter
+from tests.addons.scorecard.engines.zen import ZenReferenceAdapter
 
 
 pytest.importorskip("zen")
