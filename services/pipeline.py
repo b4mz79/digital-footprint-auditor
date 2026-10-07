@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import os
 import re
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 from cache_security import clear_cache_files, purge_expired
 from services.addon_manager import get_addon_manager
@@ -72,6 +72,7 @@ def run_scan(
     tenant_id: str | None = None,
     with_ai: bool = True,
     enabled_addons: tuple[str, ...] | list[str] = (),
+    addon_contexts: Mapping[str, Mapping[str, Any]] | None = None,
     on_event: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     tenant_id = tenant_id or get_tenant_id()
@@ -98,6 +99,7 @@ def run_scan(
         "ai": None,
         "ai_lang": None,
         "addons": {},
+        "addon_events": {},
     }
     events: list[dict[str, Any]] = state["events"]
 
@@ -113,6 +115,51 @@ def run_scan(
                 on_event(live_event)
             else:
                 on_event(event)
+
+    def dispatch_addon_event(
+        event_name: str,
+        data: Mapping[str, Any] | None = None,
+    ) -> None:
+        """Dispatch one canonical lifecycle event without knowing any add-on domain."""
+        try:
+            addon_manager = get_addon_manager()
+            results = addon_manager.dispatch_event(
+                event_name,
+                {
+                    "state": state,
+                    "event": event_name,
+                    "data": dict(data or {}),
+                },
+            )
+        except Exception as exc:
+            logger.warning(
+                "[Pipeline] Add-on event dispatch failed for %s: %s",
+                event_name,
+                exc,
+            )
+            emit(
+                _event(
+                    "error",
+                    text=f"Error Add-on event {event_name}: {exc}",
+                )
+            )
+            return
+
+        if not results:
+            return
+
+        event_results = state["addon_events"].setdefault(event_name, {})
+        for addon, addon_output in results:
+            addon_id = str(addon["id"])
+            event_results[addon_id] = addon_output
+            emit(
+                _event(
+                    "success",
+                    text=f"Add-on {addon_id} event {event_name} selesai.",
+                    stage=addon_id,
+                ),
+                {"addon": addon_id, "result": addon_output},
+            )
 
     cache_enabled = discovery_cache_enabled()
 
@@ -137,6 +184,10 @@ def run_scan(
             if found is not None:
                 state["services"].extend(found)
                 emit(_event("success", "success_imap", stage="imap", count=len(found)), {"services": found})
+                dispatch_addon_event(
+                    "discovery.imap.completed",
+                    {"services": list(found)},
+                )
 
     # Step 2: OSINT via Holehe
     if enable_osint:
@@ -156,6 +207,10 @@ def run_scan(
         if found is not None:
             state["services"].extend(found)
             emit(_event("success", "success_osint", stage="osint", count=len(found)), {"services": found})
+            dispatch_addon_event(
+                "discovery.osint.completed",
+                {"services": list(found)},
+            )
 
     # Step 3: Multi-layer breach scan
     if enable_breach:
@@ -183,6 +238,10 @@ def run_scan(
                     text="Breach scan selesai.",
                     stage="breach",
                 ),
+                {"breach": dict(state["breach"])},
+            )
+            dispatch_addon_event(
+                "breach.scan.completed",
                 {"breach": dict(state["breach"])},
             )
         except Exception as exc:
@@ -214,6 +273,11 @@ def run_scan(
         logger.warning("[Pipeline] Evidence enrichment failed: %s", exc)
         enriched_evidence = local_evidence
 
+    dispatch_addon_event(
+        "evidence.enriched",
+        {"evidence": list(evidence_to_dicts(enriched_evidence))},
+    )
+
     try:
         verified_evidence = asyncio.run(verify_evidence_records(enriched_evidence))
     except Exception as exc:
@@ -223,6 +287,10 @@ def run_scan(
         verified_evidence = enriched_evidence
 
     state["evidence"] = evidence_to_dicts(verified_evidence)
+    dispatch_addon_event(
+        "evidence.verified",
+        {"evidence": list(state["evidence"])},
+    )
     contextual_count = sum(
         1
         for item in state["evidence"]
@@ -255,6 +323,14 @@ def run_scan(
             addon = None
             try:
                 addon_context: dict[str, Any] = {"state": state}
+                extra_context = (addon_contexts or {}).get(addon_id)
+                if extra_context is not None:
+                    if not isinstance(extra_context, Mapping):
+                        raise TypeError(
+                            f"context add-on {addon_id!r} harus berupa mapping"
+                        )
+                    addon_context.update(dict(extra_context))
+
                 addon, addon_output = addon_manager.invoke(
                     addon_id,
                     addon_context,
@@ -270,7 +346,7 @@ def run_scan(
                 if result_key:
                     state[result_key] = addon_output.get(result_key)
 
-                stage = f"addon:{addon_id}"
+                stage = addon_id
                 live_payload = (
                     {result_key: state[result_key]}
                     if result_key
@@ -285,7 +361,7 @@ def run_scan(
                     live_payload,
                 )
             except Exception as exc:
-                stage = f"addon:{addon_id}"
+                stage = addon_id
                 logger.warning("[Pipeline] Add-on %s failed: %s", addon_id, exc)
                 if addon and addon.get("result_key"):
                     state[addon["result_key"]] = None
