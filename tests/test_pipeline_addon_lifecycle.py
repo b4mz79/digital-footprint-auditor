@@ -38,16 +38,14 @@ def test_pipeline_addon_invocation_and_events_are_fully_dynamic(monkeypatch) -> 
     emitted: list[dict[str, Any]] = []
 
     monkeypatch.setattr(pipeline, "get_addon_manager", lambda: manager)
-    monkeypatch.setattr(
-        pipeline,
-        "enrich_evidence",
-        lambda evidence: evidence,
-    )
-    monkeypatch.setattr(
-        pipeline,
-        "verify_evidence_records",
-        lambda evidence: evidence,
-    )
+    async def _enrich(evidence):
+        return evidence
+
+    async def _verify(evidence):
+        return evidence
+
+    monkeypatch.setattr(pipeline, "enrich_evidence", _enrich)
+    monkeypatch.setattr(pipeline, "verify_evidence_records", _verify)
 
     state = pipeline.run_scan(
         email="user@example.com",
