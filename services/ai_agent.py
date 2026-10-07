@@ -1304,6 +1304,24 @@ async def call_ollama_async(
                 parsed_batch = json.loads(clean_json_string(raw_batch))
                 validated_batch = validate_ai_output(parsed_batch, lang)
                 batch_analysis = validated_batch["analysis"]
+                expected_service_keys = {
+                    _norm(item.get("service") or item.get("name"))
+                    for item in batch
+                    if isinstance(item, dict)
+                }
+                returned_service_keys = {
+                    _norm(item.get("service"))
+                    for item in batch_analysis
+                    if isinstance(item, dict)
+                }
+                if returned_service_keys != expected_service_keys:
+                    missing = sorted(expected_service_keys - returned_service_keys)
+                    extra = sorted(returned_service_keys - expected_service_keys)
+                    raise ValueError(
+                        "Ollama batch output tidak lengkap: "
+                        f"missing={missing[:8]} extra={extra[:8]}"
+                    )
+
                 combined.extend(batch_analysis)
 
                 if on_batch:
