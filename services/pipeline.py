@@ -373,10 +373,28 @@ def run_scan(
                     )
                 )
     if with_ai:
+        addon_ai_context: dict[str, Any] = {}
+        try:
+            addon_manager = get_addon_manager()
+            for addon in addon_manager.list():
+                addon_id = str(addon.get("id", "")).strip()
+                if (
+                    addon_id
+                    and bool(addon.get("active"))
+                    and bool(addon.get("ai_context"))
+                    and addon_id in state["addons"]
+                ):
+                    addon_ai_context[addon_id] = state["addons"][addon_id]
+        except Exception as exc:
+            # Add-on AI context is optional. A manager failure must not break
+            # the established AI path.
+            logger.warning("[Pipeline] Gagal menyiapkan add-on AI context: %s", exc)
+
         run_ai(
             state,
             lang,
             force_refresh=force_refresh,
+            addon_results=addon_ai_context,
             on_event=on_event,
         )
 
