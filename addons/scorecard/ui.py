@@ -21,7 +21,13 @@ def render(context: Mapping[str, Any]) -> None:
     result_wrapper = context.get("result")
     if not isinstance(result_wrapper, Mapping):
         return
+    # The host passes the result selected by the manifest's result_key.
+    # For scorecard this is the inner ScorecardResult, not the full
+    # add-on output wrapper. Accept the wrapper as well for compatibility
+    # with direct/manual UI invocation.
     result = result_wrapper.get("scorecard")
+    if not isinstance(result, Mapping):
+        result = result_wrapper
     if not isinstance(result, Mapping):
         return
     st.divider()
