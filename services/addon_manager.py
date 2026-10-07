@@ -18,6 +18,14 @@ _ADDON_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,63}$")
 _ADDON_TYPES = frozenset({"backend", "ui", "hybrid"})
 _INVOCATION_MODES = frozenset({"on_demand", "on_event"})
 _RETURN_TYPES = frozenset({"result", "none"})
+_LIFECYCLE_HOOKS = (
+    "after_install",
+    "before_activate",
+    "after_activate",
+    "before_deactivate",
+    "after_deactivate",
+    "before_uninstall",
+)
 _MAX_ZIP_FILES = 500
 _MAX_UNCOMPRESSED_BYTES = 50 * 1024 * 1024
 _STATE_FILENAME = ".addons-state.json"
@@ -42,6 +50,7 @@ class AddonManifest:
     default_active: bool = False
     ui_entrypoint: str | None = None
     ui_function: str | None = None
+    lifecycle: tuple[tuple[str, str | None], ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -68,6 +77,9 @@ class AddonManifest:
                 "entrypoint": self.ui_entrypoint,
                 "function": self.ui_function,
             } if self.ui_entrypoint and self.ui_function else None),
+            "lifecycle": {
+                hook: function_name for hook, function_name in self.lifecycle
+            },
         }
 
 
@@ -145,6 +157,23 @@ class AddonManager:
         state = self._load_state()
         state[manifest.addon_id] = False
         self._save_state(state)
+
+        try:
+            self._run_lifecycle_hook(
+                manifest.addon_id,
+                "after_install",
+                {"event": "after_install"},
+            )
+        except Exception:
+            # Installation is transactional from the host perspective: if
+            # post-install initialization fails, remove the installed package
+            # and its state. There is intentionally no after_uninstall hook.
+            shutil.rmtree(target, ignore_errors=True)
+            state = self._load_state()
+            state.pop(manifest.addon_id, None)
+            self._save_state(state)
+            raise
+
         return self.get(manifest.addon_id) or {}
 
     def activate(self, addon_id: str) -> dict[str, Any]:
@@ -158,6 +187,12 @@ class AddonManager:
         target = self.root / addon_id
         if not target.is_dir():
             raise ValueError(f"add-on is not installed: {addon_id}")
+
+        self._run_lifecycle_hook(
+            addon_id,
+            "before_uninstall",
+            {"event": "before_uninstall"},
+        )
 
         shutil.rmtree(target)
         state = self._load_state()
@@ -345,14 +380,108 @@ class AddonManager:
                 ):
                     sys.modules.pop(loaded_name, None)
 
+    def _execute_function(
+        self,
+        addon: Mapping[str, Any],
+        function_name: str,
+        context: Mapping[str, Any],
+        *,
+        module_prefix: str,
+    ) -> Any:
+        package_root = self.root / str(addon["id"])
+        entrypoint = self._safe_entrypoint(
+            package_root,
+            str(addon["entrypoint"]),
+        )
+        module_name = (
+            f"_privacy_auditor_addon_{module_prefix}_"
+            f"{addon['id']}_{uuid4().hex}"
+        )
+        spec = importlib.util.spec_from_file_location(
+            module_name,
+            entrypoint,
+            submodule_search_locations=[str(package_root)],
+        )
+        if spec is None or spec.loader is None:
+            raise ValueError(
+                f"cannot load add-on {module_prefix} entrypoint: {addon['id']}"
+            )
+
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        try:
+            spec.loader.exec_module(module)
+            function = getattr(module, function_name, None)
+            if not callable(function):
+                raise ValueError(
+                    f"add-on entrypoint must expose "
+                    f"{function_name}(context): {addon['id']}"
+                )
+            if not isinstance(context, Mapping):
+                raise TypeError(
+                    f"add-on {addon['id']} requires mapping input"
+                )
+            return function(context)
+        finally:
+            for loaded_name in tuple(sys.modules):
+                if loaded_name == module_name or loaded_name.startswith(
+                    module_name + "."
+                ):
+                    sys.modules.pop(loaded_name, None)
+
+    def _run_lifecycle_hook(
+        self,
+        addon_id: str,
+        hook_name: str,
+        context: Mapping[str, Any],
+    ) -> Any:
+        if hook_name not in _LIFECYCLE_HOOKS:
+            raise ValueError(f"unsupported add-on lifecycle hook: {hook_name}")
+
+        addon = self.get(addon_id)
+        if addon is None:
+            raise ValueError(f"add-on is not installed: {addon_id}")
+
+        lifecycle = addon.get("lifecycle")
+        if not isinstance(lifecycle, Mapping):
+            return None
+
+        function_name = lifecycle.get(hook_name)
+        if function_name is None:
+            return None
+        if not isinstance(function_name, str) or not function_name.strip():
+            raise ValueError(
+                f"add-on lifecycle hook must name a function: "
+                f"{addon_id}:{hook_name}"
+            )
+
+        return self._execute_function(
+            addon,
+            function_name.strip(),
+            context,
+            module_prefix="lifecycle",
+        )
+
     def _set_active(self, addon_id: str, active: bool) -> dict[str, Any]:
         addon = self.get(addon_id)
         if addon is None:
             raise ValueError(f"add-on is not installed: {addon_id}")
 
+        self._run_lifecycle_hook(
+            addon_id,
+            "before_activate" if active else "before_deactivate",
+            {"event": "before_activate" if active else "before_deactivate"},
+        )
+
         state = self._load_state()
         state[addon_id] = active
         self._save_state(state)
+
+        self._run_lifecycle_hook(
+            addon_id,
+            "after_activate" if active else "after_deactivate",
+            {"event": "after_activate" if active else "after_deactivate"},
+        )
         return self.get(addon_id) or addon
 
     def _read_manifest(self, path: Path) -> AddonManifest:
@@ -485,6 +614,34 @@ class AddonManager:
                 "on_demand add-on must not declare event subscriptions"
             )
 
+        raw_lifecycle = payload.get("lifecycle", {})
+        if not isinstance(raw_lifecycle, dict):
+            raise ValueError("add-on lifecycle must be an object")
+
+        unknown_hooks = set(raw_lifecycle) - set(_LIFECYCLE_HOOKS)
+        if unknown_hooks:
+            raise ValueError(
+                "unsupported add-on lifecycle hook(s): "
+                + ", ".join(sorted(str(item) for item in unknown_hooks))
+            )
+
+        lifecycle: list[tuple[str, str | None]] = []
+        for hook_name in _LIFECYCLE_HOOKS:
+            value = raw_lifecycle.get(hook_name)
+            if value is not None and (
+                not isinstance(value, str) or not value.strip()
+            ):
+                raise ValueError(
+                    f"add-on lifecycle hook must be a function name or null: "
+                    f"{hook_name}"
+                )
+            lifecycle.append(
+                (
+                    hook_name,
+                    value.strip() if isinstance(value, str) else None,
+                )
+            )
+
         raw_ui = payload.get("ui")
         ui_entrypoint: str | None = None
         ui_function: str | None = None
@@ -523,6 +680,7 @@ class AddonManager:
             default_active=bool(payload.get("default_active", False)),
             ui_entrypoint=ui_entrypoint,
             ui_function=ui_function,
+            lifecycle=tuple(lifecycle),
         )
 
     def _safe_extract(self, archive_path: Path, destination: Path) -> None:
