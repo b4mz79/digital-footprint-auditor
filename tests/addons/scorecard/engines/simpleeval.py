@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from tests.scorecard.reference_engine import ContributionDetail, EvalResult
+from tests.addons.scorecard.reference_engine import ContributionDetail, EvalResult
 
 
 def _numeric(value: Any, *, label: str) -> float:
