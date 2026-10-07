@@ -40,6 +40,8 @@ class AddonManifest:
     result_key: str | None = None
     ai_context: bool = False
     default_active: bool = False
+    ui_entrypoint: str | None = None
+    ui_function: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -62,6 +64,10 @@ class AddonManifest:
             "result_key": self.result_key,
             "ai_context": self.ai_context,
             "default_active": self.default_active,
+            "ui": ({
+                "entrypoint": self.ui_entrypoint,
+                "function": self.ui_function,
+            } if self.ui_entrypoint and self.ui_function else None),
         }
 
 
@@ -175,6 +181,25 @@ class AddonManager:
 
         return self._execute(addon, context)
 
+    def invoke_ui(
+        self,
+        addon_id: str,
+        context: Mapping[str, Any],
+    ) -> tuple[dict[str, Any], Any]:
+        """Invoke the UI entrypoint of an active UI-capable add-on."""
+        addon = self.get(addon_id)
+        if addon is None:
+            raise ValueError(f"add-on is not installed: {addon_id}")
+        if not addon["active"]:
+            raise ValueError(f"add-on is not active: {addon_id}")
+        if addon["type"] == "backend":
+            raise ValueError(f"backend add-on has no UI entrypoint: {addon_id}")
+
+        ui_spec = addon.get("ui")
+        if not isinstance(ui_spec, Mapping):
+            raise ValueError(f"add-on UI contract is missing: {addon_id}")
+        return self._execute_ui(addon, context, ui_spec)
+
     def dispatch_event(
         self,
         event_name: str,
@@ -203,6 +228,54 @@ class AddonManager:
             results.append(self._execute(addon, payload, invocation=event_spec))
 
         return tuple(results)
+
+    def _execute_ui(
+        self,
+        addon: Mapping[str, Any],
+        context: Mapping[str, Any],
+        ui_spec: Mapping[str, Any],
+    ) -> tuple[dict[str, Any], Any]:
+        package_root = self.root / str(addon["id"])
+        entrypoint = self._safe_entrypoint(
+            package_root,
+            str(ui_spec["entrypoint"]),
+        )
+        module_name = (
+            f"_privacy_auditor_addon_ui_{addon['id']}_{uuid4().hex}"
+        )
+        spec = importlib.util.spec_from_file_location(
+            module_name,
+            entrypoint,
+            submodule_search_locations=[str(package_root)],
+        )
+        if spec is None or spec.loader is None:
+            raise ValueError(
+                f"cannot load add-on UI entrypoint: {addon['id']}"
+            )
+
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        try:
+            spec.loader.exec_module(module)
+            function_name = str(ui_spec["function"])
+            renderer = getattr(module, function_name, None)
+            if not callable(renderer):
+                raise ValueError(
+                    f"add-on UI entrypoint must expose "
+                    f"{function_name}(context): {addon['id']}"
+                )
+            if not isinstance(context, Mapping):
+                raise TypeError(
+                    f"add-on {addon['id']} UI requires mapping input"
+                )
+            result = renderer(context)
+            return dict(addon), result
+        finally:
+            for loaded_name in tuple(sys.modules):
+                if loaded_name == module_name or loaded_name.startswith(
+                    module_name + "."
+                ):
+                    sys.modules.pop(loaded_name, None)
 
     def _execute(
         self,
@@ -412,6 +485,22 @@ class AddonManager:
                 "on_demand add-on must not declare event subscriptions"
             )
 
+        raw_ui = payload.get("ui")
+        ui_entrypoint: str | None = None
+        ui_function: str | None = None
+        if addon_type == "backend":
+            if raw_ui is not None:
+                raise ValueError("backend add-on must not declare a UI entrypoint")
+        else:
+            if not isinstance(raw_ui, dict):
+                raise ValueError("ui-capable add-on requires a ui entrypoint")
+            ui_entrypoint = str(raw_ui.get("entrypoint", "")).replace("\\\\", "/").strip()
+            ui_function = str(raw_ui.get("function", "")).strip()
+            if not ui_entrypoint or not ui_function:
+                raise ValueError("add-on ui requires entrypoint and function")
+            if ui_entrypoint.startswith("/") or ".." in Path(ui_entrypoint).parts:
+                raise ValueError("add-on UI entrypoint must stay inside its package")
+
         return AddonManifest(
             addon_id=addon_id,
             name=name,
@@ -432,6 +521,8 @@ class AddonManager:
             ),
             ai_context=bool(payload.get("ai_context", False)),
             default_active=bool(payload.get("default_active", False)),
+            ui_entrypoint=ui_entrypoint,
+            ui_function=ui_function,
         )
 
     def _safe_extract(self, archive_path: Path, destination: Path) -> None:
