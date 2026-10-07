@@ -286,9 +286,19 @@ def render_addon_uis(scan_state: dict, addon_slots=None) -> None:
 
         slot = addon_slots.get(addon_id) if addon_slots else None
         try:
+            ui_result = addon_results.get(addon_id)
+            logger.info(
+                "[UI] Add-on render dispatch: id=%s result_present=%s result_type=%s result_keys=%s",
+                addon_id,
+                ui_result is not None,
+                type(ui_result).__name__,
+                sorted(str(key) for key in ui_result.keys())
+                if isinstance(ui_result, Mapping)
+                else [],
+            )
             ui_context = {
                 "state": scan_state,
-                "result": addon_results.get(addon_id),
+                "result": ui_result,
                 "lang": lang,
             }
             if slot is not None:
