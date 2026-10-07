@@ -23,6 +23,7 @@ from services.discovery_cache import (
 from services.evidence_enrichment import enrich_evidence
 from services.evidence_verification import verify_evidence_records
 from services.evidence import evidence_to_dicts, service_findings_to_evidence
+from services.scorecard.integration import evaluate_pipeline_scorecard
 from services.imap_scanner import scan_gmail_inbox
 from services.osint_scanner import scan_osint_footprint
 from utils.envutil import env_non_negative_int
@@ -70,6 +71,9 @@ def run_scan(
     lang: str = "id",
     tenant_id: str | None = None,
     with_ai: bool = True,
+    enable_scorecard: bool = False,
+    scorecard_definition: dict[str, Any] | None = None,
+    scorecard_risk_policy: dict[str, Any] | None = None,
     on_event: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     tenant_id = tenant_id or get_tenant_id()
@@ -95,6 +99,8 @@ def run_scan(
         },
         "ai": None,
         "ai_lang": None,
+        "scorecard": None,
+        "scorecard_input": None,
     }
     events: list[dict[str, Any]] = state["events"]
 
@@ -240,6 +246,36 @@ def run_scan(
         {"evidence": list(state["evidence"])},
     )
 
+    # Optional Scorecard add-on. The existing pipeline state is the source;
+    # the add-on is downstream and failure-isolated. When disabled, no scorecard
+    # code path is invoked and the existing AI payload remains unchanged.
+    if enable_scorecard:
+        emit(_event("info", text="Memulai Scorecard Add-on...", stage="scorecard"))
+        try:
+            if not isinstance(scorecard_definition, dict):
+                raise ValueError("scorecard_definition is required when Scorecard is enabled")
+            if not isinstance(scorecard_risk_policy, dict):
+                raise ValueError("scorecard_risk_policy is required when Scorecard is enabled")
+
+            scorecard_input, scorecard_result = evaluate_pipeline_scorecard(
+                state,
+                scorecard_definition=scorecard_definition,
+                risk_policy=scorecard_risk_policy,
+            )
+            state["scorecard_input"] = scorecard_input.to_dict()
+            state["scorecard"] = scorecard_result.to_dict()
+            emit(
+                _event("success", text="Scorecard Add-on selesai.", stage="scorecard"),
+                {"scorecard": state["scorecard"]},
+            )
+        except Exception as exc:
+            # Scorecard is optional. A broken add-on must not suppress the
+            # existing Privacy Auditor result or AI analysis.
+            state["scorecard"] = None
+            state["scorecard_input"] = None
+            logger.warning("[Pipeline] Scorecard Add-on failed: %s", exc)
+            emit(_event("error", text=f"Error Scorecard Add-on: {exc}", stage="scorecard"))
+
     if with_ai:
         run_ai(
             state,
@@ -312,6 +348,7 @@ def run_ai(
                 tenant_id=state["tenant_id"],
                 breach_findings=findings,
                 evidence_records=state.get("evidence", []),
+                scorecard_result=state.get("scorecard"),
                 scan_status={
                     "breach_scan_complete": bool(state["breach"].get("complete", False)),
                     "failed_engines": [
