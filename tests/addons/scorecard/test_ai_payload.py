@@ -41,7 +41,7 @@ def test_scorecard_result_is_embedded_in_ai_prompt() -> None:
     assert '"scorecard":{"schema_version":"scorecard-result-v1"' in prompt
     assert '"score":0.72' in prompt
     assert '"risk_band":"medium"' in prompt
-    assert "do not recalculate or invent them" in prompt
+    assert "Do not recalculate, invent, or reinterpret deterministic add-on results." in prompt
 
 
 def test_scorecard_changes_analysis_cache_fingerprint() -> None:
