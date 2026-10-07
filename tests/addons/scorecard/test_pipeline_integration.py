@@ -194,9 +194,9 @@ def test_scorecard_off_preserves_existing_ai_path(monkeypatch) -> None:
         with_ai=True,
     )
 
-    assert state["scorecard"] is None
-    assert state["scorecard_input"] is None
-    assert "scorecard_result" not in captured
+    assert "scorecard" not in state["addons"]
+    assert "scorecard" not in state
+    assert captured.get("addon_results") == {}
     assert captured["evidence_records"]
     assert state["ai"]["provider_used"] == "test"
 
@@ -213,21 +213,25 @@ def test_scorecard_on_augments_existing_ai_payload(monkeypatch, tmp_path: Path) 
         enable_osint=True,
         enable_breach=False,
         with_ai=True,
-        enable_scorecard=True,
-        scorecard_definition=_definition(),
-        scorecard_risk_policy=_policy(),
+        enabled_addons=("scorecard",),
+        addon_contexts={
+            "scorecard": {
+                "scorecard_definition": _definition(),
+                "scorecard_risk_policy": _policy(),
+            }
+        },
     )
 
     dump_count = len(_load_contextual_dump_records())
 
-    assert state["scorecard_input"]["schema_version"] == "scorecard-input-v1"
+    assert state["addons"]["scorecard"]["scorecard_input"]["schema_version"] == "scorecard-input-v1"
     assert state["scorecard"]["schema_version"] == "scorecard-result-v1"
     expected_raw = (1 * 0.5) + (dump_count * 0.5)
     assert state["scorecard"]["score"] == round(expected_raw / 10.0, 2)
     assert captured["evidence_records"]
-    assert captured["scorecard_result"]["result_id"] == state["scorecard"]["result_id"]
-    assert captured["scorecard_result"]["score"] == state["scorecard"]["score"]
-    assert captured["scorecard_result"]["risk_band"] == state["scorecard"]["risk_band"]
+    assert captured["addon_results"]["scorecard"]["result_id"] == state["scorecard"]["result_id"]
+    assert captured["addon_results"]["scorecard"]["score"] == state["scorecard"]["score"]
+    assert captured["addon_results"]["scorecard"]["risk_band"] == state["scorecard"]["risk_band"]
 
 
 def test_scorecard_failure_does_not_break_existing_ai(monkeypatch, tmp_path: Path) -> None:
@@ -242,12 +246,16 @@ def test_scorecard_failure_does_not_break_existing_ai(monkeypatch, tmp_path: Pat
         enable_osint=True,
         enable_breach=False,
         with_ai=True,
-        enable_scorecard=True,
-        scorecard_definition={"broken": True},
-        scorecard_risk_policy=_policy(),
+        enabled_addons=("scorecard",),
+        addon_contexts={
+            "scorecard": {
+                "scorecard_definition": {"broken": True},
+                "scorecard_risk_policy": _policy(),
+            }
+        },
     )
 
-    assert state["scorecard"] is None
-    assert state["scorecard_input"] is None
-    assert "scorecard_result" not in captured
+    assert "scorecard" not in state["addons"]
+    assert "scorecard" not in state
+    assert captured.get("addon_results") == {}
     assert state["ai"]["provider_used"] == "test"
