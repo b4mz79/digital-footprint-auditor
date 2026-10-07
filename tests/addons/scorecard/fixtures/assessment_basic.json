@@ -1,9 +1,0 @@
-{
-  "schema_version": "scorecard-eval-v1",
-  "assessment_id": "synthetic-basic",
-  "scorecard_definition_version": "synthetic-v1",
-  "kpis": [
-    {"id": "service_discovery_count", "unit": "count", "value": 10, "state": "observed", "source": "application"},
-    {"id": "relevant_security_evidence", "unit": "count", "value": 4, "state": "observed", "source": "contextual_filter_dump", "evidence_ids": ["evidence-security-1"]}
-  ]
-}

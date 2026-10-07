@@ -1,2 +1,0 @@
-# Candidate-only evaluation dependency; not a Privacy Auditor runtime dependency.
-zen-engine==2.1.2
