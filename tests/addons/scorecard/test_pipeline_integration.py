@@ -229,9 +229,10 @@ def test_scorecard_on_augments_existing_ai_payload(monkeypatch, tmp_path: Path) 
     expected_raw = (1 * 0.5) + (dump_count * 0.5)
     assert state["scorecard"]["score"] == round(expected_raw / 10.0, 2)
     assert captured["evidence_records"]
-    assert captured["addon_results"]["scorecard"]["result_id"] == state["scorecard"]["result_id"]
-    assert captured["addon_results"]["scorecard"]["score"] == state["scorecard"]["score"]
-    assert captured["addon_results"]["scorecard"]["risk_band"] == state["scorecard"]["risk_band"]
+    addon_payload = captured["addon_results"]["scorecard"]
+    assert addon_payload["scorecard"]["result_id"] == state["scorecard"]["result_id"]
+    assert addon_payload["scorecard"]["score"] == state["scorecard"]["score"]
+    assert addon_payload["scorecard"]["risk_band"] == state["scorecard"]["risk_band"]
 
 
 def test_scorecard_failure_does_not_break_existing_ai(monkeypatch, tmp_path: Path) -> None:
