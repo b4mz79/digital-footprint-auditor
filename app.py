@@ -271,49 +271,45 @@ def render_evidence(scan_state: dict) -> None:
             st.caption("---")
 
 
-def render_scorecard(scan_state: dict) -> None:
-    """Render the optional Scorecard Add-on result without recalculating it."""
-    result = scan_state.get("scorecard")
-    if not isinstance(result, dict):
-        return
+def render_addon_uis(scan_state: dict, addon_slots=None) -> None:
+    """Invoke UI entrypoints for active UI-capable add-ons."""
+    installed = addon_manager.list()
+    addon_results = scan_state.get("addons") or {}
+    for addon in installed:
+        addon_id = str(addon.get("id", "")).strip()
+        if (
+            not addon_id
+            or not addon.get("active")
+            or addon.get("type") == "backend"
+            or addon.get("invocation", {}).get("mode") != "on_demand"
+            or addon_id not in addon_results
+        ):
+            continue
 
-    st.divider()
-    st.subheader("📊 Scorecard Add-on")
-    risk_key = normalize_risk(result.get("risk_band")) or "unknown"
-    score = result.get("score")
-    score_text = "UNKNOWN" if score is None else f"{score:.2f}"
-
-    st.metric("Score", score_text)
-    st.markdown(
-        f"**Risk band:** {risk_icon(risk_key)} "
-        f"{risk_key.upper()}  •  **State:** `{result.get('state', 'unknown')}`"
-    )
-    st.caption(
-        f"Scorecard: `{result.get('scorecard_id', '-')}` / "
-        f"version `{result.get('scorecard_version', '-')}` • "
-        f"Result: `{result.get('result_id', '-')}`"
-    )
-
-    contributions = result.get("contributions") or []
-    if contributions:
-        rows = [
-            {
-                "KPI": item.get("kpi_id", ""),
-                "Value": item.get("value"),
-                "Weight": item.get("weight"),
-                "Contribution": item.get("contribution"),
+        slot = addon_slots.get(addon_id) if addon_slots else None
+        try:
+            ui_context = {
+                "state": scan_state,
+                "result": addon_results[addon_id],
+                "lang": lang,
             }
-            for item in contributions
-            if isinstance(item, dict)
-        ]
-        if rows:
-            st.dataframe(pd.DataFrame(rows), width="stretch")
-
-    lineage = result.get("calculation_lineage")
-    if lineage:
-        with st.expander("Scorecard calculation lineage", expanded=False):
-            st.json(lineage)
-
+            if slot is not None:
+                with slot.container():
+                    addon_manager.invoke_ui(addon_id, ui_context)
+            else:
+                addon_manager.invoke_ui(addon_id, ui_context)
+        except Exception as exc:
+            if slot is not None:
+                with slot.container():
+                    st.error(
+                        f"UI Add-On {addon_id} gagal: "
+                        f"{type(exc).__name__}: {exc}"
+                    )
+            else:
+                st.error(
+                    f"UI Add-On {addon_id} gagal: "
+                    f"{type(exc).__name__}: {exc}"
+                )
 
 def render_ai(scan_state: dict) -> None:
     ai_output = scan_state.get("ai")
@@ -682,7 +678,7 @@ if run_scan:
                 "error": None,
             },
             "ai": None,
-            "scorecard": None,
+            "addons": {},
         }
 
         # Reserve result anchors once, in final display order.
@@ -690,7 +686,17 @@ if run_scan:
             services_slot = st.empty()
             breach_slot = st.empty()
             evidence_slot = st.empty()
-            scorecard_slot = st.empty()
+            ui_addon_ids = tuple(
+                addon["id"]
+                for addon in addon_manager.list()
+                if addon.get("active")
+                and addon.get("type") != "backend"
+                and addon.get("invocation", {}).get("mode") == "on_demand"
+            )
+            addon_ui_slots = {
+                addon_id: st.empty()
+                for addon_id in ui_addon_ids
+            }
             ai_slot = st.empty()
 
         # Transient progress/status is deliberately separated from result
@@ -702,7 +708,6 @@ if run_scan:
             "osint": st.empty() if enable_osint else None,
             "breach": st.empty() if enable_breach else None,
             "evidence": st.empty(),
-            "scorecard": st.empty(),
             "ai": st.empty(),
         }
 
@@ -793,14 +798,46 @@ if run_scan:
                     _show_status("evidence", event)
                 return
 
-            if stage == "scorecard":
-                if "scorecard" in live_data:
-                    _clear_status("scorecard")
-                    live_state["scorecard"] = live_data["scorecard"]
-                    with scorecard_slot.container():
-                        render_scorecard(live_state)
+            addon = addon_manager.get(str(stage)) if stage else None
+            if (
+                addon
+                and addon.get("active")
+                and addon.get("type") != "backend"
+                and addon.get("invocation", {}).get("mode") == "on_demand"
+            ):
+                addon_id = str(stage)
+                result = live_data.get("result")
+                result_key = addon.get("result_key")
+                if result is None and result_key:
+                    result = live_data.get(result_key)
+                if result is not None:
+                    live_state["addons"][addon_id] = result
+                    slot = addon_ui_slots.get(addon_id)
+                    ui_context = {
+                        "state": live_state,
+                        "result": result,
+                        "lang": lang,
+                    }
+                    try:
+                        if slot is not None:
+                            with slot.container():
+                                addon_manager.invoke_ui(addon_id, ui_context)
+                        else:
+                            addon_manager.invoke_ui(addon_id, ui_context)
+                    except Exception as exc:
+                        if slot is not None:
+                            with slot.container():
+                                st.error(
+                                    f"UI Add-On {addon_id} gagal: "
+                                    f"{type(exc).__name__}: {exc}"
+                                )
+                        else:
+                            st.error(
+                                f"UI Add-On {addon_id} gagal: "
+                                f"{type(exc).__name__}: {exc}"
+                            )
                 else:
-                    _show_status("scorecard", event)
+                    _show_status(addon_id, event)
                 return
 
             if stage == "ai":
@@ -836,7 +873,7 @@ if run_scan:
                 "services": list(final_state.get("services") or []),
                 "evidence": list(final_state.get("evidence") or []),
                 "breach": final_state.get("breach") or live_state["breach"],
-                "scorecard": final_state.get("scorecard"),
+                "addons": dict(final_state.get("addons") or {}),
                 "ai": final_state.get("ai"),
             }
         )
@@ -851,8 +888,7 @@ if run_scan:
         with evidence_slot.container():
             render_evidence(live_state)
 
-        with scorecard_slot.container():
-            render_scorecard(live_state)
+        render_addon_uis(live_state, addon_ui_slots)
 
         with ai_slot.container():
             render_ai(live_state)
@@ -873,7 +909,7 @@ state = st.session_state.get("scan_state")
 if state and not scan_executed:
     render_breach(state)
     render_evidence(state)
-    render_scorecard(state)
+    render_addon_uis(state)
 
     if not state["services"] and not state["breach"]["findings"]:
         st.warning(t("warn_no_services", lang=lang))
