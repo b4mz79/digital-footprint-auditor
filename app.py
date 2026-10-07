@@ -647,11 +647,13 @@ if run_scan:
     else:
         scan_executed = True
 
-        # Use two top-level placeholders only: one for the scan stages and
-        # one for AI. Each callback replaces the complete content of its own
-        # surface. This avoids nested placeholder/container lifecycles and
-        # guarantees that IMAP results remain visible while later stages run.
-        stage_area = st.empty()
+        # Each pipeline stage owns an independent top-level placeholder.
+        # A later stage must never clear an earlier stage's rendered result.
+        progress_area = st.empty()
+        services_area = st.empty()
+        breach_area = st.empty()
+        evidence_area = st.empty()
+        scorecard_area = st.empty()
         ai_area = st.empty()
 
         live_state = {
@@ -679,18 +681,29 @@ if run_scan:
         }
 
         def _render_live_stages() -> None:
-            stage_area.empty()
-            with stage_area.container():
+            # Reconcile each stage independently. Never clear a shared
+            # container because that would erase already-visible stages.
+            services_area.empty()
+            if live_state["services"]:
+                with services_area.container():
+                    render_services(live_state)
+
+            breach_area.empty()
+            if live_state.get("breach_ready"):
+                with breach_area.container():
+                    render_breach(live_state)
+
+            evidence_area.empty()
+            with evidence_area.container():
                 evidence_status = live_state.get("evidence_status")
                 if evidence_status:
                     st.info(f"⏳ {evidence_status}")
-                if live_state["services"]:
-                    render_services(live_state)
-                if live_state.get("breach_ready"):
-                    render_breach(live_state)
                 if live_state["evidence"]:
                     render_evidence(live_state)
-                if live_state["scorecard"]:
+
+            scorecard_area.empty()
+            if live_state["scorecard"]:
+                with scorecard_area.container():
                     render_scorecard(live_state)
 
         def _render_live_ai() -> None:
@@ -828,17 +841,10 @@ if run_scan:
                     **event.get("args", {}),
                 )
             if message:
-                progress = {"level": event.get("level", "info"), "message": message}
-                stage_area.empty()
-                with stage_area.container():
-                    getattr(st, progress["level"], st.info)(progress["message"])
-                # Restore the already-completed stage content below the progress
-                # message on the same surface.
-                _render_live_stages()
+                level = event.get("level", "info")
+                getattr(progress_area, level, st.info)(message)
 
-        progress_status = st.empty()
-        progress_status.info(t("spinner_processing", lang=lang))
-
+        progress_status = progress_area
         progress_status.info(t("spinner_processing", lang=lang))
 
         final_state = run_scan_pipeline(
@@ -861,9 +867,8 @@ if run_scan:
         progress_status.empty()
         st.session_state["scan_state"] = final_state
 
-        # Final pipeline state is authoritative. Reconcile both surfaces once
-        # so the completed result replaces the progressive view without adding
-        # duplicate sections.
+        # Final pipeline state is authoritative. Reconcile the same independent
+        # stage surfaces once so progressive results are replaced in-place.
         live_state["services"] = list(final_state.get("services") or [])
         live_state["evidence"] = list(final_state.get("evidence") or [])
         live_state["breach"] = final_state.get("breach") or live_state["breach"]
