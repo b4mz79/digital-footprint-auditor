@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.scorecard.policy_engine_contract import (
+from tests.addons.scorecard.policy_engine_contract import (
     CONDITION_MATCH,
     CONDITION_NO_MATCH,
     CONDITION_UNKNOWN,
@@ -14,7 +14,7 @@ from tests.scorecard.policy_engine_contract import (
     DECISION_NO_MATCH,
     assert_policy_decision_semantics,
 )
-from tests.scorecard.reference_policy_engine import evaluate_policy
+from tests.addons.scorecard.reference_policy_engine import evaluate_policy
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
