@@ -875,6 +875,7 @@ if run_scan:
                 slot = discovery_status_slots.get(stage)
                 message = _event_message(event)
                 if slot is not None and message:
+                    slot.empty()
                     with slot.container():
                         renderer = getattr(
                             st,
