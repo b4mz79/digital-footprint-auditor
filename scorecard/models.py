@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any, Mapping
 
@@ -10,7 +11,8 @@ JsonObject = dict[str, Any]
 def _copy_json_object(value: Mapping[str, Any], *, label: str) -> JsonObject:
     if not isinstance(value, Mapping):
         raise TypeError(f"{label} must be a mapping")
-    return dict(value)
+    copied = deepcopy(dict(value))
+    return copied
 
 
 @dataclass(frozen=True, slots=True)
