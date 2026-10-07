@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Any, BinaryIO, Mapping
 from uuid import uuid4
 
+from utils.logging_setup import get_logger
+
 
 _ADDON_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,63}$")
 _ADDON_TYPES = frozenset({"backend", "ui", "hybrid"})
@@ -29,6 +31,8 @@ _LIFECYCLE_HOOKS = (
 _MAX_ZIP_FILES = 500
 _MAX_UNCOMPRESSED_BYTES = 50 * 1024 * 1024
 _STATE_FILENAME = ".addons-state.json"
+
+logger = get_logger("AddonManager")
 
 
 @dataclass(frozen=True, slots=True)
@@ -214,6 +218,7 @@ class AddonManager:
                 f"add-on {addon_id} is not configured for on-demand invocation"
             )
 
+        logger.info("[Add-On] invoke: id=%s mode=on_demand function=%s", addon_id, addon["invocation"]["function"])
         return self._execute(addon, context)
 
     def invoke_ui(
@@ -233,6 +238,7 @@ class AddonManager:
         ui_spec = addon.get("ui")
         if not isinstance(ui_spec, Mapping):
             raise ValueError(f"add-on UI contract is missing: {addon_id}")
+        logger.info("[Add-On] invoke_ui: id=%s function=%s", addon_id, ui_spec["function"])
         return self._execute_ui(addon, context, ui_spec)
 
     def dispatch_event(
@@ -244,6 +250,7 @@ class AddonManager:
             raise ValueError("event_name is required")
 
         payload = context or {}
+        logger.info("[Add-On] dispatch_event: event=%s", event_name)
         results: list[tuple[dict[str, Any], Any]] = []
         for addon in self.list():
             if not addon["active"]:
@@ -260,6 +267,7 @@ class AddonManager:
                 for event in addon["events"]
                 if event.get("name") == event_name
             )
+            logger.info("[Add-On] event hook matched: id=%s event=%s function=%s", addon["id"], event_name, addon["invocation"]["function"])
             addon_payload = dict(payload)
             addon_contexts = payload.get("addon_contexts")
             if isinstance(addon_contexts, Mapping):
@@ -274,6 +282,7 @@ class AddonManager:
             results.append(
                 self._execute(addon, addon_payload, invocation=event_spec)
             )
+            logger.info("[Add-On] event hook completed: id=%s event=%s", addon["id"], event_name)
 
         return tuple(results)
 
@@ -316,7 +325,9 @@ class AddonManager:
                 raise TypeError(
                     f"add-on {addon['id']} UI requires mapping input"
                 )
+            logger.info("[Add-On] UI function start: id=%s function=%s", addon["id"], function_name)
             result = renderer(context)
+            logger.info("[Add-On] UI function completed: id=%s function=%s", addon["id"], function_name)
             return dict(addon), result
         finally:
             for loaded_name in tuple(sys.modules):
@@ -371,7 +382,9 @@ class AddonManager:
                     f"add-on {addon['id']} requires mapping input"
                 )
 
+            logger.info("[Add-On] run function start: id=%s function=%s", addon["id"], function_name)
             result = runner(context)
+            logger.info("[Add-On] run function completed: id=%s function=%s result_type=%s", addon["id"], function_name, type(result).__name__)
             return_required = bool(
                 invocation_spec["return"]["required"]
             )
@@ -468,12 +481,15 @@ class AddonManager:
                 f"{addon_id}:{hook_name}"
             )
 
-        return self._execute_function(
+        logger.info("[Add-On] lifecycle hook start: id=%s hook=%s function=%s", addon_id, hook_name, function_name.strip())
+        result = self._execute_function(
             addon,
             function_name.strip(),
             context,
             module_prefix="lifecycle",
         )
+        logger.info("[Add-On] lifecycle hook completed: id=%s hook=%s", addon_id, hook_name)
+        return result
 
     def _set_active(self, addon_id: str, active: bool) -> dict[str, Any]:
         addon = self.get(addon_id)
