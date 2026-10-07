@@ -260,7 +260,20 @@ class AddonManager:
                 for event in addon["events"]
                 if event.get("name") == event_name
             )
-            results.append(self._execute(addon, payload, invocation=event_spec))
+            addon_payload = dict(payload)
+            addon_contexts = payload.get("addon_contexts")
+            if isinstance(addon_contexts, Mapping):
+                extra_context = addon_contexts.get(str(addon["id"]))
+                if extra_context is not None:
+                    if not isinstance(extra_context, Mapping):
+                        raise TypeError(
+                            f"context add-on {addon['id']!r} harus berupa mapping"
+                        )
+                    addon_payload.update(dict(extra_context))
+            addon_payload.pop("addon_contexts", None)
+            results.append(
+                self._execute(addon, addon_payload, invocation=event_spec)
+            )
 
         return tuple(results)
 
