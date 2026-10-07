@@ -1,12 +1,12 @@
 # Scorecard OSS Capability vs Complexity Evaluation
 
-Status: TECHNICAL TRADE-OFF EVALUATION — PRE-SELECTION
+Status: TECHNICAL TRADE-OFF EVALUATION — FOCUSED VOCABULARY GATE PASSED
 
 Candidates: GoRules ZEN 2.1.2; python-jsonlogic 0.2.0; simpleeval 1.0.8.
 
 ## Decision question
 
-The previous evaluation proved compatibility on the frozen weighted-sum path. It did not answer which candidate removes the most implementation burden for acceptable complexity.
+The frozen reference semantics have now been exercised against all three candidates across the focused calculation vocabulary: formula composition, aggregation, dependency/interlink, conditional calculation, normalization, partial weighted aggregation, and deterministic full replay. The remaining question is which candidate removes the most implementation burden for acceptable complexity.
 
 No numerical suitability percentage is used. The comparison is qualitative.
 
@@ -18,11 +18,11 @@ No numerical suitability percentage is used. The comparison is qualitative.
 | python-jsonlogic | Serializable expression model, operator registry, typechecking, diagnostics, evaluation | Medium | Low-Medium | Medium-High |
 | simpleeval | Lightweight AST expression evaluation, operators, functions, names | Low-Medium | Low | High |
 
-### Preliminary technical conclusion
+### Technical conclusion
 
 python-jsonlogic currently has the strongest capability/complexity balance for the current Scorecard calculation direction.
 
-This is a shortlist signal, not final adoption.
+The focused vocabulary gate is now passed. This remains a technical selection decision, not production dependency approval.
 
 ZEN remains the strongest capability candidate if the roadmap expands toward a genuine decision/rule engine. simpleeval remains the minimalist option if the scope stays limited to formulas.
 
@@ -113,7 +113,7 @@ Winner: ZEN.
 ### Pass 5 — Overall architecture balance
 Current leader: python-jsonlogic.
 
-## Preliminary ranking
+## Current ranking
 
 1. python-jsonlogic — preferred candidate for the current calculation direction.
 2. GoRules ZEN — strategic alternative if graph/rule/execution capabilities become materially valuable.
@@ -128,17 +128,13 @@ simpleeval moves ahead if Scorecard deliberately remains a narrow formula engine
 
 Native-only moves ahead if the required calculation vocabulary remains small enough that an OSS adapter saves less engineering than it adds.
 
-## Next technical validation
+## Gate result
 
-Do not expand the generic semantic suite merely for coverage volume.
+The focused representative calculation-vocabulary evaluation is complete and passed for all three candidates. User-run `pytest -q tests/scorecard` is 100% PASS.
 
-Use the existing frozen reference semantics and run one focused representative calculation-vocabulary evaluation covering:
-- formula composition
-- aggregation
-- dependency/interlink
-- conditional calculation.
+No new generic semantic suite expansion is justified. The native reference remains the semantic oracle; candidate-specific adapters remain isolated.
 
-The purpose is to verify whether the preliminary ranking survives real Scorecard operations, not to create another large compatibility framework.
+The next decision boundary is production/adoption validation, not another generic compatibility expansion.
 
 ## Evidence basis
 
