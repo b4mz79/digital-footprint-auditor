@@ -6,13 +6,6 @@ from services.scorecard.policy import CONDITION_MATCH, CONDITION_NO_MATCH, CONDI
 
 def _predicate(condition, context):
     score = context["score"]
-    result = condition["parameters"]["result"]
-    if result == CONDITION_UNKNOWN:
-        return CONDITION_UNKNOWN
-    if result == CONDITION_MATCH:
-        return CONDITION_MATCH
-    if result == CONDITION_NO_MATCH:
-        return CONDITION_NO_MATCH
     if condition["type"] == "score_at_least":
         return CONDITION_MATCH if score is not None and score >= condition["parameters"]["value"] else CONDITION_NO_MATCH
     raise ValueError("unsupported synthetic predicate")
@@ -25,9 +18,9 @@ def _policy():
         "output": {"risk_bands": ["high", "medium", "low", "unknown"]},
         "mapping": {
             "rules": [
-                {"rule_id": "high", "priority": 30, "condition": {"type": "score_at_least", "parameters": {"value": 0.8}}, "then": "high"},
+                {"rule_id": "high", "priority": 10, "condition": {"type": "score_at_least", "parameters": {"value": 0.8}}, "then": "high"},
                 {"rule_id": "medium", "priority": 20, "condition": {"type": "score_at_least", "parameters": {"value": 0.5}}, "then": "medium"},
-                {"rule_id": "low", "priority": 10, "condition": {"type": "score_at_least", "parameters": {"value": 0.0}}, "then": "low"},
+                {"rule_id": "low", "priority": 30, "condition": {"type": "score_at_least", "parameters": {"value": 0.0}}, "then": "low"},
             ],
         },
     }
@@ -57,6 +50,8 @@ def test_full_replay_produces_score_and_policy_result():
     assert result.score == 0.76
     assert result.state == "observed"
     assert result.risk_band == "medium"
+    assert result.contributions[0].kpi_id == "a"
+    assert result.contributions[0].contribution == 6.0
     assert result.policy_refs == {
         "risk_policy": "policy-v1",
         "risk_policy_version": "1",
