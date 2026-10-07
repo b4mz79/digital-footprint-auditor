@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from services.scorecard.integration import (
+from addons.scorecard.integration import (
     PipelineAssessmentAdapter,
     evaluate_pipeline_scorecard,
     threshold_condition_evaluator,
 )
-from services.scorecard.policy import CONDITION_MATCH, CONDITION_UNKNOWN
+from addons.scorecard.policy import CONDITION_MATCH, CONDITION_UNKNOWN
 
 
 def _state(*, breach_complete: bool = True) -> dict:
