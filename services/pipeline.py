@@ -43,6 +43,38 @@ def get_tenant_id() -> str:
     return "default"
 
 
+def clear_all_caches() -> int:
+    """Clear all application caches and invalidate pending AI cache writes."""
+    with ai_agent.CACHE_WRITE_LOCK:
+        ai_agent.CACHE_INVALIDATION_GENERATION += 1
+
+    return clear_cache_files(
+        AI_CACHE_DIR,
+        BREACH_CACHE_DIR,
+        DISCOVERY_CACHE_DIR,
+    )
+
+
+def purge_expired_caches() -> int:
+    """Purge expired application cache files using the configured retention window."""
+    retention_hours = env_non_negative_int(
+        "CACHE_RETENTION_HOURS",
+        24,
+        24 * 365,
+    )
+    max_age_seconds = retention_hours * 3600
+    return purge_expired(
+        AI_CACHE_DIR,
+        max_age_seconds,
+    ) + purge_expired(
+        BREACH_CACHE_DIR,
+        max_age_seconds,
+    ) + purge_expired(
+        DISCOVERY_CACHE_DIR,
+        max_age_seconds,
+    )
+
+
 def _event(
     level: str,
     key: str | None = None,
