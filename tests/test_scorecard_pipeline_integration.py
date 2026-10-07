@@ -101,11 +101,16 @@ def _install_scorecard_addon(monkeypatch, tmp_path: Path) -> None:
     if not source_root.is_dir():
         pytest.fail(f"Scorecard add-on package is missing: {source_root}")
 
+    manifest_path = source_root / "manifest.json"
+    if not manifest_path.is_file():
+        pytest.fail(f"Scorecard add-on manifest is missing: {manifest_path}")
+
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
         for path in source_root.rglob("*"):
             if path.is_file():
-                archive.write(path, path.relative_to(source_root).as_posix())
+                relative = path.relative_to(source_root).as_posix()
+                archive.write(path, f"{source_root.name}/{relative}")
 
     manager = AddonManager(tmp_path / "addons")
     manager.install_zip(buffer.getvalue())
