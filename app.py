@@ -15,7 +15,6 @@ from services.pipeline import (
     run_scan as run_scan_pipeline,
 )
 from utils.logging_setup import configure_logging
-from utils.risk import normalize_risk, risk_icon
 from utils.translations import t
 
 configure_logging()
@@ -281,8 +280,6 @@ def render_addon_uis(scan_state: dict, addon_slots=None) -> None:
             not addon_id
             or not addon.get("active")
             or addon.get("type") == "backend"
-            or addon.get("invocation", {}).get("mode") != "on_demand"
-            or addon_id not in addon_results
         ):
             continue
 
@@ -691,7 +688,6 @@ if run_scan:
                 for addon in addon_manager.list()
                 if addon.get("active")
                 and addon.get("type") != "backend"
-                and addon.get("invocation", {}).get("mode") == "on_demand"
             )
             addon_ui_slots = {
                 addon_id: st.empty()
@@ -803,7 +799,6 @@ if run_scan:
                 addon
                 and addon.get("active")
                 and addon.get("type") != "backend"
-                and addon.get("invocation", {}).get("mode") == "on_demand"
             ):
                 addon_id = str(stage)
                 result = live_data.get("result")
