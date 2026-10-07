@@ -636,9 +636,10 @@ st.title(t("title", lang=lang))
 st.caption(t("caption", lang=lang))
 
 # Dashboard Logic Execution.
-# Saat scan berjalan, hasil setiap stage langsung ditampilkan pada placeholder
-# stage masing-masing. Placeholder yang sama di-update; tidak dibuat blok baru
-# dan tidak menunggu seluruh pipeline selesai.
+# Keep the proven main-branch rendering lifecycle:
+# one live surface, append completed stages in pipeline order, and render
+# the final AI result once the pipeline returns. Evidence and Scorecard use
+# the same append-style lifecycle without placeholder reconciliation.
 scan_executed = False
 
 if run_scan:
@@ -647,7 +648,107 @@ if run_scan:
     else:
         scan_executed = True
 
-        # Keep the proven main-branch rendering model: one live surface,\n        # append each completed stage in pipeline order, and render the final\n        # AI result once the pipeline returns. Evidence and Scorecard follow\n        # the same lifecycle without independent placeholder reconciliation.\n        live_area = st.container()\n        live_state = {\n            "email": target_email.strip(),\n            "phone": target_phone.strip(),\n            "services": [],\n            "evidence": [],\n            "breach": {\n                "enabled": bool(enable_breach),\n                "findings": [],\n                "engine": "None",\n                "cached": False,\n                "engines": {},\n                "complete": False,\n                "error": None,\n            },\n            "ai": None,\n            "scorecard": None,\n        }\n\n        ui_state = {\n            "ai_status": None,\n        }\n\n        def push_event(event: dict) -> None:\n            stage = event.get("stage")\n            live_data = event.get("_live", {})\n\n            if stage == "breach" and "breach" in live_data:\n                live_state["breach"] = live_data["breach"]\n                with live_area:\n                    render_breach(live_state)\n                return\n\n            if stage == "evidence" and "evidence" in live_data:\n                live_state["evidence"] = live_data["evidence"]\n                with live_area:\n                    render_evidence(live_state)\n                return\n\n            if stage == "scorecard" and "scorecard" in live_data:\n                live_state["scorecard"] = live_data["scorecard"]\n                with live_area:\n                    render_scorecard(live_state)\n                return\n\n            if stage == "ai":\n                if "ai" in live_data:\n                    live_state["ai"] = live_data["ai"]\n\n                    ai_status = ui_state.get("ai_status")\n                    if ai_status is not None:\n                        ai_status.empty()\n                    return\n\n                with live_area:\n                    render_services(live_state)\n\n                    ai_status = st.empty()\n                    ui_state["ai_status"] = ai_status\n\n                    message = event.get("text")\n                    if not message and event.get("key"):\n                        message = t(\n                            event["key"],\n                            lang=lang,\n                            **event.get("args", {}),\n                        )\n\n                    if message:\n                        level = event.get("level", "info")\n                        with ai_status.container():\n                            getattr(st, level, st.info)(message)\n                return\n\n            if stage in ("imap", "osint") and "services" in live_data:\n                live_state["services"].extend(live_data["services"])\n                return\n\n            message = event.get("text")\n            if not message and event.get("key"):\n                message = t(\n                    event["key"],\n                    lang=lang,\n                    **event.get("args", {}),\n                )\n\n            if message:\n                level = event.get("level", "info")\n                with live_area:\n                    getattr(st, level, st.info)(message)\n\n        progress_status = st.empty()\n        progress_status.info(t("spinner_processing", lang=lang))\n\n        final_state = run_scan_pipeline(
+        live_area = st.container()
+        live_state = {
+            "email": target_email.strip(),
+            "phone": target_phone.strip(),
+            "services": [],
+            "evidence": [],
+            "breach": {
+                "enabled": bool(enable_breach),
+                "findings": [],
+                "engine": "None",
+                "cached": False,
+                "engines": {},
+                "complete": False,
+                "error": None,
+            },
+            "ai": None,
+            "scorecard": None,
+        }
+
+        ui_state = {
+            "ai_status": None,
+        }
+
+        def push_event(event: dict) -> None:
+            stage = event.get("stage")
+            live_data = event.get("_live", {})
+
+            # Discovery results are collected silently, matching main-branch UX.
+            if stage in ("imap", "osint") and "services" in live_data:
+                live_state["services"].extend(live_data["services"])
+                return
+
+            # Completed stages are appended to the same live surface.
+            if stage == "breach" and "breach" in live_data:
+                live_state["breach"] = live_data["breach"]
+                with live_area:
+                    render_breach(live_state)
+                return
+
+            if stage == "evidence" and "evidence" in live_data:
+                live_state["evidence"] = live_data["evidence"]
+                with live_area:
+                    render_evidence(live_state)
+                return
+
+            if stage == "scorecard" and "scorecard" in live_data:
+                live_state["scorecard"] = live_data["scorecard"]
+                with live_area:
+                    render_scorecard(live_state)
+                return
+
+            # AI status is shown after discovery results; final AI output is
+            # rendered only after run_scan_pipeline() returns.
+            if stage == "ai":
+                if "ai" in live_data:
+                    live_state["ai"] = live_data["ai"]
+
+                    ai_status = ui_state.get("ai_status")
+                    if ai_status is not None:
+                        ai_status.empty()
+                    return
+
+                with live_area:
+                    render_services(live_state)
+
+                    ai_status = st.empty()
+                    ui_state["ai_status"] = ai_status
+
+                    message = event.get("text")
+                    if not message and event.get("key"):
+                        message = t(
+                            event["key"],
+                            lang=lang,
+                            **event.get("args", {}),
+                        )
+
+                    if message:
+                        level = event.get("level", "info")
+                        with ai_status.container():
+                            getattr(st, level, st.info)(message)
+
+                return
+
+            # Other progress/status events remain append-style.
+            message = event.get("text")
+            if not message and event.get("key"):
+                message = t(
+                    event["key"],
+                    lang=lang,
+                    **event.get("args", {}),
+                )
+
+            if message:
+                level = event.get("level", "info")
+                with live_area:
+                    getattr(st, level, st.info)(message)
+
+        progress_status = st.empty()
+        progress_status.info(t("spinner_processing", lang=lang))
+
+        final_state = run_scan_pipeline(
             email=target_email,
             phone=target_phone,
             gmail_app_password=gmail_app_password,
@@ -667,42 +768,26 @@ if run_scan:
         progress_status.empty()
         st.session_state["scan_state"] = final_state
 
-        # Final pipeline state is authoritative. Reconcile the same independent
-        # stage surfaces once so progressive results are replaced in-place.
-        live_state["services"] = list(final_state.get("services") or [])
-        live_state["evidence"] = list(final_state.get("evidence") or [])
-        live_state["breach"] = final_state.get("breach") or live_state["breach"]
-        live_state["breach_ready"] = True
-        live_state["scorecard"] = final_state.get("scorecard")
-        live_state["ai"] = final_state.get("ai")
-        live_state.pop("evidence_status", None)
-        live_state["ai_status"] = None
+        # The final pipeline state is authoritative for subsequent reruns.
+        ai_status = ui_state.get("ai_status")
+        if ai_status is not None:
+            ai_status.empty()
 
-        _render_live_stages()
-
-        ai_area.empty()
         if final_state.get("ai"):
-            with ai_area.container():
+            with live_area:
                 render_ai(final_state)
-        elif not final_state["services"] and not final_state["breach"]["findings"]:
-            with ai_area.container():
+        elif (
+            not final_state["services"]
+            and not final_state["breach"]["findings"]
+        ):
+            with live_area:
                 st.warning(t("warn_no_services", lang=lang))
-
-
-
 
 
 state = st.session_state.get("scan_state")
 
-# AI is now enabled for the integration validation path. Cached results
-# remain keyed by the complete evidence + scorecard input fingerprint.
-
-
-# Pada rerun berikutnya (download, ganti bahasa, clear cache, dll.),
-# render ulang hasil yang tersimpan di session_state.
-#
-# Pada run scan pertama, hasil sudah ditampilkan secara live oleh callback,
-# sehingga tidak dirender ulang dan tidak terjadi duplikasi.
+# On rerun (download, language change, cache clear, etc.), render the stored
+# result in the same pipeline order as the first run.
 if state and not scan_executed:
     render_breach(state)
     render_evidence(state)
