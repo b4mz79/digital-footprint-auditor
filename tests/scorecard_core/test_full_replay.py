@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from services.scorecard.engine import ScorecardEngine
-from services.scorecard.sqlite_store import SQLiteScorecardStore
-from services.scorecard.policy import CONDITION_MATCH, CONDITION_NO_MATCH, CONDITION_UNKNOWN
+from addons.scorecard.engine import ScorecardEngine
+from addons.scorecard.sqlite_store import SQLiteScorecardStore
+from addons.scorecard.policy import CONDITION_MATCH, CONDITION_NO_MATCH, CONDITION_UNKNOWN
 
 
 def _predicate(condition, context):
