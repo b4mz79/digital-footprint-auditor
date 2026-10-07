@@ -669,69 +669,19 @@ if run_scan:
 
         ui_state = {
             "ai_status": None,
+            "stage_status": {},
+            "discovery_pending": {
+                stage
+                for stage, enabled in (
+                    ("imap", bool(enable_imap)),
+                    ("osint", bool(enable_osint)),
+                )
+                if enabled
+            },
+            "discovery_rendered": False,
         }
 
-        def push_event(event: dict) -> None:
-            stage = event.get("stage")
-            live_data = event.get("_live", {})
-
-            # Discovery results are collected silently, matching main-branch UX.
-            if stage in ("imap", "osint") and "services" in live_data:
-                live_state["services"].extend(live_data["services"])
-                return
-
-            # Completed stages are appended to the same live surface.
-            if stage == "breach" and "breach" in live_data:
-                live_state["breach"] = live_data["breach"]
-                with live_area:
-                    render_breach(live_state)
-                return
-
-            if stage == "evidence" and "evidence" in live_data:
-                live_state["evidence"] = live_data["evidence"]
-                with live_area:
-                    render_evidence(live_state)
-                return
-
-            if stage == "scorecard" and "scorecard" in live_data:
-                live_state["scorecard"] = live_data["scorecard"]
-                with live_area:
-                    render_scorecard(live_state)
-                return
-
-            # AI status is shown after discovery results; final AI output is
-            # rendered only after run_scan_pipeline() returns.
-            if stage == "ai":
-                if "ai" in live_data:
-                    live_state["ai"] = live_data["ai"]
-
-                    ai_status = ui_state.get("ai_status")
-                    if ai_status is not None:
-                        ai_status.empty()
-                    return
-
-                with live_area:
-                    render_services(live_state)
-
-                    ai_status = st.empty()
-                    ui_state["ai_status"] = ai_status
-
-                    message = event.get("text")
-                    if not message and event.get("key"):
-                        message = t(
-                            event["key"],
-                            lang=lang,
-                            **event.get("args", {}),
-                        )
-
-                    if message:
-                        level = event.get("level", "info")
-                        with ai_status.container():
-                            getattr(st, level, st.info)(message)
-
-                return
-
-            # Other progress/status events remain append-style.
+        def _event_message(event: dict) -> str:
             message = event.get("text")
             if not message and event.get("key"):
                 message = t(
@@ -739,11 +689,113 @@ if run_scan:
                     lang=lang,
                     **event.get("args", {}),
                 )
+            return str(message or "")
 
-            if message:
-                level = event.get("level", "info")
+        def _clear_stage_status(stage: str) -> None:
+            status = ui_state["stage_status"].pop(stage, None)
+            if status is not None:
+                status.empty()
+
+        def _show_stage_status(stage: str, event: dict) -> None:
+            message = _event_message(event)
+            if not message:
+                return
+
+            status = ui_state["stage_status"].get(stage)
+            if status is None:
+                status = live_area.empty()
+                ui_state["stage_status"][stage] = status
+
+            level = event.get("level", "info")
+            with status.container():
+                getattr(st, level, st.info)(message)
+
+        def _maybe_render_discovery() -> None:
+            if ui_state["discovery_rendered"]:
+                return
+            if ui_state["discovery_pending"]:
+                return
+
+            ui_state["discovery_rendered"] = True
+            with live_area:
+                render_services(live_state)
+
+        def push_event(event: dict) -> None:
+            stage = event.get("stage")
+            live_data = event.get("_live", {})
+
+            # Discovery: collect results silently and keep only one transient
+            # status per scanner. Once every enabled discovery scanner reaches
+            # a terminal event, remove its status and render services BEFORE
+            # downstream Breach/Evidence/Scorecard sections.
+            if stage in ("imap", "osint"):
+                if "services" in live_data:
+                    live_state["services"].extend(live_data["services"])
+
+                if event.get("level") in {"success", "warning", "error"}:
+                    _clear_stage_status(stage)
+                    ui_state["discovery_pending"].discard(stage)
+                    _maybe_render_discovery()
+                else:
+                    _show_stage_status(stage, event)
+                return
+
+            # Completed stages are appended in pipeline order.
+            if stage == "breach":
+                _clear_stage_status("breach")
+                if "breach" in live_data:
+                    live_state["breach"] = live_data["breach"]
+                    with live_area:
+                        render_breach(live_state)
+                else:
+                    _show_stage_status("breach", event)
+                return
+
+            if stage == "evidence":
+                _clear_stage_status("evidence")
+                if "evidence" in live_data:
+                    live_state["evidence"] = live_data["evidence"]
+                    with live_area:
+                        render_evidence(live_state)
+                else:
+                    _show_stage_status("evidence", event)
+                return
+
+            if stage == "scorecard":
+                _clear_stage_status("scorecard")
+                if "scorecard" in live_data:
+                    live_state["scorecard"] = live_data["scorecard"]
+                    with live_area:
+                        render_scorecard(live_state)
+                else:
+                    _show_stage_status("scorecard", event)
+                return
+
+            # AI status is shown after all discovery results and downstream
+            # stages have been rendered. Final AI output is rendered only after
+            # run_scan_pipeline() returns.
+            if stage == "ai":
+                if "ai" in live_data:
+                    live_state["ai"] = live_data["ai"]
+                    ai_status = ui_state.get("ai_status")
+                    if ai_status is not None:
+                        ai_status.empty()
+                    return
+
                 with live_area:
-                    getattr(st, level, st.info)(message)
+                    ai_status = st.empty()
+                    ui_state["ai_status"] = ai_status
+
+                message = _event_message(event)
+                if message:
+                    level = event.get("level", "info")
+                    with ai_status.container():
+                        getattr(st, level, st.info)(message)
+                return
+
+            # Ignore unknown/non-stage events rather than appending transient
+            # status messages that can survive until the scan completes.
+            return
 
         progress_status = st.empty()
         progress_status.info(t("spinner_processing", lang=lang))
@@ -766,12 +818,19 @@ if run_scan:
         )
 
         progress_status.empty()
-        st.session_state["scan_state"] = final_state
 
-        # The final pipeline state is authoritative for subsequent reruns.
+        # The final pipeline state is authoritative. No transient stage
+        # status may survive a completed pipeline, regardless of which
+        # provider/scanner path produced the terminal event.
+        for status in list(ui_state["stage_status"].values()):
+            status.empty()
+        ui_state["stage_status"].clear()
+
         ai_status = ui_state.get("ai_status")
         if ai_status is not None:
             ai_status.empty()
+
+        st.session_state["scan_state"] = final_state
 
         if final_state.get("ai"):
             with live_area:
