@@ -412,6 +412,7 @@ def run_ai(
     state: dict[str, Any],
     lang: str,
     force_refresh: bool = False,
+    addon_results: Mapping[str, Any] | None = None,
     on_event: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     """Build or rebuild the AI analysis for the requested language."""
@@ -461,6 +462,7 @@ def run_ai(
             "tenant_id": state["tenant_id"],
             "breach_findings": findings,
             "evidence_records": state.get("evidence", []),
+            "addon_results": dict(addon_results or {}),
             "scan_status": {
                 "breach_scan_complete": bool(state["breach"].get("complete", False)),
                 "failed_engines": [
@@ -498,29 +500,3 @@ def run_ai(
         state["ai"] = None
         logger.exception("[Pipeline] AI execution failed")
         emit(_event("error", text=f"Error AI: {type(exc).__name__}: {exc}", stage="ai"))
-
-    state["ai_lang"] = lang
-    return state
-
-
-def purge_expired_caches() -> int:
-    """Delete cache files older than CACHE_RETENTION_HOURS."""
-    hours = env_non_negative_int("CACHE_RETENTION_HOURS", 24, 24 * 30) or 24
-    removed = 0
-    # Coordinate with the AI background writer so retention cleanup cannot
-    # race a force-refresh result that is being persisted.
-    with CACHE_WRITE_LOCK:
-        for directory in {AI_CACHE_DIR, BREACH_CACHE_DIR, DISCOVERY_CACHE_DIR}:
-            removed += purge_expired(directory, hours * 3600)
-    if removed:
-        logger.info("Cache kedaluwarsa dihapus: %d berkas.", removed)
-    return removed
-
-
-def clear_all_caches() -> int:
-    # Invalidate queued AI writers before deleting cache files. A daemon writer
-    # may still start after this function returns, so the generation check in
-    # ai_agent must reject results dispatched before the explicit clear.
-    with CACHE_WRITE_LOCK:
-        ai_agent.CACHE_INVALIDATION_GENERATION += 1
-        return clear_cache_files(AI_CACHE_DIR, BREACH_CACHE_DIR, DISCOVERY_CACHE_DIR)
