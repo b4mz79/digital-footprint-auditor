@@ -4,7 +4,7 @@ import math
 
 import pytest
 
-from services.scorecard.calculation import (
+from addons.scorecard.calculation import (
     CalculationResult,
     ScorecardCalculationEngine,
 )
