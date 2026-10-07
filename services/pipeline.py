@@ -261,9 +261,15 @@ def run_scan(
         for addon_id in dict.fromkeys(str(item) for item in addon_ids if str(item).strip()):
             addon = None
             try:
+                addon_context: dict[str, Any] = {"state": state}
+                if scorecard_definition is not None:
+                    addon_context["scorecard_definition"] = scorecard_definition
+                if scorecard_risk_policy is not None:
+                    addon_context["scorecard_risk_policy"] = scorecard_risk_policy
+
                 addon, addon_output = addon_manager.invoke(
                     addon_id,
-                    {"state": state},
+                    addon_context,
                 )
                 if not isinstance(addon_output, dict):
                     raise TypeError(
