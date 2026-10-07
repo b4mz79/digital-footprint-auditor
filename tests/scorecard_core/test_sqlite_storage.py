@@ -19,6 +19,11 @@ def make_store(tmp_path):
     return store
 
 
+def test_store_auto_initializes_without_explicit_setup(tmp_path):
+    store = SQLiteScorecardStore(tmp_path / "nested" / "scorecard.db")
+    assert (tmp_path / "nested" / "scorecard.db").exists()
+
+
 def test_sqlite_initializes_only_minimal_persistence_tables(tmp_path):
     store = make_store(tmp_path)
 
@@ -40,16 +45,23 @@ def test_sqlite_initializes_only_minimal_persistence_tables(tmp_path):
 
 def test_definition_round_trip_preserves_json_snapshot(tmp_path):
     store = make_store(tmp_path)
-    record = ScorecardDefinitionRecord(
-        "privacy-assessment",
-        "v1",
-        {"schema_version": "scorecard-definition-v1", "weights": {"a": 0.6}},
-    )
+    payload = {"schema_version": "scorecard-definition-v1", "weights": {"a": 0.6}}
+    record = ScorecardDefinitionRecord("privacy-assessment", "v1", payload)
+    payload["weights"]["a"] = 0.1
 
     store.save_definition(record)
 
     assert store.get_definition("privacy-assessment", "v1") == record
     assert store.get_definition("privacy-assessment", "missing") is None
+
+
+def test_snapshot_models_deep_copy_nested_payloads():
+    payload = {"nested": {"value": 1}}
+    record = ScorecardDefinitionRecord("privacy-assessment", "v1", payload)
+
+    payload["nested"]["value"] = 99
+
+    assert record.definition["nested"]["value"] == 1
 
 
 def test_policy_round_trip(tmp_path):
