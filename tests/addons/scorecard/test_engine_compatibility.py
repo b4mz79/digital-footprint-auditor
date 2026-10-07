@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from tests.scorecard.engine_contract import (
+from tests.addons.scorecard.engine_contract import (
     assert_eval_result_semantics,
     assert_weighted_sum_semantics,
 )
-from tests.scorecard.engines.native import NativeReferenceAdapter
+from tests.addons.scorecard.engines.native import NativeReferenceAdapter
 
 
 def _observed(value: float, unit: str = "count") -> dict:
