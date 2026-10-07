@@ -905,7 +905,47 @@ if run_scan:
         with evidence_slot.container():
             render_evidence(live_state)
 
-        render_addon_uis(live_state, addon_ui_slots)
+        # On-event Add-Ons are already rendered at their event boundary above.
+        # Re-rendering them here would create a second UI invocation after the
+        # pipeline completes. Only on-demand Add-Ons need final reconciliation.
+        for addon in addon_manager.list():
+            addon_id = str(addon.get("id", "")).strip()
+            if (
+                not addon_id
+                or not addon.get("active")
+                or addon.get("type") == "backend"
+                or addon.get("invocation", {}).get("mode") != "on_demand"
+            ):
+                continue
+            ui_result = live_state["addons"].get(addon_id)
+            if ui_result is None:
+                continue
+            slot = addon_ui_slots.get(addon_id)
+            ui_context = {
+                "state": live_state,
+                "result": ui_result,
+                "lang": lang,
+            }
+            try:
+                if slot is not None:
+                    slot.empty()
+                    with slot.container():
+                        addon_manager.invoke_ui(addon_id, ui_context)
+                else:
+                    addon_manager.invoke_ui(addon_id, ui_context)
+            except Exception as exc:
+                if slot is not None:
+                    slot.empty()
+                    with slot.container():
+                        st.error(
+                            f"UI Add-On {addon_id} gagal: "
+                            f"{type(exc).__name__}: {exc}"
+                        )
+                else:
+                    st.error(
+                        f"UI Add-On {addon_id} gagal: "
+                        f"{type(exc).__name__}: {exc}"
+                    )
 
         with ai_slot.container():
             render_ai(live_state)
