@@ -37,7 +37,7 @@ def test_build_user_prompt_bounds_large_evidence_payload() -> None:
         ],
         lang="id",
         evidence_records=evidence,
-        scorecard_result=None,
+        addon_results=None,
         scan_status={"breach_scan_complete": False, "failed_engines": ["BreachDirectory"]},
     )
 
