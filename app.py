@@ -273,8 +273,43 @@ def render_evidence(scan_state: dict) -> None:
             st.caption("---")
 
 
-def render_addon_uis(scan_state: dict, addon_slots=None) -> None:
-    """Invoke UI entrypoints for active UI-capable add-ons."""
+_ADDON_UI_ANCHOR_ORDER = ("discovery", "breach", "evidence", "final")
+
+
+def _addon_ui_anchor(addon: Mapping[str, object]) -> str:
+    """Return the fixed visual region for an event-driven add-on UI."""
+    events = addon.get("events") or []
+    names = {
+        str(event.get("name", "")).strip()
+        for event in events
+        if isinstance(event, Mapping)
+    }
+    if names & {"discovery.imap.completed", "discovery.osint.completed"}:
+        return "discovery"
+    if "breach.scan.completed" in names:
+        return "breach"
+    if names & {"evidence.enriched", "evidence.verified"}:
+        return "evidence"
+    return "final"
+
+
+def _addon_ui_slot(
+    addon_slots: Mapping[str, Mapping[str, object]] | None,
+    addon: Mapping[str, object],
+) -> object | None:
+    if not addon_slots:
+        return None
+    addon_id = str(addon.get("id", "")).strip()
+    anchor = _addon_ui_anchor(addon)
+    return addon_slots.get(anchor, {}).get(addon_id)
+
+
+def render_addon_uis(
+    scan_state: dict,
+    addon_slots=None,
+    anchor: str | None = None,
+) -> None:
+    """Render active add-on UIs into their canonical visual region."""
     installed = addon_manager.list()
     addon_results = scan_state.get("addons") or {}
     for addon in installed:
@@ -283,10 +318,11 @@ def render_addon_uis(scan_state: dict, addon_slots=None) -> None:
             not addon_id
             or not addon.get("active")
             or addon.get("type") == "backend"
+            or (anchor is not None and _addon_ui_anchor(addon) != anchor)
         ):
             continue
 
-        slot = addon_slots.get(addon_id) if addon_slots else None
+        slot = _addon_ui_slot(addon_slots, addon)
         try:
             ui_result = addon_results.get(addon_id)
             logger.info(
@@ -696,21 +732,31 @@ if run_scan:
             "addons": {},
         }
 
-        # Reserve result anchors once, in final display order.
+        # Reserve result anchors once. Add-on UI anchors are placed in the
+        # same canonical regions as the events that produce their results.
         with live_area:
             services_slot = st.empty()
+
+            addon_ui_slots = {
+                anchor: {}
+                for anchor in _ADDON_UI_ANCHOR_ORDER
+            }
+            for addon in addon_manager.list():
+                addon_id = str(addon.get("id", "")).strip()
+                if (
+                    not addon_id
+                    or not addon.get("active")
+                    or addon.get("type") == "backend"
+                ):
+                    continue
+                anchor = _addon_ui_anchor(addon)
+                addon_ui_slots[anchor][addon_id] = st.empty()
+
             breach_slot = st.empty()
             evidence_slot = st.empty()
-            ui_addon_ids = tuple(
-                addon["id"]
-                for addon in addon_manager.list()
-                if addon.get("active")
-                and addon.get("type") != "backend"
-            )
-            addon_ui_slots = {
-                addon_id: st.empty()
-                for addon_id in ui_addon_ids
-            }
+
+            # Event-driven add-ons tied to evidence must stay after the
+            # evidence result; final/on-demand UIs stay immediately before AI.
             ai_slot = st.empty()
 
         # Transient progress/status is deliberately separated from result
@@ -733,8 +779,6 @@ if run_scan:
             )
             if enabled
         }
-        discovery_rendered = {"value": False}
-
         def _event_message(event: dict) -> str:
             message = event.get("text")
             if not message and event.get("key"):
@@ -761,13 +805,11 @@ if run_scan:
             with slot.container():
                 renderer(message)
 
-        def _render_services_once() -> None:
-            if discovery_rendered["value"]:
+        def _render_services() -> None:
+            """Replace the discovery result anchor with current accumulated services."""
+            services_slot.empty()
+            if not live_state["services"]:
                 return
-            if discovery_pending:
-                return
-
-            discovery_rendered["value"] = True
             with services_slot.container():
                 render_services(live_state)
 
@@ -785,13 +827,13 @@ if run_scan:
                 if event.get("level") in {"success", "warning", "error"}:
                     _clear_status(stage)
                     discovery_pending.discard(stage)
-                    _render_services_once()
+                    _render_services()
                 else:
                     _show_status(stage, event)
                 return
 
-            # Downstream result anchors are already positioned after Services,
-            # so their completion timing cannot change visual order.
+            # Downstream result anchors are positioned according to the
+            # canonical event region, so completion timing cannot change visual order.
             if stage == "breach":
                 if "breach" in live_data:
                     _clear_status("breach")
@@ -825,7 +867,7 @@ if run_scan:
                     result = live_data.get(result_key)
                 if result is not None:
                     live_state["addons"][addon_id] = result
-                    slot = addon_ui_slots.get(addon_id)
+                    slot = _addon_ui_slot(addon_ui_slots, addon)
                     ui_context = {
                         "state": live_state,
                         "result": result,
@@ -896,7 +938,7 @@ if run_scan:
         )
 
         discovery_pending.clear()
-        _render_services_once()
+        _render_services()
 
         if live_state["breach"].get("enabled"):
             with breach_slot.container():
@@ -920,7 +962,7 @@ if run_scan:
             ui_result = live_state["addons"].get(addon_id)
             if ui_result is None:
                 continue
-            slot = addon_ui_slots.get(addon_id)
+            slot = _addon_ui_slot(addon_ui_slots, addon)
             ui_context = {
                 "state": live_state,
                 "result": ui_result,
@@ -965,9 +1007,12 @@ state = st.session_state.get("scan_state")
 # result in the same pipeline order as the first run.
 if state and not scan_executed:
     render_services(state)
+    render_addon_uis(state, anchor="discovery")
     render_breach(state)
+    render_addon_uis(state, anchor="breach")
     render_evidence(state)
-    render_addon_uis(state)
+    render_addon_uis(state, anchor="evidence")
+    render_addon_uis(state, anchor="final")
 
     if not state["services"] and not state["breach"]["findings"]:
         st.warning(t("warn_no_services", lang=lang))
