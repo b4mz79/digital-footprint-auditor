@@ -52,6 +52,25 @@ class PythonJsonLogicReferenceAdapter:
         return tuple(sorted({item for result in results for item in result.lineage}))
 
     @staticmethod
+    def _minmax_expression(variable_refs: list[dict[str, Any]], *, operation: str) -> dict[str, Any]:
+        if not variable_refs:
+            raise ValueError("min/max requires at least one value")
+        if operation not in {"min", "max"}:
+            raise ValueError(f"Unsupported min/max operation: {operation}")
+
+        comparator = "<" if operation == "min" else ">"
+        expression = variable_refs[0]
+        for candidate in variable_refs[1:]:
+            expression = {
+                "if": [
+                    {comparator: [expression, candidate]},
+                    expression,
+                    candidate,
+                ]
+            }
+        return expression
+
+    @staticmethod
     def _coverage(result: EvalResult) -> float:
         if result.state == "observed":
             return 1.0
@@ -166,7 +185,10 @@ class PythonJsonLogicReferenceAdapter:
         elif operation == "mean":
             expression = {"/": [{"+": [{"var": f"/v{i}"} for i in range(len(values))]}, len(values)]}
         elif operation in {"min", "max"}:
-            expression = {operation: [{"var": f"/v{i}"} for i in range(len(values))]}
+            expression = self._minmax_expression(
+                [{"var": f"/v{i}"} for i in range(len(values))],
+                operation=operation,
+            )
         else:
             raise ValueError(f"Unsupported synthetic aggregation: {operation}")
         value = self._evaluate_numeric_expression(expression, variables, label=f"aggregation[{operation}]")
@@ -232,7 +254,13 @@ class PythonJsonLogicReferenceAdapter:
         coverage = min(self._coverage(left), self._coverage(right))
         if relation not in {"sum", "max"}:
             raise ValueError(f"Unsupported synthetic relation: {relation}")
-        expression = {relation: [{"var": "/left"}, {"var": "/right"}]}
+        if relation == "sum":
+            expression = {"+": [{"var": "/left"}, {"var": "/right"}]}
+        else:
+            expression = self._minmax_expression(
+                [{"var": "/left"}, {"var": "/right"}],
+                operation="max",
+            )
         details = left.contribution_details + right.contribution_details if relation == "sum" else ()
         value = self._evaluate_numeric_expression(expression, {"left": left_value, "right": right_value}, label=f"dependency[{relation}]")
         return EvalResult(value, "observed" if coverage == 1.0 else "partial", lineage,
