@@ -11,7 +11,7 @@ from services import pipeline
 from services.addon_manager import AddonManager
 from services.evidence.models import EvidenceDirectness, EvidenceRecord, EvidenceRelation
 
-DUMP_PATH = Path(__file__).resolve().parent / "scorecard" / "fixtures" / "contextual_filter_dump.md"
+DUMP_PATH = Path(__file__).resolve().parent / "fixtures" / "contextual_filter_dump.md"
 
 
 def _definition() -> dict:
@@ -97,7 +97,7 @@ def _install_scorecard_addon(monkeypatch, tmp_path: Path) -> None:
     The test must not depend on the developer's persistent add-on state,
     including a previous manual uninstall from the UI.
     """
-    source_root = Path(__file__).resolve().parents[1] / "addons" / "scorecard"
+    source_root = Path(__file__).resolve().parents[2] / "addons" / "scorecard"
     if not source_root.is_dir():
         pytest.fail(f"Scorecard add-on package is missing: {source_root}")
 
