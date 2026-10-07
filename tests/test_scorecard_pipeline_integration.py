@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import io
 import json
+import zipfile
 from pathlib import Path
 
 import pytest
 
 from services import pipeline
+from services.addon_manager import AddonManager
 from services.evidence.models import EvidenceDirectness, EvidenceRecord, EvidenceRelation
 
 DUMP_PATH = Path(__file__).resolve().parent / "scorecard" / "fixtures" / "contextual_filter_dump.md"
@@ -84,6 +87,30 @@ def _load_contextual_dump_records() -> list[dict]:
         or []
     )
     return [item for item in records if isinstance(item, dict)]
+
+
+
+
+def _install_scorecard_addon(monkeypatch, tmp_path: Path) -> None:
+    """Install the real repository Scorecard package into an isolated manager.
+
+    The test must not depend on the developer's persistent add-on state,
+    including a previous manual uninstall from the UI.
+    """
+    source_root = Path(__file__).resolve().parents[1] / "addons" / "scorecard"
+    if not source_root.is_dir():
+        pytest.fail(f"Scorecard add-on package is missing: {source_root}")
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        for path in source_root.rglob("*"):
+            if path.is_file():
+                archive.write(path, path.relative_to(source_root).as_posix())
+
+    manager = AddonManager(tmp_path / "addons")
+    manager.install_zip(buffer.getvalue())
+    manager.activate("scorecard")
+    monkeypatch.setattr(pipeline, "get_addon_manager", lambda: manager)
 
 
 def _patch_pipeline(monkeypatch) -> None:
@@ -169,7 +196,8 @@ def test_scorecard_off_preserves_existing_ai_path(monkeypatch) -> None:
     assert state["ai"]["provider_used"] == "test"
 
 
-def test_scorecard_on_augments_existing_ai_payload(monkeypatch) -> None:
+def test_scorecard_on_augments_existing_ai_payload(monkeypatch, tmp_path: Path) -> None:
+    _install_scorecard_addon(monkeypatch, tmp_path)
     _patch_pipeline(monkeypatch)
     captured: dict = {}
     _patch_ai(monkeypatch, captured)
@@ -197,7 +225,8 @@ def test_scorecard_on_augments_existing_ai_payload(monkeypatch) -> None:
     assert captured["scorecard_result"]["risk_band"] == state["scorecard"]["risk_band"]
 
 
-def test_scorecard_failure_does_not_break_existing_ai(monkeypatch) -> None:
+def test_scorecard_failure_does_not_break_existing_ai(monkeypatch, tmp_path: Path) -> None:
+    _install_scorecard_addon(monkeypatch, tmp_path)
     _patch_pipeline(monkeypatch)
     captured: dict = {}
     _patch_ai(monkeypatch, captured)
