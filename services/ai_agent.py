@@ -445,6 +445,8 @@ CACHE_INVALIDATION_GENERATION = 0
 
 MAX_EVIDENCE_RECORDS = 150
 MAX_EVIDENCE_FIELD_LENGTH = 2_000
+MAX_LLM_EVIDENCE_FIELD_LENGTH = 600
+MAX_LLM_EVIDENCE_PAYLOAD_CHARS = 35_000
 SAFE_PROVENANCE_KEYS = (
     "provider",
     "publisher_domain",
@@ -458,15 +460,40 @@ SAFE_PROVENANCE_KEYS = (
 
 
 def _sanitize_evidence_records(evidence_records: list | None) -> list[dict[str, Any]]:
-    """Prepare provenance-preserving evidence for the LLM without exposing raw PII."""
+    """Prepare bounded, provenance-preserving evidence for the LLM.
+
+    Evidence records can be numerous and contain long publication summaries.
+    The AI contract needs representative evidence and provenance, not the
+    entire raw enrichment payload. Bound the serialized evidence block so the
+    overall prompt remains usable while preserving contextual security records
+    ahead of generic service-discovery records.
+    """
     if evidence_records is None:
         return []
     if not isinstance(evidence_records, list):
         raise TypeError("evidence_records harus berupa list.")
-    records = evidence_records[:MAX_EVIDENCE_RECORDS]
+
+    def priority(raw: object) -> tuple[int, int]:
+        if not isinstance(raw, dict):
+            return (2, 0)
+        metadata = raw.get("metadata")
+        finding_type = metadata.get("finding_type") if isinstance(metadata, dict) else ""
+        relation = str(raw.get("relation", "") or "")
+        if finding_type == "security_context" or relation == "security_publication":
+            return (0, 0)
+        if finding_type == "service_discovery":
+            return (1, 0)
+        return (2, 0)
+
+    records = sorted(
+        enumerate(evidence_records[:MAX_EVIDENCE_RECORDS]),
+        key=lambda pair: (priority(pair[1]), pair[0]),
+    )
 
     out: list[dict[str, Any]] = []
-    for raw in records:
+    payload_chars = 2
+
+    for _, raw in records:
         if not isinstance(raw, dict):
             continue
 
@@ -486,7 +513,10 @@ def _sanitize_evidence_records(evidence_records: list | None) -> list[dict[str, 
             "verification_observed_at",
         ):
             if key in raw:
-                value = _redact_text_for_llm(raw.get(key), MAX_EVIDENCE_FIELD_LENGTH)
+                value = _redact_text_for_llm(
+                    raw.get(key),
+                    MAX_LLM_EVIDENCE_FIELD_LENGTH,
+                )
                 if value:
                     item[key] = value
 
@@ -499,7 +529,10 @@ def _sanitize_evidence_records(evidence_records: list | None) -> list[dict[str, 
             item["url"] = url
 
         for key in ("title", "summary"):
-            value = _redact_text_for_llm(raw.get(key), MAX_EVIDENCE_FIELD_LENGTH)
+            value = _redact_text_for_llm(
+                raw.get(key),
+                MAX_LLM_EVIDENCE_FIELD_LENGTH,
+            )
             if value:
                 item[key] = value
 
@@ -509,7 +542,7 @@ def _sanitize_evidence_records(evidence_records: list | None) -> list[dict[str, 
             for key in SAFE_PROVENANCE_KEYS:
                 if key not in provenance:
                     continue
-                value = _redact_text_for_llm(provenance.get(key), 512)
+                value = _redact_text_for_llm(provenance.get(key), 256)
                 if value:
                     safe_provenance[key] = value
             if safe_provenance:
@@ -522,8 +555,18 @@ def _sanitize_evidence_records(evidence_records: list | None) -> list[dict[str, 
         except (TypeError, ValueError):
             pass
 
-        if item:
-            out.append(item)
+        if not item:
+            continue
+
+        item_chars = len(
+            json.dumps(item, ensure_ascii=False, separators=(",", ":"))
+        )
+        separator_chars = 1 if out else 0
+        if payload_chars + separator_chars + item_chars > MAX_LLM_EVIDENCE_PAYLOAD_CHARS:
+            continue
+
+        out.append(item)
+        payload_chars += separator_chars + item_chars
 
     return out
 
