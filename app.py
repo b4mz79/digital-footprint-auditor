@@ -655,7 +655,8 @@ if run_scan:
             breach_area = st.empty()
             evidence_area = st.empty()
             scorecard_area = st.empty()
-            ai_area = st.empty()
+            ai_status_area = st.empty()
+            ai_results_area = st.empty()
 
         live_state = {
             "email": target_email.strip(),
@@ -676,7 +677,6 @@ if run_scan:
         }
 
         ui_state = {
-            "ai_status": None,
             "ai_live_items": [],
         }
 
@@ -731,18 +731,32 @@ if run_scan:
                 _render_live_scorecard()
                 return
 
-            # AI: individual Ollama batch items are rendered progressively in
-            # the same AI placeholder. The final result later replaces it once.
+            # AI uses separate status/result surfaces so callbacks cannot
+            # destroy provider progress while provisional results are rendered.
             if stage == "ai":
-                if "ai_reset" in live_data and live_data["ai_reset"]:
+                if live_data.get("ai_reset"):
                     ui_state["ai_live_items"].clear()
-                    ai_area.empty()
+                    ai_results_area.empty()
                     return
 
                 if "ai_item" in live_data:
-                    ui_state["ai_live_items"].append(live_data["ai_item"])
-                    ai_area.empty()
-                    with ai_area.container():
+                    item = live_data["ai_item"]
+                    service_key = _norm(item.get("service") or item.get("name"))
+                    replaced = False
+                    if service_key:
+                        for index, existing in enumerate(ui_state["ai_live_items"]):
+                            existing_key = _norm(
+                                existing.get("service") or existing.get("name")
+                            )
+                            if existing_key == service_key:
+                                ui_state["ai_live_items"][index] = item
+                                replaced = True
+                                break
+                    if not replaced:
+                        ui_state["ai_live_items"].append(item)
+
+                    ai_results_area.empty()
+                    with ai_results_area.container():
                         st.divider()
                         st.subheader(t("ai_title", lang=lang))
                         for live_item in ui_state["ai_live_items"]:
@@ -783,8 +797,6 @@ if run_scan:
                     live_state["ai"] = live_data["ai"]
                     return
 
-                # First AI event: replace the progress/status area with a
-                # stable status message above the progressive result area.
                 message = event.get("text")
                 if not message and event.get("key"):
                     message = t(
@@ -792,14 +804,11 @@ if run_scan:
                         lang=lang,
                         **event.get("args", {}),
                     )
-                ai_area.empty()
-                with ai_area.container():
-                    status = st.empty()
-                    ui_state["ai_status"] = status
-                    if message:
-                        level = event.get("level", "info")
-                        with status.container():
-                            getattr(st, level, st.info)(message)
+                ai_status_area.empty()
+                if message:
+                    level = event.get("level", "info")
+                    with ai_status_area.container():
+                        getattr(st, level, st.info)(message)
                 return
 
             # Generic progress/status events remain visible in the main
@@ -839,18 +848,39 @@ if run_scan:
         progress_status.empty()
         st.session_state["scan_state"] = final_state
 
-        # Reconcile each stage once. During the first scan these placeholders
-        # already contain the latest live state, so do not append duplicate
-        # sections. The final AI renderer replaces its progressive preview so
-        # tabs/DSR/exposures are available after provider completion.
+        # Final pipeline state is authoritative. Reconcile into the SAME
+        # placeholders used by progressive rendering; do not append sections.
+        live_state["services"] = list(final_state.get("services") or [])
+        live_state["evidence"] = list(final_state.get("evidence") or [])
+        live_state["breach"] = final_state.get("breach") or live_state["breach"]
+        live_state["scorecard"] = final_state.get("scorecard")
+
+        services_area.empty()
+        if live_state["services"]:
+            _render_live_services()
+
+        breach_area.empty()
+        if live_state["breach"]:
+            _render_live_breach()
+
+        evidence_area.empty()
+        if live_state["evidence"]:
+            _render_live_evidence()
+
+        scorecard_area.empty()
+        if live_state["scorecard"]:
+            _render_live_scorecard()
+
+        ai_status_area.empty()
+        ai_results_area.empty()
+
         if final_state.get("ai"):
-            ai_area.empty()
-            with ai_area.container():
+            with ai_results_area.container():
                 render_ai(final_state)
         elif not final_state["services"] and not final_state["breach"]["findings"]:
-            ai_area.empty()
-            with ai_area.container():
+            with ai_results_area.container():
                 st.warning(t("warn_no_services", lang=lang))
+
 
 
 
