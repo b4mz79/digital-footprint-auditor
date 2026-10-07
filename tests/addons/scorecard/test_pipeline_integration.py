@@ -181,8 +181,13 @@ def _patch_ai(monkeypatch, captured: dict) -> None:
     monkeypatch.setattr(pipeline, "analyze_smart_cache", fake_analyze)
 
 
-def test_scorecard_off_preserves_existing_ai_path(monkeypatch) -> None:
+def test_scorecard_off_preserves_existing_ai_path(monkeypatch, tmp_path: Path) -> None:
     _patch_pipeline(monkeypatch)
+    monkeypatch.setattr(
+        pipeline,
+        "get_addon_manager",
+        lambda: AddonManager(tmp_path / "addons"),
+    )
     captured: dict = {}
     _patch_ai(monkeypatch, captured)
 
@@ -213,7 +218,6 @@ def test_scorecard_on_augments_existing_ai_payload(monkeypatch, tmp_path: Path) 
         enable_osint=True,
         enable_breach=False,
         with_ai=True,
-        enabled_addons=("scorecard",),
         addon_contexts={
             "scorecard": {
                 "scorecard_definition": _definition(),
@@ -247,7 +251,6 @@ def test_scorecard_failure_does_not_break_existing_ai(monkeypatch, tmp_path: Pat
         enable_osint=True,
         enable_breach=False,
         with_ai=True,
-        enabled_addons=("scorecard",),
         addon_contexts={
             "scorecard": {
                 "scorecard_definition": {"broken": True},
