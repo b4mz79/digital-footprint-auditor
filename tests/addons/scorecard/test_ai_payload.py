@@ -34,10 +34,11 @@ def test_scorecard_result_is_embedded_in_ai_prompt() -> None:
         "subject@example.org",
         [{"name": "Example", "domain": "example.com"}],
         evidence_records=[],
-        scorecard_result=_scorecard(),
+        addon_results={"scorecard": _scorecard()},
     )
 
-    assert "<SCORECARD_RESULT>" in prompt
+    assert "<ADDON_RESULTS>" in prompt
+    assert '"scorecard":{"schema_version":"scorecard-result-v1"' in prompt
     assert '"score":0.72' in prompt
     assert '"risk_band":"medium"' in prompt
     assert "do not recalculate or invent them" in prompt
@@ -55,7 +56,7 @@ def test_scorecard_changes_analysis_cache_fingerprint() -> None:
         [{"name": "Example", "domain": "example.com"}],
         [],
         [],
-        _scorecard(),
+        {"scorecard": _scorecard()},
         {"breach_scan_complete": True, "failed_engines": []},
     )
 
