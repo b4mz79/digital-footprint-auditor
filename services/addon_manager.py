@@ -15,6 +15,9 @@ from uuid import uuid4
 
 
 _ADDON_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,63}$")
+_ADDON_TYPES = frozenset({"backend", "ui", "hybrid"})
+_INVOCATION_MODES = frozenset({"on_demand", "on_event"})
+_RETURN_TYPES = frozenset({"result", "none"})
 _MAX_ZIP_FILES = 500
 _MAX_UNCOMPRESSED_BYTES = 50 * 1024 * 1024
 _STATE_FILENAME = ".addons-state.json"
@@ -27,8 +30,14 @@ class AddonManifest:
     caption: str
     version: str
     entrypoint: str
+    addon_type: str
+    invocation_function: str
+    invocation_mode: str
+    input_required: bool
+    return_type: str
+    return_required: bool
+    events: tuple[dict[str, Any], ...] = ()
     result_key: str | None = None
-    pipeline_stage: str | None = None
     ai_context: bool = False
     default_active: bool = False
 
@@ -39,8 +48,18 @@ class AddonManifest:
             "caption": self.caption,
             "version": self.version,
             "entrypoint": self.entrypoint,
+            "type": self.addon_type,
+            "invocation": {
+                "function": self.invocation_function,
+                "mode": self.invocation_mode,
+                "input": {"required": self.input_required},
+                "return": {
+                    "type": self.return_type,
+                    "required": self.return_required,
+                },
+            },
+            "events": [dict(item) for item in self.events],
             "result_key": self.result_key,
-            "pipeline_stage": self.pipeline_stage,
             "ai_context": self.ai_context,
             "default_active": self.default_active,
         }
@@ -112,19 +131,12 @@ class AddonManager:
             staging = self.root / f".install-{manifest.addon_id}-{uuid4().hex}"
             try:
                 shutil.copytree(package_root, staging)
-                # Do not rename/replace the directory on Windows.  Replacing
-                # a non-empty directory via Path.replace()/os.replace() can
-                # raise WinError 5 even when the installation target is valid.
-                # Copy the validated staging tree into the final package path
-                # instead; the target was checked above and must not exist.
                 shutil.copytree(staging, target)
             finally:
                 if staging.exists():
                     shutil.rmtree(staging, ignore_errors=True)
 
         state = self._load_state()
-        # ZIP installs are never activated implicitly. The user explicitly
-        # activates an installed add-on from the sidebar.
         state[manifest.addon_id] = False
         self._save_state(state)
         return self.get(manifest.addon_id) or {}
@@ -156,30 +168,95 @@ class AddonManager:
             raise ValueError(f"add-on is not installed: {addon_id}")
         if not addon["active"]:
             raise ValueError(f"add-on is not active: {addon_id}")
+        if addon["invocation"]["mode"] != "on_demand":
+            raise ValueError(
+                f"add-on {addon_id} is not configured for on-demand invocation"
+            )
 
-        package_root = self.root / addon_id
-        entrypoint = self._safe_entrypoint(package_root, addon["entrypoint"])
-        module_name = f"_privacy_auditor_addon_{addon_id}_{uuid4().hex}"
+        return self._execute(addon, context)
+
+    def dispatch_event(
+        self,
+        event_name: str,
+        context: Mapping[str, Any] | None = None,
+    ) -> tuple[tuple[dict[str, Any], Any], ...]:
+        if not isinstance(event_name, str) or not event_name.strip():
+            raise ValueError("event_name is required")
+
+        payload = context or {}
+        results: list[tuple[dict[str, Any], Any]] = []
+        for addon in self.list():
+            if not addon["active"]:
+                continue
+            if addon["invocation"]["mode"] != "on_event":
+                continue
+            if not any(
+                event.get("name") == event_name
+                for event in addon["events"]
+            ):
+                continue
+            results.append(self._execute(addon, payload))
+
+        return tuple(results)
+
+    def _execute(
+        self,
+        addon: Mapping[str, Any],
+        context: Mapping[str, Any],
+    ) -> tuple[dict[str, Any], Any]:
+        package_root = self.root / str(addon["id"])
+        entrypoint = self._safe_entrypoint(
+            package_root,
+            str(addon["entrypoint"]),
+        )
+        module_name = (
+            f"_privacy_auditor_addon_{addon['id']}_{uuid4().hex}"
+        )
         spec = importlib.util.spec_from_file_location(
             module_name,
             entrypoint,
             submodule_search_locations=[str(package_root)],
         )
         if spec is None or spec.loader is None:
-            raise ValueError(f"cannot load add-on entrypoint: {addon_id}")
+            raise ValueError(
+                f"cannot load add-on entrypoint: {addon['id']}"
+            )
 
         module = importlib.util.module_from_spec(spec)
         sys.modules[module_name] = module
         try:
             spec.loader.exec_module(module)
 
-            runner = getattr(module, "run", None)
+            function_name = str(addon["invocation"]["function"])
+            runner = getattr(module, function_name, None)
             if not callable(runner):
                 raise ValueError(
-                    f"add-on entrypoint must expose run(context): {addon_id}"
+                    f"add-on entrypoint must expose "
+                    f"{function_name}(context): {addon['id']}"
                 )
 
-            return addon, runner(context)
+            if addon["invocation"]["input"]["required"] and not isinstance(
+                context, Mapping
+            ):
+                raise TypeError(
+                    f"add-on {addon['id']} requires mapping input"
+                )
+
+            result = runner(context)
+            return_required = bool(
+                addon["invocation"]["return"]["required"]
+            )
+            return_type = str(addon["invocation"]["return"]["type"])
+            if return_required and result is None:
+                raise ValueError(
+                    f"add-on {addon['id']} must return a result"
+                )
+            if return_type == "none" and result is not None:
+                raise ValueError(
+                    f"add-on {addon['id']} must not return a result"
+                )
+
+            return dict(addon), result
         finally:
             for loaded_name in tuple(sys.modules):
                 if loaded_name == module_name or loaded_name.startswith(
@@ -208,30 +285,141 @@ class AddonManager:
         addon_id = str(payload.get("id", "")).strip()
         self._validate_id(addon_id)
 
-        required = ("name", "caption", "version", "entrypoint")
-        if any(not str(payload.get(key, "")).strip() for key in required):
+        required = ("name", "caption", "version", "entrypoint", "type", "invocation")
+        if any(key not in payload for key in required):
             raise ValueError(
-                "add-on manifest requires id, name, caption, version and entrypoint"
+                "add-on manifest requires id, name, caption, version, "
+                "entrypoint, type and invocation"
             )
 
+        name = str(payload["name"]).strip()
+        caption = str(payload["caption"]).strip()
+        version = str(payload["version"]).strip()
         entrypoint = str(payload["entrypoint"]).replace("\\", "/")
+        if not name or not caption or not version or not entrypoint:
+            raise ValueError(
+                "add-on manifest requires non-empty id, name, caption, "
+                "version and entrypoint"
+            )
         if entrypoint.startswith("/") or ".." in Path(entrypoint).parts:
             raise ValueError("add-on entrypoint must stay inside its package")
 
+        addon_type = str(payload["type"]).strip().lower()
+        if addon_type not in _ADDON_TYPES:
+            raise ValueError(
+                "add-on type must be one of: backend, ui, hybrid"
+            )
+
+        invocation = payload["invocation"]
+        if not isinstance(invocation, dict):
+            raise ValueError("add-on invocation must be an object")
+
+        function_name = str(invocation.get("function", "")).strip()
+        if function_name != "run":
+            raise ValueError(
+                "add-on invocation.function must be 'run'"
+            )
+
+        mode = str(invocation.get("mode", "")).strip().lower()
+        if mode not in _INVOCATION_MODES:
+            raise ValueError(
+                "add-on invocation.mode must be one of: on_demand, on_event"
+            )
+
+        input_spec = invocation.get("input")
+        if not isinstance(input_spec, dict) or not isinstance(
+            input_spec.get("required"), bool
+        ):
+            raise ValueError(
+                "add-on invocation.input.required must be a boolean"
+            )
+
+        return_spec = invocation.get("return")
+        if not isinstance(return_spec, dict):
+            raise ValueError("add-on invocation.return must be an object")
+        return_type = str(return_spec.get("type", "")).strip().lower()
+        if return_type not in _RETURN_TYPES:
+            raise ValueError(
+                "add-on invocation.return.type must be one of: result, none"
+            )
+        if not isinstance(return_spec.get("required"), bool):
+            raise ValueError(
+                "add-on invocation.return.required must be a boolean"
+            )
+
+        raw_events = payload.get("events", [])
+        if not isinstance(raw_events, list):
+            raise ValueError("add-on events must be an array")
+        events: list[dict[str, Any]] = []
+        for item in raw_events:
+            if not isinstance(item, dict):
+                raise ValueError("each add-on event must be an object")
+            event_name = str(item.get("name", "")).strip()
+            if not event_name:
+                raise ValueError("add-on event name is required")
+            event_input = item.get("input", {"required": input_spec["required"]})
+            event_return = item.get(
+                "return",
+                {
+                    "type": return_type,
+                    "required": return_spec["required"],
+                },
+            )
+            if not isinstance(event_input, dict) or not isinstance(
+                event_input.get("required"), bool
+            ):
+                raise ValueError(
+                    f"add-on event input.required must be a boolean: {event_name}"
+                )
+            if not isinstance(event_return, dict):
+                raise ValueError(
+                    f"add-on event return must be an object: {event_name}"
+                )
+            event_return_type = str(event_return.get("type", "")).strip().lower()
+            if event_return_type not in _RETURN_TYPES:
+                raise ValueError(
+                    f"add-on event return.type must be one of: result, none: {event_name}"
+                )
+            if not isinstance(event_return.get("required"), bool):
+                raise ValueError(
+                    f"add-on event return.required must be a boolean: {event_name}"
+                )
+            events.append(
+                {
+                    "name": event_name,
+                    "input": {"required": event_input["required"]},
+                    "return": {
+                        "type": event_return_type,
+                        "required": event_return["required"],
+                    },
+                }
+            )
+
+        if mode == "on_event" and not events:
+            raise ValueError(
+                "on_event add-on must declare at least one event"
+            )
+        if mode == "on_demand" and events:
+            raise ValueError(
+                "on_demand add-on must not declare event subscriptions"
+            )
+
         return AddonManifest(
             addon_id=addon_id,
-            name=str(payload["name"]).strip(),
-            caption=str(payload["caption"]).strip(),
-            version=str(payload["version"]).strip(),
+            name=name,
+            caption=caption,
+            version=version,
             entrypoint=entrypoint,
+            addon_type=addon_type,
+            invocation_function=function_name,
+            invocation_mode=mode,
+            input_required=input_spec["required"],
+            return_type=return_type,
+            return_required=return_spec["required"],
+            events=tuple(events),
             result_key=(
                 str(payload["result_key"]).strip()
                 if payload.get("result_key")
-                else None
-            ),
-            pipeline_stage=(
-                str(payload["pipeline_stage"]).strip()
-                if payload.get("pipeline_stage")
                 else None
             ),
             ai_context=bool(payload.get("ai_context", False)),
