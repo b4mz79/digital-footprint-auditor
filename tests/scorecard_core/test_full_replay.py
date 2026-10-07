@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from services.scorecard.engine import ScorecardEngine
+from services.scorecard.sqlite_store import SQLiteScorecardStore
 from services.scorecard.policy import CONDITION_MATCH, CONDITION_NO_MATCH, CONDITION_UNKNOWN
 
 
@@ -91,3 +92,15 @@ def test_full_replay_unknown_score_stays_unknown():
 def test_replay_identity_does_not_depend_on_current_clock():
     result = _evaluate(10, 4)
     assert result.calculated_at == "2026-10-07T00:01:00+07:00"
+
+
+def test_full_replay_result_round_trips_through_sqlite(tmp_path):
+    result = _evaluate(10, 4)
+    store = SQLiteScorecardStore(tmp_path / "scorecard.db")
+    store.save_result(result.to_record())
+
+    restored = store.get_result(result.result_id)
+    assert restored is not None
+    assert restored.result == result.to_dict()
+    assert restored.assessment_id == result.assessment_id
+    assert restored.calculated_at == result.calculated_at
