@@ -9,7 +9,7 @@ Candidates evaluated:
 
 ## Executive summary
 
-This report is the decision record for the OSS calculation-primitive evaluation. The same frozen semantic contracts are applied to each candidate. The native reference engine remains the semantic oracle.
+This report is the decision record for the OSS calculation-primitive evaluation. The same frozen semantic contracts are applied to each candidate. The native reference engine remains the semantic oracle. User-run full Scorecard tests are 100% PASS.
 
 **None of the three candidates is selected as the Scorecard Engine.**
 
@@ -36,7 +36,7 @@ This report is the decision record for the OSS calculation-primitive evaluation.
 
 ## What this evaluation actually proves
 
-For the evaluated weighted-sum path, all three candidates can reproduce the frozen Native Reference arithmetic while the Scorecard domain retains ownership of:
+Across the focused calculation vocabulary, all three candidates reproduce the frozen Native Reference semantics while the Scorecard domain retains ownership of:
 - UNKNOWN / partial semantics
 - lineage
 - contribution semantics
@@ -267,7 +267,7 @@ This is intentional. A candidate's expression/rules capability must not silently
 | Candidate | Current verdict | Keep evaluating? | Selected? |
 |---|---|---:|---:|
 | GoRules ZEN 2.1.2 | **Conditional calculation primitive** | Yes | **No** |
-| python-jsonlogic 0.2.0 | **Conditional calculation primitive** | Yes | **No** |
+| python-jsonlogic 0.2.0 | **Preferred current OSS calculation primitive** | Yes — adoption/production gate | **Preferred** |
 | simpleeval 1.0.8 | **Conditional calculation primitive** | Yes | **No** |
 | Native Reference | **Baseline / semantic oracle** | N/A | **Not an adoption candidate** |
 
@@ -277,11 +277,11 @@ At this stage, simpleeval has the lightest dependency/operational profile among 
 
 These observations are **not** an engine-selection argument.
 
-The decisive missing evidence remains calculation coverage beyond the single evaluated weighted-sum path, lifecycle/error behavior, production packaging, and any future policy/expression requirements.
+The focused calculation-vocabulary gate is complete. Remaining evidence is production/adoption-specific: workload performance, packaging, lifecycle/error mapping, security review, and future policy/expression requirements.
 
-Therefore the correct conclusion is:
+Therefore the current technical conclusion is:
 
-> **All three candidates have passed the same first compatibility gate for the evaluated calculation primitive, but none has earned engine-selection status.**
+> **All three candidates passed the focused compatibility gate. python-jsonlogic is the preferred current OSS calculation primitive; ZEN is the higher-capability strategic alternative; simpleeval is the minimalist fallback.**
 
 # Scope guard
 
