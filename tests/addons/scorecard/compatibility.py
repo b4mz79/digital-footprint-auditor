@@ -4,12 +4,12 @@ from dataclasses import dataclass
 import math
 from typing import Any
 
-from tests.scorecard.engine_contract import assert_eval_result_semantics
-from tests.scorecard.policy_engine_contract import (
+from tests.addons.scorecard.engine_contract import assert_eval_result_semantics
+from tests.addons.scorecard.policy_engine_contract import (
     PolicyDecision,
     assert_policy_decision_semantics,
 )
-from tests.scorecard.reference_engine import EvalResult
+from tests.addons.scorecard.reference_engine import EvalResult
 
 
 @dataclass(frozen=True, slots=True)
