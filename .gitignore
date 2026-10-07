@@ -24,6 +24,7 @@ files-2/
 
 # Project Specific Caches (Data Hasil Scan Privasi)
 cache/
+addons/
 ignored_domains.txt
 main.py
 services/phone_scanner.py
