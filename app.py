@@ -44,6 +44,66 @@ ENGINE_STATUS_ICONS = {
     "skipped": "⏭️",
 }
 
+# Temporary application-level integration profile for the Scorecard Add-on.
+# This is deliberately NOT the final Privacy Auditor business scorecard.
+# It uses bounded evidence-sufficiency measurements so the real pipeline
+# integration can be validated without inventing final KPI weights/formulas.
+SCORECARD_INTEGRATION_DEFINITION = {
+    "schema_version": "scorecard-definition-v1",
+    "scorecard_id": "evidence-sufficiency-integration",
+    "version": "v1",
+    "score": {
+        "canonical_range": {"min": 0.0, "max": 1.0},
+        "precision": 2,
+        "rounding": "half_even",
+    },
+    "aggregation": {
+        "operation": "weighted_sum",
+        "weights": {
+            "evidence_record_coverage": 0.5,
+            "verification_coverage": 0.5,
+        },
+    },
+}
+
+SCORECARD_INTEGRATION_RISK_POLICY = {
+    "schema_version": "risk-policy-v1",
+    "risk_policy_id": "evidence-sufficiency-integration-policy",
+    "version": "v1",
+    "output": {"risk_bands": ["high", "medium", "low", "unknown"]},
+    "mapping": {
+        "rules": [
+            {
+                "rule_id": "low-evidence-risk",
+                "priority": 10,
+                "condition": {
+                    "type": "score_threshold",
+                    "parameters": {"operator": ">=", "value": 0.8},
+                },
+                "then": "low",
+            },
+            {
+                "rule_id": "medium-evidence-risk",
+                "priority": 20,
+                "condition": {
+                    "type": "score_threshold",
+                    "parameters": {"operator": ">=", "value": 0.5},
+                },
+                "then": "medium",
+            },
+            {
+                "rule_id": "high-evidence-risk",
+                "priority": 30,
+                "condition": {
+                    "type": "score_threshold",
+                    "parameters": {"operator": ">=", "value": 0.0},
+                },
+                "then": "high",
+            },
+        ]
+    },
+}
+
 
 def _md_escape(text: str) -> str:
     """Escape characters that could break out of a markdown link label."""
@@ -268,6 +328,50 @@ def render_evidence(scan_state: dict) -> None:
                 st.markdown(f"🔗 [{_md_escape(url)}]({url})")
 
             st.caption("---")
+
+
+def render_scorecard(scan_state: dict) -> None:
+    """Render the optional Scorecard Add-on result without recalculating it."""
+    result = scan_state.get("scorecard")
+    if not isinstance(result, dict):
+        return
+
+    st.divider()
+    st.subheader("📊 Scorecard Add-on")
+    risk_key = normalize_risk(result.get("risk_band")) or "unknown"
+    score = result.get("score")
+    score_text = "UNKNOWN" if score is None else f"{score:.2f}"
+
+    st.metric("Score", score_text)
+    st.markdown(
+        f"**Risk band:** {risk_icon(risk_key)} "
+        f"{risk_key.upper()}  •  **State:** `{result.get('state', 'unknown')}`"
+    )
+    st.caption(
+        f"Scorecard: `{result.get('scorecard_id', '-')}` / "
+        f"version `{result.get('scorecard_version', '-')}` • "
+        f"Result: `{result.get('result_id', '-')}`"
+    )
+
+    contributions = result.get("contributions") or []
+    if contributions:
+        rows = [
+            {
+                "KPI": item.get("kpi_id", ""),
+                "Value": item.get("value"),
+                "Weight": item.get("weight"),
+                "Contribution": item.get("contribution"),
+            }
+            for item in contributions
+            if isinstance(item, dict)
+        ]
+        if rows:
+            st.dataframe(pd.DataFrame(rows), width="stretch")
+
+    lineage = result.get("calculation_lineage")
+    if lineage:
+        with st.expander("Scorecard calculation lineage", expanded=False):
+            st.json(lineage)
 
 
 def render_ai(scan_state: dict) -> None:
@@ -717,7 +821,10 @@ if run_scan:
             force_refresh=force_refresh_breach,
             lang=lang,
             tenant_id=get_tenant_id(),
-            with_ai=False,
+            with_ai=True,
+            enable_scorecard=True,
+            scorecard_definition=SCORECARD_INTEGRATION_DEFINITION,
+            scorecard_risk_policy=SCORECARD_INTEGRATION_RISK_POLICY,
             on_event=push_event,
         )
 
@@ -738,9 +845,10 @@ if run_scan:
             ai_live_placeholder.empty()
 
         with live_area:
-            # Breach was rendered when its stage completed; Evidence & Enrichment
-            # was rendered by the normal final result path below.
+            # Breach was rendered when its stage completed; the completed
+            # evidence, scorecard, and AI results are rendered in pipeline order.
             render_evidence(final_state)
+            render_scorecard(final_state)
 
             if final_state.get("ai"):
                 render_ai(final_state)
@@ -753,8 +861,8 @@ if run_scan:
 
 state = st.session_state.get("scan_state")
 
-# AI analysis is intentionally disabled while Evidence Enrichment is being
-# validated. Do not trigger AI on language changes/reruns from the UI.
+# AI is now enabled for the integration validation path. Cached results
+# remain keyed by the complete evidence + scorecard input fingerprint.
 
 
 # Pada rerun berikutnya (download, ganti bahasa, clear cache, dll.),
@@ -765,6 +873,7 @@ state = st.session_state.get("scan_state")
 if state and not scan_executed:
     render_breach(state)
     render_evidence(state)
+    render_scorecard(state)
 
     if not state["services"] and not state["breach"]["findings"]:
         st.warning(t("warn_no_services", lang=lang))
