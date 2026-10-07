@@ -579,8 +579,8 @@ with st.sidebar:
     else:
         for addon in installed_addons:
             st.markdown(
-                f"**{addon['name']}**  \\n"
-                f"{addon['caption']}  \\n"
+                f"**{addon['name']}**  \n"
+                f"{addon['caption']}  \n"
                 f"Version: {addon['version']}"
             )
             status_label = "🟢 Active" if addon["active"] else "⚪ Inactive"
