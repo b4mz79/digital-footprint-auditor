@@ -184,13 +184,27 @@ def run_scan(
         for addon, addon_output in results:
             addon_id = str(addon["id"])
             event_results[addon_id] = addon_output
+            state["addons"][addon_id] = addon_output
+
+            result_key = addon.get("result_key")
+            if result_key:
+                if isinstance(addon_output, Mapping):
+                    state[result_key] = addon_output.get(result_key)
+                else:
+                    state[result_key] = None
+
+            live_payload = (
+                {result_key: state[result_key]}
+                if result_key
+                else {"addon": addon_id, "result": addon_output}
+            )
             emit(
                 _event(
                     "success",
                     text=f"Add-on {addon_id} event {event_name} selesai.",
                     stage=addon_id,
                 ),
-                {"addon": addon_id, "result": addon_output},
+                live_payload,
             )
 
     cache_enabled = discovery_cache_enabled()
