@@ -680,6 +680,9 @@ if run_scan:
         def _render_live_stages() -> None:
             stage_area.empty()
             with stage_area.container():
+                evidence_status = live_state.get("evidence_status")
+                if evidence_status:
+                    st.info(f"⏳ {evidence_status}")
                 if live_state["services"]:
                     render_services(live_state)
                 if live_state["breach"].get("enabled"):
@@ -754,7 +757,6 @@ if run_scan:
                 return
 
             if stage == "evidence_start":
-                live_state["ai_status"] = None
                 message = event.get("text") or "Memulai Evidence & Enrichment..."
                 live_state["evidence_status"] = message
                 _render_live_stages()
