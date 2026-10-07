@@ -1,0 +1,38 @@
+{
+  "id": "just-sample",
+  "name": "just-sample",
+  "caption": "Hello World",
+  "version": "1.0.0",
+  "entrypoint": "plugin.py",
+  "type": "hybrid",
+  "invocation": {
+    "function": "run",
+    "mode": "on_event",
+    "input": {
+      "required": true
+    },
+    "return": {
+      "type": "result",
+      "required": true
+    }
+  },
+  "ui": {
+    "entrypoint": "ui.py",
+    "function": "render"
+  },
+  "events": [
+    {
+      "name": "discovery.imap.completed",
+      "input": {
+        "required": true
+      },
+      "return": {
+        "type": "result",
+        "required": true
+      }
+    }
+  ],
+  "result_key": "just_sample",
+  "ai_context": false,
+  "default_active": true
+}
