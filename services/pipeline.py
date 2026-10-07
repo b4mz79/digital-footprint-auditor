@@ -280,13 +280,18 @@ def run_scan(
                         state["scorecard_input"] = addon_output.get("scorecard_input")
 
                 stage = (addon or {}).get("pipeline_stage") or f"addon:{addon_id}"
+                live_payload = (
+                    {result_key: result_value}
+                    if result_key
+                    else {"addon": addon_id, "result": addon_output}
+                )
                 emit(
                     _event(
                         "success",
                         text=f"Add-on {addon_id} selesai.",
                         stage=stage,
                     ),
-                    {"addon": addon_id, "result": addon_output},
+                    live_payload,
                 )
             except Exception as exc:
                 stage = (addon or {}).get("pipeline_stage") or f"addon:{addon_id}"
