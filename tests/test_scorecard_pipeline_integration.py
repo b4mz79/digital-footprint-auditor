@@ -188,7 +188,8 @@ def test_scorecard_on_augments_existing_ai_payload(monkeypatch) -> None:
 
     assert state["scorecard_input"]["schema_version"] == "scorecard-input-v1"
     assert state["scorecard"]["schema_version"] == "scorecard-result-v1"
-    assert state["scorecard"]["score"] == round((1 * 0.5) + (dump_count * 0.5), 2)
+    expected_raw = (1 * 0.5) + (dump_count * 0.5)
+    assert state["scorecard"]["score"] == round(expected_raw / 10.0, 2)
     assert captured["evidence_records"]
     assert captured["scorecard_result"]["result_id"] == state["scorecard"]["result_id"]
     assert captured["scorecard_result"]["score"] == state["scorecard"]["score"]
