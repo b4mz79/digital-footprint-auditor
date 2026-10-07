@@ -117,7 +117,9 @@ class AddonManager:
                     shutil.rmtree(staging, ignore_errors=True)
 
         state = self._load_state()
-        state[manifest.addon_id] = bool(manifest.default_active)
+        # ZIP installs are never activated implicitly. The user explicitly
+        # activates an installed add-on from the sidebar.
+        state[manifest.addon_id] = False
         self._save_state(state)
         return self.get(manifest.addon_id) or {}
 
