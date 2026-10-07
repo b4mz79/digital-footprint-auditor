@@ -25,6 +25,7 @@ def test_native_adapter_exposes_stable_candidate_engine_surface() -> None:
         "weighted_sum",
         "formula",
         "aggregation",
+        "conditional",
         "normalization",
         "dependency",
     ):
@@ -105,6 +106,20 @@ def test_candidate_surface_ratio_by_zero_is_unknown() -> None:
     assert result.state == "unknown"
     assert result.coverage == 0.0
     assert result.lineage == ("a", "b")
+
+
+def test_candidate_surface_conditional_semantics_are_explicit() -> None:
+    engine = NativeReferenceAdapter()
+    true_result = engine.weighted_sum({"a": _observed(10)}, {"a": 1.0})
+    false_result = engine.weighted_sum({"b": _observed(4)}, {"b": 1.0})
+
+    selected = engine.conditional(True, true_result, false_result)
+    assert selected.value == 10.0
+    assert selected.lineage == ("a", "b")
+
+    unknown = engine.conditional(None, true_result, false_result)
+    assert unknown.value is None
+    assert unknown.state == "unknown"
 
 
 def test_candidate_surface_normalization_preserves_partial_semantics() -> None:
