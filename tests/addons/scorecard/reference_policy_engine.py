@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from tests.scorecard.policy_engine_contract import (
+from tests.addons.scorecard.policy_engine_contract import (
     CONDITION_MATCH,
     CONDITION_NO_MATCH,
     CONDITION_UNKNOWN,
