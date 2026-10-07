@@ -60,6 +60,18 @@ def test_install_discover_activate_invoke_uninstall(tmp_path: Path) -> None:
     assert manager.get("demo-addon") is None
 
 
+def test_install_after_uninstall(tmp_path: Path) -> None:
+    manager = AddonManager(tmp_path / "addons")
+    payload = _zip_package()
+
+    manager.install_zip(payload)
+    manager.uninstall("demo-addon")
+
+    installed = manager.install_zip(payload)
+    assert installed["id"] == "demo-addon"
+    assert installed["active"] is False
+
+
 def test_install_rejects_duplicate(tmp_path: Path) -> None:
     manager = AddonManager(tmp_path / "addons")
     payload = _zip_package()
