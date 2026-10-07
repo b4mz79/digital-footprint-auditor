@@ -636,7 +636,9 @@ st.title(t("title", lang=lang))
 st.caption(t("caption", lang=lang))
 
 # Dashboard Logic Execution.
-# Saat scan berjalan, hasil setiap stage langsung ditampilkan.
+# Saat scan berjalan, hasil setiap stage langsung ditampilkan pada placeholder
+# stage masing-masing. Placeholder yang sama di-update; tidak dibuat blok baru
+# dan tidak menunggu seluruh pipeline selesai.
 scan_executed = False
 
 if run_scan:
@@ -645,7 +647,16 @@ if run_scan:
     else:
         scan_executed = True
 
-        live_area = st.container()
+        # One stable UI surface per pipeline stage. A completed stage replaces
+        # its own placeholder content instead of creating a second copy.
+        with st.container():
+            progress_status = st.empty()
+            services_area = st.empty()
+            breach_area = st.empty()
+            evidence_area = st.empty()
+            scorecard_area = st.empty()
+            ai_area = st.empty()
+
         live_state = {
             "email": target_email.strip(),
             "phone": target_phone.strip(),
@@ -661,129 +672,138 @@ if run_scan:
                 "error": None,
             },
             "ai": None,
+            "scorecard": None,
         }
 
         ui_state = {
             "ai_status": None,
-            "ai_live_placeholder": None,
             "ai_live_items": [],
         }
+
+        def _render_into(placeholder, renderer, state):
+            placeholder.empty()
+            with placeholder.container():
+                renderer(state)
+
+        def _render_live_services() -> None:
+            _render_into(services_area, render_services, live_state)
+
+        def _render_live_breach() -> None:
+            _render_into(breach_area, render_breach, live_state)
+
+        def _render_live_evidence() -> None:
+            _render_into(evidence_area, render_evidence, live_state)
+
+        def _render_live_scorecard() -> None:
+            _render_into(scorecard_area, render_scorecard, live_state)
 
         def push_event(event: dict) -> None:
             stage = event.get("stage")
             live_data = event.get("_live", {})
 
-            # Breach selesai: render hasil breach sebelum stage berikutnya dimulai.
-            # Evidence & Enrichment memang berjalan setelah breach di pipeline,
-            # tetapi UI harus menampilkan breach terlebih dahulu agar urutan
-            # visual mengikuti urutan kerja modul discovery yang sudah ada.
+            # IMAP/OSINT each emit their complete stage result. Update the same
+            # services placeholder so the table grows incrementally.
+            if stage in ("imap", "osint") and "services" in live_data:
+                live_state["services"].extend(live_data["services"])
+                _render_live_services()
+                return
+
+            # Breach is a single stage: render it as soon as the stage finishes.
             if stage == "breach" and "breach" in live_data:
                 live_state["breach"] = live_data["breach"]
-                # Breach is rendered once after the pipeline returns.
+                _render_live_breach()
                 return
 
             if stage == "evidence_start":
                 message = event.get("text") or "Memulai Evidence & Enrichment..."
-                with live_area:
+                evidence_area.empty()
+                with evidence_area.container():
                     st.info(f"⏳ {message}")
                 return
 
             if stage == "evidence" and "evidence" in live_data:
-                # Keep live state in sync. The final renderer below owns the
-                # completed evidence block so Streamlit does not show it twice.
                 live_state["evidence"] = live_data["evidence"]
-                contextual_count = event.get("contextual_count", 0)
-                with live_area:
-                    st.success(
-                        "✅ Evidence & Enrichment selesai — "
-                        f"{len(live_state['evidence'])} evidence, "
-                        f"{contextual_count} contextual"
-                    )
+                _render_live_evidence()
                 return
 
-            # AI:
-            # Service AI dirender progressive: satu item selesai -> langsung tampil.
+            if stage == "scorecard" and "scorecard" in live_data:
+                live_state["scorecard"] = live_data["scorecard"]
+                _render_live_scorecard()
+                return
+
+            # AI: individual Ollama batch items are rendered progressively in
+            # the same AI placeholder. The final result later replaces it once.
             if stage == "ai":
                 if "ai_reset" in live_data and live_data["ai_reset"]:
                     ui_state["ai_live_items"].clear()
-                    placeholder = ui_state.get("ai_live_placeholder")
-                    if placeholder is not None:
-                        placeholder.empty()
+                    ai_area.empty()
                     return
 
                 if "ai_item" in live_data:
-                    item = live_data["ai_item"]
-                    ui_state["ai_live_items"].append(item)
-
-                    placeholder = ui_state.get("ai_live_placeholder")
-                    if placeholder is not None:
-                        with placeholder.container():
-                            for live_item in ui_state["ai_live_items"]:
-                                risk_key = (
-                                    normalize_risk(live_item.get("risk_key"))
-                                    or normalize_risk(live_item.get("risk_level"))
-                                    or "unknown"
-                                )
-                                risk_label = t(f"risk_{risk_key}", lang=lang)
-                                st.markdown(
-                                    f"**{risk_icon(risk_key)} "
-                                    f"{_md_escape(live_item.get('service', ''))}** - "
-                                    f"*{t('risk_level_label', lang=lang)}: {risk_label}*"
-                                )
-                                st.write(
-                                    f"**{t('reason_label', lang=lang)}:** "
-                                    f"{live_item.get('reason', '')}"
-                                )
-                                delete_url = live_item.get("delete_url", "-")
-                                if delete_url and delete_url != "-":
-                                    if (
-                                        isinstance(delete_url, str)
-                                        and delete_url.startswith("https://")
-                                    ):
-                                        st.markdown(
-                                            t(
-                                                "delete_link_label",
-                                                lang=lang,
-                                                url=delete_url,
-                                            )
+                    ui_state["ai_live_items"].append(live_data["ai_item"])
+                    ai_area.empty()
+                    with ai_area.container():
+                        st.divider()
+                        st.subheader(t("ai_title", lang=lang))
+                        for live_item in ui_state["ai_live_items"]:
+                            risk_key = (
+                                normalize_risk(live_item.get("risk_key"))
+                                or normalize_risk(live_item.get("risk_level"))
+                                or "unknown"
+                            )
+                            risk_label = t(f"risk_{risk_key}", lang=lang)
+                            st.markdown(
+                                f"**{risk_icon(risk_key)} "
+                                f"{_md_escape(live_item.get('service', ''))}** - "
+                                f"*{t('risk_level_label', lang=lang)}: {risk_label}*"
+                            )
+                            st.write(
+                                f"**{t('reason_label', lang=lang)}:** "
+                                f"{live_item.get('reason', '')}"
+                            )
+                            delete_url = live_item.get("delete_url", "-")
+                            if delete_url and delete_url != "-":
+                                if (
+                                    isinstance(delete_url, str)
+                                    and delete_url.startswith("https://")
+                                ):
+                                    st.markdown(
+                                        t(
+                                            "delete_link_label",
+                                            lang=lang,
+                                            url=delete_url,
                                         )
-                                    else:
-                                        st.write(f"🔗 {delete_url}")
-                                st.caption("---")
+                                    )
+                                else:
+                                    st.write(f"🔗 {delete_url}")
+                            st.caption("---")
                     return
 
                 if "ai" in live_data:
                     live_state["ai"] = live_data["ai"]
-
-                    ai_status = ui_state.get("ai_status")
-                    if ai_status is not None:
-                        ai_status.empty()
-
                     return
 
-                with live_area:
-                    ai_status = st.empty()
-                    ui_state["ai_status"] = ai_status
-
-                    ai_live_placeholder = st.empty()
-                    ui_state["ai_live_placeholder"] = ai_live_placeholder
-
-                    message = event.get("text")
-                    if not message and event.get("key"):
-                        message = t(
-                            event["key"],
-                            lang=lang,
-                            **event.get("args", {}),
-                        )
-
+                # First AI event: replace the progress/status area with a
+                # stable status message above the progressive result area.
+                message = event.get("text")
+                if not message and event.get("key"):
+                    message = t(
+                        event["key"],
+                        lang=lang,
+                        **event.get("args", {}),
+                    )
+                ai_area.empty()
+                with ai_area.container():
+                    status = st.empty()
+                    ui_state["ai_status"] = status
                     if message:
                         level = event.get("level", "info")
-                        with ai_status.container():
+                        with status.container():
                             getattr(st, level, st.info)(message)
-
                 return
 
-            # Progress/status event untuk stage lain.
+            # Generic progress/status events remain visible in the main
+            # progress placeholder without creating result sections.
             message = event.get("text")
             if not message and event.get("key"):
                 message = t(
@@ -791,22 +811,13 @@ if run_scan:
                     lang=lang,
                     **event.get("args", {}),
                 )
-
             if message:
                 level = event.get("level", "info")
-                with live_area:
+                progress_status.empty()
+                with progress_status.container():
                     getattr(st, level, st.info)(message)
 
-            # Hasil IMAP/OSINT dikumpulkan untuk ditampilkan ketika
-            # stage AI dimulai.
-            if stage in ("imap", "osint") and "services" in live_data:
-                live_state["services"].extend(live_data["services"])
-
-        # Avoid wrapping the whole synchronous pipeline in st.spinner().
-        # The callback already renders live stage updates; a plain placeholder
-        # has a deterministic lifecycle and is explicitly cleared after return.
-        processing_status = st.empty()
-        processing_status.info(t("spinner_processing", lang=lang))
+        progress_status.info(t("spinner_processing", lang=lang))
 
         final_state = run_scan_pipeline(
             email=target_email,
@@ -825,36 +836,23 @@ if run_scan:
             on_event=push_event,
         )
 
-        processing_status.empty()
-
-        # Simpan hasil final hanya setelah seluruh pipeline selesai.
+        progress_status.empty()
         st.session_state["scan_state"] = final_state
 
-        # Jangan biarkan status awal AI tetap tertinggal di UI.
-        ai_status = ui_state.get("ai_status")
-        if ai_status is not None:
-            ai_status.empty()
-
-        # Hasil progressive sudah ditampilkan selama inference.
-        # Bersihkan placeholder live sebelum merender hasil final (DSR/exposures).
-        ai_live_placeholder = ui_state.get("ai_live_placeholder")
-        if ai_live_placeholder is not None:
-            ai_live_placeholder.empty()
-
-        with live_area:
-            # Render completed results exactly once after the pipeline returns.
-            render_breach(final_state)
-            render_services(final_state)
-            render_evidence(final_state)
-            render_scorecard(final_state)
-
-            if final_state.get("ai"):
+        # Reconcile each stage once. During the first scan these placeholders
+        # already contain the latest live state, so do not append duplicate
+        # sections. The final AI renderer replaces its progressive preview so
+        # tabs/DSR/exposures are available after provider completion.
+        if final_state.get("ai"):
+            ai_area.empty()
+            with ai_area.container():
                 render_ai(final_state)
-            elif (
-                not final_state["services"]
-                and not final_state["breach"]["findings"]
-            ):
+        elif not final_state["services"] and not final_state["breach"]["findings"]:
+            ai_area.empty()
+            with ai_area.container():
                 st.warning(t("warn_no_services", lang=lang))
+
+
 
 
 state = st.session_state.get("scan_state")
