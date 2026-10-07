@@ -32,7 +32,7 @@
       }
     }
   ],
-  "result_key": "just_sample",
+  "result_key": null,
   "ai_context": false,
   "default_active": true
 }
