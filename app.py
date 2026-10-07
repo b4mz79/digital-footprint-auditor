@@ -558,6 +558,8 @@ with st.sidebar:
         "Install Add-On (.zip)",
         type=["zip"],
         key="addon_zip_upload",
+        help="Install Add-On (.zip)",
+        label_visibility="collapsed",
     )
     if uploaded_addon is not None and st.button(
         "Install Add-On",
@@ -578,20 +580,32 @@ with st.sidebar:
         st.caption("Belum ada Add-On terpasang.")
     else:
         for addon in installed_addons:
-            st.markdown(
-                f"**{addon['name']}**  \n"
-                f"{addon['caption']}  \n"
-                f"Version: {addon['version']}"
-            )
-            status_label = "🟢 Active" if addon["active"] else "⚪ Inactive"
-            st.caption(status_label)
-            action_col, uninstall_col = st.columns(2)
+            addon_label_col, uninstall_col, action_col  = st.columns(3)
+            with addon_label_col:
+                st.caption(f"**{addon['name']}**  \n"
+                    f"Version: {addon['version']}"
+                )
+            with uninstall_col:
+                if st.button(
+                    "Uninstall",
+                    width="stretch",
+                    key=f"addon_uninstall_{addon['id']}",
+                    type="tertiary",
+                ):
+                    try:
+                        addon_manager.uninstall(addon["id"])
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(
+                            f"Uninstall gagal: {type(exc).__name__}: {exc}"
+                        )
             with action_col:
-                action_label = "Deactivate" if addon["active"] else "Activate"
+                action_label = "🟢 Deactivate" if addon["active"] else "⚪ Activate"
                 if st.button(
                     action_label,
                     width="stretch",
                     key=f"addon_toggle_{addon['id']}",
+                    type="tertiary",
                 ):
                     try:
                         if addon["active"]:
@@ -602,19 +616,6 @@ with st.sidebar:
                     except Exception as exc:
                         st.error(
                             f"Add-On action gagal: {type(exc).__name__}: {exc}"
-                        )
-            with uninstall_col:
-                if st.button(
-                    "Uninstall",
-                    width="stretch",
-                    key=f"addon_uninstall_{addon['id']}",
-                ):
-                    try:
-                        addon_manager.uninstall(addon["id"])
-                        st.rerun()
-                    except Exception as exc:
-                        st.error(
-                            f"Uninstall gagal: {type(exc).__name__}: {exc}"
                         )
 
     active_addons = tuple(
