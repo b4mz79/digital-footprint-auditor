@@ -35,13 +35,23 @@ class ScorecardEngine:
         measurement_refs: tuple[str, ...],
         calculated_at: str | None = None,
     ) -> ScorecardResult:
+        aggregation = scorecard_definition.get("aggregation")
+        score_config = scorecard_definition.get("score")
+        if not isinstance(aggregation, Mapping) or not isinstance(score_config, Mapping):
+            raise ValueError("scorecard definition requires aggregation and score")
+        if aggregation.get("operation") != "weighted_sum":
+            raise ValueError("current production engine requires weighted_sum aggregation")
+        weights = aggregation.get("weights")
+        canonical_range = score_config.get("canonical_range")
+        if not isinstance(weights, Mapping) or not isinstance(canonical_range, Mapping):
+            raise ValueError("scorecard definition requires weights and canonical_range")
         raw = self.calculation.weighted_sum(measurements, weights)
         normalized = self.calculation.normalization(
             raw,
-            source_min=normalization["source_min"],
-            source_max=normalization["source_max"],
-            clamp=bool(normalization.get("clamp", False)),
-            precision=int(normalization.get("precision", 2)),
+            source_min=canonical_range["min"],
+            source_max=canonical_range["max"],
+            clamp=False,
+            precision=int(score_config.get("precision", 2)),
         )
 
         policy_context = {
@@ -134,8 +144,7 @@ class ScorecardEngine:
             scorecard_version=scorecard_version,
             result_id=result_id,
             measurements=measurements,
-            weights=weights,
-            normalization=normalization,
+            scorecard_definition=scorecard_definition,
             risk_policy=risk_policy,
             condition_evaluator=condition_evaluator,
             measurement_refs=measurement_refs,
