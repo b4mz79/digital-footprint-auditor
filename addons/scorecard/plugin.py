@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any, Mapping
 
-from services.scorecard.integration import evaluate_pipeline_scorecard
+from .integration import evaluate_pipeline_scorecard
 
 
 _ROOT = Path(__file__).resolve().parent
