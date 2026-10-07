@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 # Load environment variables before importing modules that read configuration at import time.
 load_dotenv(override=False)
 
+from services.addon_manager import get_addon_manager
 from services.pipeline import (
     clear_all_caches,
     get_tenant_id,
@@ -18,6 +19,7 @@ from utils.risk import normalize_risk, risk_icon
 from utils.translations import t
 
 configure_logging()
+addon_manager = get_addon_manager()
 st.set_page_config(
     page_title="Local Digital Footprint & Privacy Auditor",
     page_icon="🛡️",
@@ -43,67 +45,6 @@ ENGINE_STATUS_ICONS = {
     "error": "❌",
     "skipped": "⏭️",
 }
-
-# Temporary application-level integration profile for the Scorecard Add-on.
-# This is deliberately NOT the final Privacy Auditor business scorecard.
-# It uses bounded evidence-sufficiency measurements so the real pipeline
-# integration can be validated without inventing final KPI weights/formulas.
-SCORECARD_INTEGRATION_DEFINITION = {
-    "schema_version": "scorecard-definition-v1",
-    "scorecard_id": "evidence-sufficiency-integration",
-    "version": "v1",
-    "score": {
-        "canonical_range": {"min": 0.0, "max": 1.0},
-        "precision": 2,
-        "rounding": "half_even",
-    },
-    "aggregation": {
-        "operation": "weighted_sum",
-        "weights": {
-            "evidence_record_coverage": 0.5,
-            "verification_coverage": 0.5,
-        },
-    },
-}
-
-SCORECARD_INTEGRATION_RISK_POLICY = {
-    "schema_version": "risk-policy-v1",
-    "risk_policy_id": "evidence-sufficiency-integration-policy",
-    "version": "v1",
-    "output": {"risk_bands": ["high", "medium", "low", "unknown"]},
-    "mapping": {
-        "rules": [
-            {
-                "rule_id": "low-evidence-risk",
-                "priority": 10,
-                "condition": {
-                    "type": "score_threshold",
-                    "parameters": {"operator": ">=", "value": 0.8},
-                },
-                "then": "low",
-            },
-            {
-                "rule_id": "medium-evidence-risk",
-                "priority": 20,
-                "condition": {
-                    "type": "score_threshold",
-                    "parameters": {"operator": ">=", "value": 0.5},
-                },
-                "then": "medium",
-            },
-            {
-                "rule_id": "high-evidence-risk",
-                "priority": 30,
-                "condition": {
-                    "type": "score_threshold",
-                    "parameters": {"operator": ">=", "value": 0.0},
-                },
-                "then": "high",
-            },
-        ]
-    },
-}
-
 
 def _md_escape(text: str) -> str:
     """Escape characters that could break out of a markdown link label."""
@@ -612,6 +553,76 @@ with st.sidebar:
     st.caption(f"• **Tavily AI Search:** {has_tavily}")
     st.caption(f"• **Firecrawl Evidence Enrichment:** {has_firecrawl}")
     st.caption("• **SearXNG & DDG:** 🟢 Active (Always Free)")
+    st.subheader("4. Add-On")
+    uploaded_addon = st.file_uploader(
+        "Install Add-On (.zip)",
+        type=["zip"],
+        key="addon_zip_upload",
+    )
+    if uploaded_addon is not None and st.button(
+        "Install Add-On",
+        width="stretch",
+        key="addon_install_button",
+    ):
+        try:
+            installed = addon_manager.install_zip(uploaded_addon.getvalue())
+            st.success(
+                f"{installed['name']} {installed['version']} installed."
+            )
+            st.rerun()
+        except Exception as exc:
+            st.error(f"Install Add-On gagal: {type(exc).__name__}: {exc}")
+
+    installed_addons = addon_manager.list()
+    if not installed_addons:
+        st.caption("Belum ada Add-On terpasang.")
+    else:
+        for addon in installed_addons:
+            st.markdown(
+                f"**{addon['name']}**  \\n"
+                f"{addon['caption']}  \\n"
+                f"Version: {addon['version']}"
+            )
+            status_label = "🟢 Active" if addon["active"] else "⚪ Inactive"
+            st.caption(status_label)
+            action_col, uninstall_col = st.columns(2)
+            with action_col:
+                action_label = "Deactivate" if addon["active"] else "Activate"
+                if st.button(
+                    action_label,
+                    width="stretch",
+                    key=f"addon_toggle_{addon['id']}",
+                ):
+                    try:
+                        if addon["active"]:
+                            addon_manager.deactivate(addon["id"])
+                        else:
+                            addon_manager.activate(addon["id"])
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(
+                            f"Add-On action gagal: {type(exc).__name__}: {exc}"
+                        )
+            with uninstall_col:
+                if st.button(
+                    "Uninstall",
+                    width="stretch",
+                    key=f"addon_uninstall_{addon['id']}",
+                ):
+                    try:
+                        addon_manager.uninstall(addon["id"])
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(
+                            f"Uninstall gagal: {type(exc).__name__}: {exc}"
+                        )
+
+    active_addons = tuple(
+        addon["id"]
+        for addon in addon_manager.list()
+        if addon["active"]
+    )
+
 
     run_scan = st.button(
         t("btn_run", lang=lang),
@@ -811,9 +822,7 @@ if run_scan:
             lang=lang,
             tenant_id=get_tenant_id(),
             with_ai=True,
-            enable_scorecard=True,
-            scorecard_definition=SCORECARD_INTEGRATION_DEFINITION,
-            scorecard_risk_policy=SCORECARD_INTEGRATION_RISK_POLICY,
+            enabled_addons=active_addons,
             on_event=push_event,
         )
 
