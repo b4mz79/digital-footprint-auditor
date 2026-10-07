@@ -341,29 +341,30 @@ def run_ai(
         )
 
     try:
-        state["ai"] = asyncio.run(
-            analyze_smart_cache(
-                email=state["email"],
-                found_services=state["services"],
-                phone=state["phone"],
-                force_refresh=force_refresh,
-                lang=lang,
-                tenant_id=state["tenant_id"],
-                breach_findings=findings,
-                evidence_records=state.get("evidence", []),
-                scorecard_result=state.get("scorecard"),
-                scan_status={
-                    "breach_scan_complete": bool(state["breach"].get("complete", False)),
-                    "failed_engines": [
-                        name
-                        for name, info in state["breach"].get("engines", {}).items()
-                        if info.get("status") in {"error", "partial"}
-                    ],
-                },
-                on_analysis_item=on_analysis_item,
-                on_analysis_reset=on_analysis_reset,
-            )
-        )
+        ai_kwargs: dict[str, Any] = {
+            "email": state["email"],
+            "found_services": state["services"],
+            "phone": state["phone"],
+            "force_refresh": force_refresh,
+            "lang": lang,
+            "tenant_id": state["tenant_id"],
+            "breach_findings": findings,
+            "evidence_records": state.get("evidence", []),
+            "scan_status": {
+                "breach_scan_complete": bool(state["breach"].get("complete", False)),
+                "failed_engines": [
+                    name
+                    for name, info in state["breach"].get("engines", {}).items()
+                    if info.get("status") in {"error", "partial"}
+                ],
+            },
+            "on_analysis_item": on_analysis_item,
+            "on_analysis_reset": on_analysis_reset,
+        }
+        if state.get("scorecard") is not None:
+            ai_kwargs["scorecard_result"] = state["scorecard"]
+
+        state["ai"] = asyncio.run(analyze_smart_cache(**ai_kwargs))
         emit(
             _event(
                 "success",
