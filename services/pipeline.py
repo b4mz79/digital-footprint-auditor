@@ -140,6 +140,7 @@ def run_scan(
         "ai_lang": None,
         "addons": {},
         "addon_events": {},
+        "addon_owners": {},
     }
     events: list[dict[str, Any]] = state["events"]
 
@@ -193,6 +194,7 @@ def run_scan(
             addon_id = str(addon["id"])
             event_results[addon_id] = addon_output
             state["addons"][addon_id] = addon_output
+            state["addon_owners"][addon_id] = owner
             logger.info(
                 "[Pipeline] Add-on result stored: id=%s result_type=%s result_keys=%s",
                 addon_id,
@@ -214,7 +216,10 @@ def run_scan(
                 if result_key
                 else {"addon": addon_id, "result": addon_output}
             )
-            live_payload["owner"] = str(addon.get("owner", ""))
+            # Producer ownership comes from the trusted built-in caller,
+            # not from add-on metadata. This value is provenance for the UI
+            # and rerender path; it is not add-on-controlled input.
+            live_payload["owner"] = owner
             logger.info(
                 "[Pipeline] Add-on live payload: id=%s result_present=%s payload_keys=%s",
                 addon_id,
@@ -360,6 +365,7 @@ def run_scan(
             enriched_evidence = local_evidence
 
         dispatch_addon_event(
+            "evidence",
             "evidence.enriched",
             {"evidence": list(evidence_to_dicts(enriched_evidence))},
         )
