@@ -15,6 +15,11 @@ def test_profile_name_is_bounded_and_safe() -> None:
     assert all(char.isalnum() or char in "-_." for char in name)
 
 
+def test_windows_attribute_constants_match_win32_contract() -> None:
+    assert addon_runtime._PROC_THREAD_ATTRIBUTE_HANDLE_LIST == 0x00020002
+    assert addon_runtime._PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES == 0x00020009
+
+
 def test_runtime_rejects_non_windows(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(addon_runtime.os, "name", "posix")
     with pytest.raises(RuntimeError, match="requires Windows"):
