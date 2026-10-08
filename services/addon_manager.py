@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import importlib.util
 import json
 import os
@@ -379,8 +380,16 @@ class AddonManager:
                 raise TypeError(
                     f"add-on {addon['id']} UI requires mapping input"
                 )
+            # UI is a presentation boundary. Only the host-approved result
+            # and language projection are visible to the add-on renderer.
+            ui_context = {
+                "result": copy.deepcopy(context["result"])
+                if "result" in context
+                else None,
+                "lang": str(context.get("lang", "")),
+            }
             logger.info("[Add-On] UI function start: id=%s function=%s", addon["id"], function_name)
-            result = renderer(context)
+            result = renderer(ui_context)
             logger.info("[Add-On] UI function completed: id=%s function=%s", addon["id"], function_name)
             return dict(addon), result
         finally:
@@ -432,7 +441,8 @@ class AddonManager:
         data: dict[str, Any] = {}
         for field in fields:
             if field in source:
-                data[str(field)] = source[field]
+                # Do not expose mutable host-owned objects by reference.
+                data[str(field)] = copy.deepcopy(source[field])
 
         if required and any(field not in data for field in fields):
             missing = [field for field in fields if field not in data]
