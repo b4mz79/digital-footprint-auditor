@@ -154,3 +154,33 @@ def test_pipeline_force_refresh_bypasses_osint_cache(monkeypatch):
 
 def test_cache_directories_are_module_specific():
     assert imap_cache.IMAP_CACHE_DIR != osint_cache.OSINT_CACHE_DIR
+
+
+def test_pipeline_imap_cache_hit_skips_scanner(monkeypatch):
+    monkeypatch.setenv("IMAP_CACHE_ENABLED", "true")
+    monkeypatch.setattr(
+        pipeline,
+        "load_imap_cache",
+        lambda email, tenant_id="default": [
+            {"name": "Cached IMAP", "domain": "imap.example", "source": "cache"}
+        ],
+    )
+    monkeypatch.setattr(
+        pipeline,
+        "scan_gmail_inbox",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("IMAP must be skipped")
+        ),
+    )
+    monkeypatch.setenv("FIRECRAWL_API_KEY", "")
+
+    state = pipeline.run_scan(
+        email="user@example.com",
+        gmail_app_password="synthetic-password",
+        enable_imap=True,
+        enable_osint=False,
+        enable_breach=False,
+        with_ai=False,
+    )
+
+    assert state["services"][0]["domain"] == "imap.example"
