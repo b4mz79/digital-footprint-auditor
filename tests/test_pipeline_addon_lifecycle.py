@@ -20,7 +20,7 @@ class _FakeAddonManager:
             {"demo_result": {"ok": True}},
         )
 
-    def dispatch_event(self, event_name: str, context: dict[str, Any]):
+    def dispatch_event(self, event_name: str, context: dict[str, Any], *, owner: str):
         self.events.append((event_name, dict(context)))
         return (
             (
@@ -38,7 +38,7 @@ def test_pipeline_addon_invocation_and_events_are_fully_dynamic(monkeypatch) -> 
     emitted: list[dict[str, Any]] = []
 
     monkeypatch.setattr(pipeline, "get_addon_manager", lambda: manager)
-    async def _enrich(evidence):
+    async def _enrich(evidence, **kwargs):
         return evidence
 
     async def _verify(evidence):
@@ -53,16 +53,12 @@ def test_pipeline_addon_invocation_and_events_are_fully_dynamic(monkeypatch) -> 
         enable_osint=False,
         enable_breach=False,
         with_ai=False,
-        enabled_addons=("demo-addon",),
-        addon_contexts={"demo-addon": {"custom_input": 42}},
         on_event=emitted.append,
     )
 
-    assert manager.invocations
-    addon_id, context = manager.invocations[0]
-    assert addon_id == "demo-addon"
-    assert context["custom_input"] == 42
-    assert context["state"] is state
+    # The global pipeline must not invoke on-demand add-ons. They are
+    # owned and invoked by their built-in module only.
+    assert manager.invocations == []
 
     assert manager.events
     event_names = [name for name, _ in manager.events]
