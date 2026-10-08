@@ -514,6 +514,19 @@ def test_execution_fails_closed_without_sandbox_runtime(tmp_path: Path, monkeypa
     assert manager.get("demo-addon")["active"] is False
 
 
+def test_deactivate_remains_available_without_execution_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("ADDON_RUNTIME_MODE", raising=False)
+    manager = AddonManager(tmp_path / "addons")
+    manager.install_zip(_zip_package())
+    state_path = tmp_path / "addons" / ".addons-state.json"
+    state_path.write_text('{"demo-addon": true}', encoding="utf-8")
+
+    result = manager.deactivate("demo-addon")
+
+    assert result["active"] is False
+    assert json.loads(state_path.read_text(encoding="utf-8"))["demo-addon"] is False
+
+
 def test_manifest_rejects_non_boolean_security_flags(tmp_path: Path) -> None:
     manager = AddonManager(tmp_path / "addons")
     for field_name in ("ai_context", "default_active"):
