@@ -46,6 +46,7 @@ def validate_package_security(
         "--severity-level=high",
         "-f",
         "json",
+        "--ignore-nosec",
         "-q",
     ]
 
@@ -56,6 +57,7 @@ def validate_package_security(
             text=True,
             timeout=timeout_seconds,
             check=False,
+            cwd=str(root.parent),
         )
     except FileNotFoundError as exc:
         raise RuntimeError(
