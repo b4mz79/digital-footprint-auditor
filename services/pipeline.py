@@ -114,6 +114,11 @@ def run_scan(
     email = email.strip()
     phone = (phone or "").strip()
 
+    # Resolve each module's cache policy at the pipeline boundary. Cache
+    # ownership remains in the scanner modules; the pipeline only orchestrates.
+    imap_cache_on = imap_cache_enabled()
+    osint_cache_on = osint_cache_enabled()
+
     state: dict[str, Any] = {
         "email": email,
         "phone": phone,
