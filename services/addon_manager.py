@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, BinaryIO, Mapping
 from uuid import uuid4
 
+from services.addonsmgr.structural_validator import validate_package_structure
 from utils.logging_setup import get_logger
 
 
@@ -148,6 +149,7 @@ class AddonManager:
             self._safe_extract(archive_path, extract_root)
             package_root = self._locate_package_root(extract_root)
             manifest = self._read_manifest(package_root / "manifest.json")
+            validate_package_structure(package_root, manifest)
 
             target = self.root / manifest.addon_id
             if target.exists():
