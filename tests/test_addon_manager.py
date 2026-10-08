@@ -271,6 +271,20 @@ def test_invoke_rejects_event_only_addon(tmp_path: Path) -> None:
         manager.invoke("event-addon", {})
 
 
+def test_result_contract_rejects_non_mapping_output(tmp_path: Path) -> None:
+    manager = AddonManager(tmp_path / "addons")
+    manager.install_zip(
+        _zip_package(
+            addon_id="bad-result-addon",
+            plugin_body="def run(context): return ['not', 'a', 'mapping']\\n",
+        )
+    )
+    manager.activate("bad-result-addon")
+
+    with pytest.raises(TypeError, match="result must be a mapping"):
+        manager.invoke("bad-result-addon", {})
+
+
 def test_dispatch_event_invokes_matching_active_addon(tmp_path: Path) -> None:
     manager = AddonManager(tmp_path / "addons")
     payload = _zip_package(
