@@ -1,10 +1,16 @@
 import os
 import re
 import time
+from pathlib import Path
+from typing import Any
 
 import httpx
 import trio
 from dotenv import load_dotenv
+from cache_security import load_encrypted_json, save_encrypted_json
+from utils.cache_identity import hmac_identity, tenant_identity
+from utils.envutil import env_bool
+from utils.paths import resolve_data_path
 
 from utils.domains import display_name
 from utils.logging_setup import get_logger
@@ -13,6 +19,44 @@ from utils.translations import t
 
 load_dotenv()
 logger = get_logger("OSINTScanner")
+
+# Module-owned persistent cache.
+OSINT_CACHE_ENABLED_ENV = "OSINT_CACHE_ENABLED"
+OSINT_CACHE_SCHEMA_VERSION = 1
+OSINT_CACHE_MAX_AGE_HOURS = 12.0
+OSINT_CACHE_DIR = resolve_data_path(os.getenv("OSINT_CACHE_DIR"), "cache/osint")
+
+def osint_cache_enabled() -> bool:
+    return env_bool(OSINT_CACHE_ENABLED_ENV, False)
+
+def _cache_path(email: str, tenant_id: str) -> Path:
+    tenant_dir = OSINT_CACHE_DIR / tenant_identity(tenant_id)
+    tenant_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if os.name != "nt":
+        try: os.chmod(tenant_dir, 0o700)
+        except OSError: pass
+    return tenant_dir / f"osint_cache_{hmac_identity(email.strip().lower())}.json"
+
+def load_osint_cache(email: str, *, tenant_id: str = "default", max_age_hours: float = OSINT_CACHE_MAX_AGE_HOURS) -> list[dict[str, Any]] | None:
+    if max_age_hours < 0: raise ValueError("max_age_hours must be >= 0")
+    try:
+        data = load_encrypted_json(_cache_path(email, tenant_id), tenant_id=tenant_id, max_age_seconds=int(max_age_hours * 3600))
+        if not isinstance(data, dict) or data.get("cache_schema_version") != OSINT_CACHE_SCHEMA_VERSION: return None
+        findings = data.get("findings")
+        return findings if isinstance(findings, list) and all(isinstance(x, dict) for x in findings) else None
+    except Exception: return None
+
+def save_osint_cache(email: str, findings: list[dict[str, Any]], *, tenant_id: str = "default") -> None:
+    if not isinstance(findings, list): raise TypeError("findings must be a list")
+    try:
+        path = _cache_path(email, tenant_id)
+        save_encrypted_json(path, {"cache_schema_version": OSINT_CACHE_SCHEMA_VERSION, "findings": [x for x in findings if isinstance(x, dict)]}, tenant_id=tenant_id)
+        if os.name != "nt":
+            try: os.chmod(path, 0o600)
+            except OSError: pass
+    except Exception: return
+
+
 EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$")
 HOLEHE_TIMEOUT_SECONDS = 180
 HOLEHE_HTTP_TIMEOUT_SECONDS = 10
