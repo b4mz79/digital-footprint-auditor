@@ -326,23 +326,22 @@ async def enrich_evidence(
         # task/log storm. Once a provider-wide rate limit is observed, do not
         # schedule another domain batch.
         results: list[list[EvidenceRecord] | Exception] = []
-        try:
-            for start in range(0, len(domains), domain_concurrency):
-                batch = domains[start : start + domain_concurrency]
-                batch_results = await asyncio.gather(
-                    *(enrich_domain(domain) for domain in batch),
-                    return_exceptions=True,
+        for start in range(0, len(domains), domain_concurrency):
+            batch = domains[start : start + domain_concurrency]
+            batch_results = await asyncio.gather(
+                *(enrich_domain(domain) for domain in batch),
+                return_exceptions=True,
+            )
+            results.extend(batch_results)
+
+            if provider.cooldown_active:
+                logger.warning(
+                    "[Evidence Enrichment] Firecrawl cooldown active; "
+                    "stopping remaining domain batches after %d/%d domains.",
+                    min(start + len(batch), len(domains)),
+                    len(domains),
                 )
-                results.extend(batch_results)
-    
-                if provider.cooldown_active:
-                    logger.warning(
-                        "[Evidence Enrichment] Firecrawl cooldown active; "
-                        "stopping remaining domain batches after %d/%d domains.",
-                        min(start + len(batch), len(domains)),
-                        len(domains),
-                    )
-                    break
+                break
     merged: dict[str, EvidenceRecord] = {
         record.evidence_id: record for record in base
     }
