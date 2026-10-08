@@ -49,6 +49,9 @@ def test_install_pipeline_runs_structural_then_security_then_install(
     def structural(package_root: Path, manifest: object) -> None:
         calls.append("structural")
 
+    def authority(package_root: Path) -> None:
+        calls.append("authority")
+
     def security(package_root: Path) -> tuple[object, ...]:
         calls.append("security")
         return ()
@@ -58,6 +61,10 @@ def test_install_pipeline_runs_structural_then_security_then_install(
         structural,
     )
     monkeypatch.setattr(
+        "services.addon_manager.validate_package_authority",
+        authority,
+    )
+    monkeypatch.setattr(
         "services.addon_manager.validate_package_security",
         security,
     )
@@ -65,7 +72,7 @@ def test_install_pipeline_runs_structural_then_security_then_install(
     installed = manager.install_zip(_addon_zip())
 
     assert installed["id"] == "pipeline-addon"
-    assert calls == ["structural", "security"]
+    assert calls == ["structural", "authority", "security"]
     assert (tmp_path / "addons" / "pipeline-addon" / "manifest.json").is_file()
 
 
