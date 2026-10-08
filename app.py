@@ -215,9 +215,9 @@ def render_evidence(scan_state: dict) -> None:
     """Render newly discovered contextual evidence without duplicating findings.
 
     Scanner findings already have their own user-facing table. Base
-    EvidenceRecords are retained internally for provenance, verification, AI,
-    and future deterministic consumers, but scanner mirrors must not become a
-    second Findings surface. Only enrichment evidence is presented here.
+    EvidenceRecords remain available for provenance, verification, AI, and
+    future deterministic consumers, but scanner mirrors are not a second
+    Findings surface. Only contextual enrichment evidence is presented here.
     """
     evidence = scan_state.get("evidence") or []
     contextual = [
@@ -244,13 +244,16 @@ def render_evidence(scan_state: dict) -> None:
         expanded=True,
     ):
         for item in contextual:
-            title = str(item.get("title") or t("evidence_default_title", lang=lang))
+            title = str(
+                item.get("title")
+                or t("evidence_default_title", lang=lang)
+            )
             st.markdown(f"**{_md_escape(title)}**")
 
+            metadata = []
             source = item.get("source", "")
             published_at = item.get("published_at")
             observed_at = item.get("observed_at")
-            metadata = []
             if source:
                 metadata.append(
                     f"{t('source_label', lang=lang)}: {_md_escape(source)}"
@@ -270,15 +273,11 @@ def render_evidence(scan_state: dict) -> None:
 
             summary = item.get("summary", "")
             if summary:
-                # Evidence text is untrusted web content. Render as plain text
-                # so Markdown/HTML cannot become UI artefacts.
                 st.text(str(summary))
 
             url = item.get("url", "")
             if isinstance(url, str) and url.startswith(("https://", "http://")):
-                st.markdown(
-                    f"🔗 [{_md_escape(url)}]({url})"
-                )
+                st.markdown(f"🔗 [{_md_escape(url)}]({url})")
 
             st.caption("---")
 
