@@ -17,8 +17,8 @@ from typing import Iterable
 
 import httpx
 
-from services.evidence.models import EvidenceRecord, EvidenceRelation
-from services.evidence.security_publications import (
+from services.enrichment.evidence.models import EvidenceRecord, EvidenceRelation
+from services.enrichment.evidence.security_publications import (
     FirecrawlSecurityPublicationProvider,
 )
 from utils.envutil import env_non_negative_int, env_positive_float
