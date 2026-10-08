@@ -85,7 +85,7 @@ def test_install_discover_activate_invoke_uninstall(tmp_path: Path) -> None:
     assert listed["caption"] == "Demo"
 
     with pytest.raises(ValueError, match="not active"):
-        manager.invoke("demo-addon", {"value": 7})
+        manager.invoke("demo-addon", {"data": {"value": 7, "secret": "drop"}})
 
     manager.activate("demo-addon")
     addon, result = manager.invoke("demo-addon", {"value": 7})
@@ -428,7 +428,7 @@ def test_manifest_rejects_result_key_that_can_mutate_host_state(tmp_path: Path) 
             "invocation": {
                 "function": "run",
                 "mode": "on_demand",
-                "input": {"required": True},
+                "input": {"required": True, "fields": ["value"]},
                 "return": {"type": "result", "required": True},
             },
             "events": [],
@@ -476,7 +476,7 @@ def test_manifest_rejects_invalid_invocation_contract(tmp_path: Path) -> None:
         "invocation": {
             "function": "execute",
             "mode": "on_demand",
-            "input": {"required": True},
+            "input": {"required": True, "fields": ["value"]},
             "return": {"type": "result", "required": True},
         },
         "events": [],
