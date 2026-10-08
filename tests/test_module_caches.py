@@ -139,7 +139,7 @@ def test_pipeline_osint_cache_enabled_miss_writes(monkeypatch):
 def test_imap_header_parser_skips_oversized_payload(monkeypatch):
     monkeypatch.setattr(imap_scanner, "IMAP_MAX_HEADER_BYTES", 32)
 
-    oversized = b"Subject: Welcome\\r\\n" + (b"x" * 64)
+    oversized = b"Subject: Welcome\r\n" + (b"x" * 64)
     result = imap_scanner._iter_fetched_messages([(b"1 FETCH", oversized)])
 
     assert result == []
@@ -148,7 +148,7 @@ def test_imap_header_parser_skips_oversized_payload(monkeypatch):
 def test_imap_header_parser_accepts_payload_within_limit(monkeypatch):
     monkeypatch.setattr(imap_scanner, "IMAP_MAX_HEADER_BYTES", 1024)
 
-    payload = b"From: Example <sender@example.com>\\r\\nSubject: Welcome\\r\\n\\r\\n"
+    payload = b"From: Example <sender@example.com>\r\nSubject: Welcome\r\n\r\n"
     result = imap_scanner._iter_fetched_messages([(b"1 FETCH", payload)])
 
     assert len(result) == 1
