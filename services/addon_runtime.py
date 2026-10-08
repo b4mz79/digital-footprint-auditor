@@ -499,6 +499,9 @@ def _runtime_acl_targets(executable: Path) -> tuple[tuple[Path, bool], ...]:
         if candidate.is_dir():
             base_root = candidate.resolve()
 
+    if pyvenv_cfg.is_file():
+        targets.append((pyvenv_cfg, False))
+
     if base_root is not None and base_root.is_dir():
         targets.append((base_root, True))
 
