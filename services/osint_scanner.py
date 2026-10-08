@@ -60,6 +60,9 @@ def save_osint_cache(email: str, findings: list[dict[str, Any]], *, tenant_id: s
 EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$")
 HOLEHE_TIMEOUT_SECONDS = 180
 HOLEHE_HTTP_TIMEOUT_SECONDS = 10
+# Hard ceiling for concurrently executing third-party Holehe modules.
+# This bounds outbound request pressure even when Holehe exposes many modules.
+HOLEHE_MAX_CONCURRENCY = 12
 
 
 class OSINTScanError(RuntimeError):
@@ -98,12 +101,14 @@ async def _run_holehe(email_address: str) -> tuple[list[dict], int, int]:
     errors = 0
     rate_limited = 0
     client = httpx.AsyncClient(timeout=HOLEHE_HTTP_TIMEOUT_SECONDS, follow_redirects=False)
+    limiter = trio.Semaphore(HOLEHE_MAX_CONCURRENCY)
 
     async def run_module(module) -> None:
         nonlocal errors, rate_limited
         try:
-            out: list[dict] = []
-            await module(email_address, client, out)
+            async with limiter:
+                out: list[dict] = []
+                await module(email_address, client, out)
             for item in out:
                 if isinstance(item, dict):
                     results.append(item)
