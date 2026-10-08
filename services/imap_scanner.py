@@ -3,10 +3,16 @@ import imaplib
 import email
 import re
 import time
+from pathlib import Path
+from typing import Any
 from email.header import decode_header, make_header
 from email.utils import parseaddr
 
 from dotenv import load_dotenv
+from cache_security import load_encrypted_json, save_encrypted_json
+from utils.cache_identity import hmac_identity, tenant_identity
+from utils.envutil import env_bool
+from utils.paths import resolve_data_path
 
 from utils.domains import is_ignored_sender, root_domain
 from utils.envutil import env_non_negative_int
@@ -16,6 +22,44 @@ from utils.translations import t
 
 load_dotenv()
 logger = get_logger("IMAPScanner")
+
+# Module-owned persistent cache.
+IMAP_CACHE_ENABLED_ENV = "IMAP_CACHE_ENABLED"
+IMAP_CACHE_SCHEMA_VERSION = 1
+IMAP_CACHE_MAX_AGE_HOURS = 12.0
+IMAP_CACHE_DIR = resolve_data_path(os.getenv("IMAP_CACHE_DIR"), "cache/imap")
+
+def imap_cache_enabled() -> bool:
+    return env_bool(IMAP_CACHE_ENABLED_ENV, False)
+
+def _cache_path(email: str, tenant_id: str) -> Path:
+    tenant_dir = IMAP_CACHE_DIR / tenant_identity(tenant_id)
+    tenant_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if os.name != "nt":
+        try: os.chmod(tenant_dir, 0o700)
+        except OSError: pass
+    return tenant_dir / f"imap_cache_{hmac_identity(email.strip().lower())}.json"
+
+def load_imap_cache(email: str, *, tenant_id: str = "default", max_age_hours: float = IMAP_CACHE_MAX_AGE_HOURS) -> list[dict[str, Any]] | None:
+    if max_age_hours < 0: raise ValueError("max_age_hours must be >= 0")
+    try:
+        data = load_encrypted_json(_cache_path(email, tenant_id), tenant_id=tenant_id, max_age_seconds=int(max_age_hours * 3600))
+        if not isinstance(data, dict) or data.get("cache_schema_version") != IMAP_CACHE_SCHEMA_VERSION: return None
+        findings = data.get("findings")
+        return findings if isinstance(findings, list) and all(isinstance(x, dict) for x in findings) else None
+    except Exception: return None
+
+def save_imap_cache(email: str, findings: list[dict[str, Any]], *, tenant_id: str = "default") -> None:
+    if not isinstance(findings, list): raise TypeError("findings must be a list")
+    try:
+        path = _cache_path(email, tenant_id)
+        save_encrypted_json(path, {"cache_schema_version": IMAP_CACHE_SCHEMA_VERSION, "findings": [x for x in findings if isinstance(x, dict)]}, tenant_id=tenant_id)
+        if os.name != "nt":
+            try: os.chmod(path, 0o600)
+            except OSError: pass
+    except Exception: return
+
+
 
 IMAP_SERVER = "imap.gmail.com"
 IMAP_TIMEOUT_SECONDS = 30
