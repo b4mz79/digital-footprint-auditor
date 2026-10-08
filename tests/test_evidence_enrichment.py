@@ -10,13 +10,13 @@ from utils.privacy import clean_web_snippet, clean_web_title
 
 from services.evidence_enrichment import enrich_evidence
 
-from services.evidence.models import (
+from services.enrichment.evidence.models import (
     EvidenceDirectness,
     EvidenceRelation,
     EvidenceRecord,
     make_evidence_id,
 )
-from services.evidence.security_publications import (
+from services.enrichment.evidence.security_publications import (
     FirecrawlSecurityPublicationProvider,
     SecurityPublicationError,
     normalize_domain,
@@ -193,7 +193,7 @@ def test_clean_web_text_collapses_whitespace_and_bounds_length() -> None:
 
 
 def test_contextual_relevance_requires_target_and_security_signals() -> None:
-    from services.evidence.security_publications import _contextual_relevance
+    from services.enrichment.evidence.security_publications import _contextual_relevance
 
     accepted, signals = _contextual_relevance(
         "example.com", url="https://securelist.com/example-phishing/",
@@ -536,7 +536,7 @@ async def test_enrich_evidence_passes_configured_request_rate(monkeypatch) -> No
 
 @pytest.mark.asyncio
 async def test_enrich_evidence_merges_contextual_records(monkeypatch) -> None:
-    from services.evidence.models import EvidenceDirectness, EvidenceRelation, EvidenceRecord
+    from services.enrichment.evidence.models import EvidenceDirectness, EvidenceRelation, EvidenceRecord
 
     base = EvidenceRecord(
         evidence_id="base-1",
