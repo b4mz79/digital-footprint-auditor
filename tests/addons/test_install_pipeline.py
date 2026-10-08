@@ -161,3 +161,66 @@ def test_install_pipeline_does_not_run_after_install_when_security_rejects(
 
     assert lifecycle_calls == []
     assert not (tmp_path / "addons" / "lifecycle-blocked").exists()
+
+
+def test_install_pipeline_stops_before_bandit_when_authority_gate_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = AddonManager(tmp_path / "addons")
+    calls: list[str] = []
+    lifecycle_calls: list[str] = []
+
+    def authority(package_root: Path) -> None:
+        calls.append("authority")
+        raise ValueError("authority rejection")
+
+    def security(package_root: Path) -> tuple[object, ...]:
+        calls.append("security")
+        return ()
+
+    def lifecycle(*args: object, **kwargs: object) -> None:
+        lifecycle_calls.append("after_install")
+
+    monkeypatch.setattr(
+        "services.addon_manager.validate_package_authority",
+        authority,
+    )
+    monkeypatch.setattr(
+        "services.addon_manager.validate_package_security",
+        security,
+    )
+    monkeypatch.setattr(manager, "_run_lifecycle_hook", lifecycle)
+
+    with pytest.raises(ValueError, match="authority rejection"):
+        manager.install_zip(_addon_zip("authority-fail"))
+
+    assert calls == ["authority"]
+    assert lifecycle_calls == []
+    assert not (tmp_path / "addons" / "authority-fail").exists()
+
+
+def test_install_pipeline_removes_target_when_permission_setup_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = AddonManager(tmp_path / "addons")
+    lifecycle_calls: list[str] = []
+
+    def fail_permissions(package_root: Path) -> None:
+        raise OSError("permission setup failed")
+
+    def lifecycle(*args: object, **kwargs: object) -> None:
+        lifecycle_calls.append("after_install")
+
+    monkeypatch.setattr(
+        "services.addon_manager.apply_package_permissions",
+        fail_permissions,
+    )
+    monkeypatch.setattr(manager, "_run_lifecycle_hook", lifecycle)
+
+    with pytest.raises(OSError, match="permission setup failed"):
+        manager.install_zip(_addon_zip("permission-fail"))
+
+    assert lifecycle_calls == []
+    assert not (tmp_path / "addons" / "permission-fail").exists()
