@@ -2,12 +2,10 @@ from __future__ import annotations
 
 from cryptography.fernet import Fernet
 
-from services.enrichment import discovery_cache
 from services import pipeline
-
-
-def test_discovery_cache_disabled_by_default(monkeypatch):
-    monkeypatch.delenv("DISCOVERY_CACHE_ENABLED", raising=False)
+from services import osint_cache
+def test_osint_cache_disabled_by_default(monkeypatch):
+    monkeypatch.delenv("OSINT_CACHE_ENABLED", raising=False)
     assert discovery_cache.discovery_cache_enabled() is False
 
 
@@ -17,9 +15,9 @@ def test_discovery_cache_roundtrip(monkeypatch, tmp_path):
     monkeypatch.setattr(discovery_cache, "_cache_path", lambda *args: tmp_path / "imap_cache_test.json")
     findings = [{"name": "Example", "domain": "example.com"}]
 
-    discovery_cache.save_discovery_cache("imap", findings, "user@example.com")
+    discovery_cache.save_osint_cache("imap", findings, "user@example.com")
 
-    assert discovery_cache.load_discovery_cache("imap", "user@example.com") == findings
+    assert discovery_cache.load_osint_cache("imap", "user@example.com") == findings
 
 
 def test_discovery_cache_rejects_schema_mismatch(monkeypatch):
