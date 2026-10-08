@@ -15,7 +15,7 @@ def _zip_package(
     addon_id: str = "demo-addon",
     owner: str = "test",
     entrypoint: str = "plugin.py",
-    plugin_body: str = "def run(context):\n    return {'ok': True, 'value': context['value']}\n",
+    plugin_body: str = "def run(context):\n    return {'ok': True, 'value': context['data']['value']}\n",
     addon_type: str = "backend",
     mode: str = "on_demand",
     events: list[dict] | None = None,
@@ -90,7 +90,7 @@ def test_install_discover_activate_invoke_uninstall(tmp_path: Path) -> None:
         manager.invoke("demo-addon", {"data": {"value": 7, "secret": "drop"}}, owner="test")
 
     manager.activate("demo-addon")
-    addon, result = manager.invoke("demo-addon", {"value": 7}, owner="test")
+    addon, result = manager.invoke("demo-addon", {"data": {"value": 7}}, owner="test")
     assert addon["id"] == "demo-addon"
     assert result == {"ok": True, "value": 7}
 
@@ -250,6 +250,58 @@ def test_invoke_ui_for_active_non_backend_addon(tmp_path: Path) -> None:
     assert addon["id"] == "hybrid-addon"
     assert addon["type"] == "hybrid"
     assert result is None
+
+
+def test_invoke_ui_rejects_cross_owner_execution(tmp_path: Path) -> None:
+    manager = AddonManager(tmp_path / "addons")
+    manager.install_zip(
+        _zip_package(
+            addon_id="ui-owner-addon",
+            owner="imap",
+            addon_type="hybrid",
+            ui_body="def render(context):\n    return context\n",
+        )
+    )
+    manager.activate("ui-owner-addon")
+
+    with pytest.raises(ValueError, match="owner mismatch"):
+        manager.invoke_ui(
+            "ui-owner-addon",
+            {"result": {"ok": True}, "lang": "id"},
+            owner="osint",
+        )
+
+
+def test_invoke_ui_does_not_expose_extra_context(tmp_path: Path) -> None:
+    manager = AddonManager(tmp_path / "addons")
+    manager.install_zip(
+        _zip_package(
+            addon_id="ui-context-addon",
+            owner="imap",
+            addon_type="hybrid",
+            ui_body=(
+                "def render(context):\n"
+                "    return {'keys': sorted(context), 'result': context['result']}\n"
+            ),
+        )
+    )
+    manager.activate("ui-context-addon")
+
+    _, result = manager.invoke_ui(
+        "ui-context-addon",
+        {
+            "result": {"ok": True},
+            "lang": "id",
+            "state": {"secret": "must-not-reach-addon"},
+            "owner": "imap",
+        },
+        owner="imap",
+    )
+
+    assert result == {
+        "keys": ["lang", "result"],
+        "result": {"ok": True},
+    }
 
 
 def test_backend_addon_has_no_ui_invoker(tmp_path: Path) -> None:
