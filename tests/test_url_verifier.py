@@ -3,7 +3,7 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from services.evidence.url_verifier import verify_public_url
+from services.enrichment.evidence.url_verifier import verify_public_url
 
 
 class MockTransport(httpx.AsyncBaseTransport):
