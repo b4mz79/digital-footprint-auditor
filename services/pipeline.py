@@ -15,15 +15,15 @@ from services.ai_agent import (
 )
 import services.ai_agent as ai_agent
 from services.breach_scanner import BREACH_CACHE_DIR, scan_data_breaches
-from services.discovery_cache import (
+from services.enrichment.discovery_cache import (
     DISCOVERY_CACHE_DIR,
     discovery_cache_enabled,
     load_discovery_cache,
     save_discovery_cache,
 )
 from services.evidence_enrichment import enrich_evidence
-from services.evidence_verification import verify_evidence_records
-from services.evidence import evidence_to_dicts, service_findings_to_evidence
+from services.enrichment.evidence_verification import verify_evidence_records
+from services.enrichment.evidence import evidence_to_dicts, service_findings_to_evidence
 from services.imap_scanner import scan_gmail_inbox
 from services.osint_scanner import scan_osint_footprint
 from utils.envutil import env_bool, env_non_negative_int
