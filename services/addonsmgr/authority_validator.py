@@ -6,7 +6,7 @@ from pathlib import Path
 
 # The community contract starts with a deliberately small import surface.
 # Expand this set only when a reviewed use case requires another dependency.
-_ALLOWED_IMPORT_MODULES = frozenset({"__future__", "typing", "streamlit"})
+_ALLOWED_IMPORT_MODULES = frozenset({"__future__", "typing", "streamlit", "pathlib", "json"})
 _ALLOWED_RESOURCE_SUFFIXES = frozenset({
     ".py",
     ".json",
@@ -49,10 +49,8 @@ _FORBIDDEN_CALL_ATTRIBUTES = frozenset({
     "fork",
     "mkdir",
     "makedirs",
-    "open",
     "popen",
     "read_bytes",
-    "read_text",
     "remove",
     "rename",
     "rmdir",
@@ -61,7 +59,6 @@ _FORBIDDEN_CALL_ATTRIBUTES = frozenset({
     "unlink",
     "urlopen",
     "write_bytes",
-    "write_text",
 })
 
 
@@ -109,6 +106,19 @@ def validate_package_authority(package_root: Path) -> None:
 
 
 def _validate_python_tree(tree: ast.AST, relative_path: str) -> None:
+    # Permit only literal sibling paths derived directly from __file__ for
+    # add-on-local lifecycle logs/state. This is a static screening rule, not
+    # runtime filesystem confinement.
+    local_path_names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Assign, ast.AnnAssign)):
+            value = node.value
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            if _is_local_sibling_path(value):
+                for target in targets:
+                    if isinstance(target, ast.Name):
+                        local_path_names.add(target.id)
+
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
@@ -128,6 +138,16 @@ def _validate_python_tree(tree: ast.AST, relative_path: str) -> None:
             _reject(relative_path, node.lineno, f"forbidden runtime introspection attribute: {node.attr}")
 
         elif isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Attribute) and node.func.attr in {
+                "open", "read_text", "read_bytes", "write_text", "write_bytes"
+            }:
+                receiver = node.func.value
+                if not isinstance(receiver, ast.Name) or receiver.id not in local_path_names:
+                    _reject(
+                        relative_path,
+                        node.lineno,
+                        "filesystem access must use a literal sibling path derived from __file__",
+                    )
             if isinstance(node.func, ast.Name):
                 if node.func.id in _FORBIDDEN_CALL_NAMES:
                     _reject(relative_path, node.lineno, f"forbidden call {node.func.id}()")
@@ -141,6 +161,22 @@ def _validate_python_tree(tree: ast.AST, relative_path: str) -> None:
 
         elif isinstance(node, (ast.Global, ast.Nonlocal)):
             _reject(relative_path, node.lineno, "global/nonlocal state mutation is not allowed")
+
+
+def _is_local_sibling_path(node: ast.AST | None) -> bool:
+    # Accept Path(__file__).with_name("literal-filename") only.
+    if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+        return False
+    if node.func.attr != "with_name" or len(node.args) != 1:
+        return False
+    if not isinstance(node.args[0], ast.Constant) or not isinstance(node.args[0].value, str):
+        return False
+    base = node.func.value
+    if not isinstance(base, ast.Call) or not isinstance(base.func, ast.Name):
+        return False
+    if base.func.id != "Path" or len(base.args) != 1:
+        return False
+    return isinstance(base.args[0], ast.Name) and base.args[0].id == "__file__"
 
 
 def _validate_import(module: str, relative_path: str, line_number: int) -> None:
