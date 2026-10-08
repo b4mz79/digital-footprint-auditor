@@ -481,6 +481,39 @@ def test_invoke_loads_addon_as_isolated_package(tmp_path: Path) -> None:
     assert result == {"value": 42}
 
 
+def test_install_copy_failure_does_not_leave_partial_target(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = AddonManager(tmp_path / "addons")
+    payload = _zip_package(addon_id="copy-failure-addon")
+
+    original_copytree = __import__("shutil").copytree
+    calls = 0
+
+    def failing_copytree(src: Path, dst: Path, *args: object, **kwargs: object):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return original_copytree(src, dst, *args, **kwargs)
+
+        Path(dst).mkdir(parents=True, exist_ok=True)
+        (Path(dst) / "partial.txt").write_text("partial", encoding="utf-8")
+        raise OSError("simulated target copy failure")
+
+    monkeypatch.setattr("services.addon_manager.shutil.copytree", failing_copytree)
+
+    with pytest.raises(OSError, match="simulated target copy failure"):
+        manager.install_zip(payload)
+
+    assert calls == 2
+    assert not (tmp_path / "addons" / "copy-failure-addon").exists()
+    assert not any(
+        path.name.startswith(".install-copy-failure-addon-")
+        for path in (tmp_path / "addons").iterdir()
+    )
+
+
 def test_install_rejects_duplicate(tmp_path: Path) -> None:
     manager = AddonManager(tmp_path / "addons")
     payload = _zip_package()
