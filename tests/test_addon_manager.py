@@ -147,6 +147,66 @@ def test_invocation_context_exposes_only_declared_data(tmp_path: Path) -> None:
     }
 
 
+def test_invocation_context_deepcopies_declared_data(tmp_path: Path) -> None:
+    manager = AddonManager(tmp_path / "addons")
+    manager.install_zip(
+        _zip_package(
+            addon_id="copy-boundary-addon",
+            plugin_body=(
+                "def run(context):\n"
+                "    context['data']['value']['nested'] = 'addon-mutated'\n"
+                "    return {'ok': True}\n"
+            ),
+            input_fields=["value"],
+        )
+    )
+    manager.activate("copy-boundary-addon")
+
+    host_payload = {"data": {"value": {"nested": "host-value"}}}
+
+    _, result = manager.invoke(
+        "copy-boundary-addon",
+        host_payload,
+        owner="test",
+    )
+
+    assert result == {"ok": True}
+    assert host_payload == {"data": {"value": {"nested": "host-value"}}}
+
+
+def test_ui_context_deepcopies_result(tmp_path: Path) -> None:
+    manager = AddonManager(tmp_path / "addons")
+    manager.install_zip(
+        _zip_package(
+            addon_id="ui-copy-boundary-addon",
+            addon_type="hybrid",
+            ui_body=(
+                "def render(context):\n"
+                "    context['result']['nested']['value'] = 'addon-mutated'\n"
+                "    return {'ok': True}\n"
+            ),
+        )
+    )
+    manager.activate("ui-copy-boundary-addon")
+
+    host_context = {
+        "result": {"nested": {"value": "host-value"}},
+        "lang": "id",
+    }
+
+    _, result = manager.invoke_ui(
+        "ui-copy-boundary-addon",
+        host_context,
+        owner="test",
+    )
+
+    assert result == {"ok": True}
+    assert host_context == {
+        "result": {"nested": {"value": "host-value"}},
+        "lang": "id",
+    }
+
+
 def test_manifest_driven_lifecycle_hooks_run_in_order(tmp_path: Path) -> None:
     manager = AddonManager(tmp_path / "addons")
     plugin = """from pathlib import Path
