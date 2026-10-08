@@ -19,7 +19,7 @@ def test_osint_cache_roundtrip(monkeypatch, tmp_path):
     monkeypatch.setattr(
         osint_cache,
         "_cache_path",
-        lambda *args: tmp_path / "osint_cache_test.json",
+        lambda *args, **kwargs: tmp_path / "osint_cache_test.json",
     )
     findings = [{"name": "Example", "domain": "example.com"}]
 
@@ -108,7 +108,7 @@ def test_imap_cache_roundtrip(monkeypatch, tmp_path):
     monkeypatch.setattr(
         imap_cache,
         "_cache_path",
-        lambda *args: tmp_path / "imap_cache_test.json",
+        lambda *args, **kwargs: tmp_path / "imap_cache_test.json",
     )
     findings = [{"name": "Example", "domain": "example.com"}]
 
