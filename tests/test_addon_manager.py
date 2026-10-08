@@ -432,6 +432,7 @@ def test_dispatch_event_isolates_one_broken_addon_from_others(tmp_path: Path) ->
         addon_id="failing-addon",
         mode="on_event",
         events=[{"name": "evidence.enriched"}],
+        input_fields=["value"],
         plugin_body="def run(context):\n    raise RuntimeError('boom')\n",
         return_required=True,
     )
@@ -439,6 +440,7 @@ def test_dispatch_event_isolates_one_broken_addon_from_others(tmp_path: Path) ->
         addon_id="healthy-addon",
         mode="on_event",
         events=[{"name": "evidence.enriched"}],
+        input_fields=["value"],
         plugin_body="def run(context):\n    return {'ok': True}\n",
         return_required=True,
     )
@@ -447,7 +449,7 @@ def test_dispatch_event_isolates_one_broken_addon_from_others(tmp_path: Path) ->
     manager.activate("failing-addon")
     manager.activate("healthy-addon")
 
-    results = manager.dispatch_event("evidence.enriched", {"data": {}}, owner="test")
+    results = manager.dispatch_event("evidence.enriched", {"data": {"value": 1}}, owner="test")
 
     assert len(results) == 1
     assert results[0][0]["id"] == "healthy-addon"
