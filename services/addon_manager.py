@@ -30,6 +30,11 @@ _LIFECYCLE_HOOKS = (
 )
 _MAX_ZIP_FILES = 500
 _MAX_UNCOMPRESSED_BYTES = 50 * 1024 * 1024
+_ADDON_RESULT_KEY_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+_RESERVED_RESULT_KEYS = frozenset({
+    "email", "phone", "lang", "tenant_id", "events", "services", "evidence",
+    "breach", "ai", "ai_lang", "addons", "addon_events",
+})
 _STATE_FILENAME = ".addons-state.json"
 
 logger = get_logger("AddonManager")
@@ -279,10 +284,25 @@ class AddonManager:
                         )
                     addon_payload.update(dict(extra_context))
             addon_payload.pop("addon_contexts", None)
-            results.append(
-                self._execute(addon, addon_payload, invocation=event_spec)
-            )
-            logger.info("[Add-On] event hook completed: id=%s event=%s", addon["id"], event_name)
+            try:
+                result = self._execute(
+                    addon,
+                    addon_payload,
+                    invocation=event_spec,
+                )
+            except Exception as exc:
+                # Isolate failures between optional Add-Ons: one broken
+                # extension must not prevent another matching extension from
+                # receiving the same canonical event.
+                logger.warning(
+                    "[Add-On] event hook failed: id=%s event=%s error=%s: %s",
+                    addon["id"],
+                    event_name,
+                    type(exc).__name__,
+                    exc,
+                )
+                continue
+            results.append(result)
 
         return tuple(results)
 
@@ -506,11 +526,21 @@ class AddonManager:
         state[addon_id] = active
         self._save_state(state)
 
-        self._run_lifecycle_hook(
-            addon_id,
-            "after_activate" if active else "after_deactivate",
-            {"event": "after_activate" if active else "after_deactivate"},
-        )
+        try:
+            self._run_lifecycle_hook(
+                addon_id,
+                "after_activate" if active else "after_deactivate",
+                {"event": "after_activate" if active else "after_deactivate"},
+            )
+        except Exception:
+            if active:
+                # Activation is transactional: post-activation failure must
+                # not leave a broken Add-On active in the registry.
+                rollback_state = self._load_state()
+                rollback_state[addon_id] = False
+                self._save_state(rollback_state)
+            raise
+
         return self.get(addon_id) or addon
 
     def _read_manifest(self, path: Path) -> AddonManifest:
@@ -700,11 +730,7 @@ class AddonManager:
             return_type=return_type,
             return_required=return_spec["required"],
             events=tuple(events),
-            result_key=(
-                str(payload["result_key"]).strip()
-                if payload.get("result_key")
-                else None
-            ),
+            result_key=self._parse_result_key(payload.get("result_key")),
             ai_context=bool(payload.get("ai_context", False)),
             default_active=bool(payload.get("default_active", False)),
             ui_entrypoint=ui_entrypoint,
@@ -764,7 +790,24 @@ class AddonManager:
         return candidate
 
     @staticmethod
-    def _validate_id(addon_id: str) -> None:
+    def _parse_result_key(value: Any) -> str | None:
+        if value is None or value == "":
+            return None
+        if not isinstance(value, str):
+            raise ValueError("add-on result_key must be a string or null")
+        result_key = value.strip()
+        if not _ADDON_RESULT_KEY_RE.fullmatch(result_key):
+            raise ValueError(
+                "add-on result_key must be a lowercase identifier of up to 64 characters"
+            )
+        if result_key in _RESERVED_RESULT_KEYS:
+            raise ValueError(
+                f"add-on result_key targets a reserved host state key: {result_key}"
+            )
+        return result_key
+
+    @staticmethod
+    def _validate_id(addon_id: str) -> None
         if not _ADDON_ID_RE.fullmatch(addon_id):
             raise ValueError(
                 "add-on id must contain 2-64 lowercase letters, numbers, '-' or '_'"
