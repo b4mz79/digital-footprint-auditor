@@ -26,7 +26,7 @@ from services.evidence_verification import verify_evidence_records
 from services.evidence import evidence_to_dicts, service_findings_to_evidence
 from services.imap_scanner import scan_gmail_inbox
 from services.osint_scanner import scan_osint_footprint
-from utils.envutil import env_non_negative_int
+from utils.envutil import env_bool, env_non_negative_int
 from utils.logging_setup import get_logger
 
 logger = get_logger("Pipeline")
@@ -309,7 +309,11 @@ def run_scan(
             state["breach"]["error"] = str(exc)
             emit(_event("error", text=f"Error Breach Scan: {exc}", stage="breach"))
 
-    # Normalize scanner output into stable evidence records after all discovery stages.
+    # Evidence Enrichment is an optional downstream layer. When disabled for
+    # forensic comparison, do not normalize/verify or dispatch evidence events at all.
+    # This preserves the pre-enrichment AI input path: scanner services + breach findings.
+    if env_bool("EVIDENCE_ENRICHMENT_ENABLED", True):
+            # Normalize scanner output into stable evidence records after all discovery stages.
     # This is lineage only: it does not calculate risk and does not alter findings.
     local_evidence = service_findings_to_evidence(state["services"])
 
@@ -371,6 +375,14 @@ def run_scan(
         ),
         {"evidence": list(state["evidence"])},
     )
+
+
+    else:
+        logger.info(
+            "[Pipeline] Evidence Enrichment disabled; preserving pre-enrichment AI input path. "
+            "AI receives scanner services + breach findings only."
+        )
+        state["evidence"] = []
 
     # Optional add-ons. The application supplies only active IDs;
     # AddonManager owns manifest validation, loading and invocation.
