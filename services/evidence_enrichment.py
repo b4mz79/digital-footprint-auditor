@@ -19,7 +19,7 @@ from typing import Iterable
 import httpx
 
 from services.enrichment.evidence.models import EvidenceDirectness, EvidenceRecord, EvidenceRelation
-from services.enrichment_cache import (
+from services.enrichment.cache import (
     enrichment_cache_enabled,
     load_enrichment_cache,
     save_enrichment_cache,
