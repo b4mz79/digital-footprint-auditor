@@ -468,6 +468,10 @@ The Add-On package must remain within its own installation boundary.
 
 The ZIP installer must never allow an Add-On archive to write outside the intended Add-On directory.
 
+> **Runtime security boundary:** the package directory is an installation boundary, not a process sandbox. Add-On Python code executes in the Privacy Auditor process and therefore has the same operating-system permissions as the host process. Only install Add-Ons whose code you trust.
+
+Installation starts inactive even when the manifest declares `default_active`; activation is an explicit host action. This prevents installation alone from executing Add-On code during normal invocation/event dispatch.
+
 ## 18. Error Isolation
 
 An Add-On is an optional extension and must not make the core pipeline fragile.
@@ -490,7 +494,19 @@ Errors should be observable through host logging and state/result reporting.
 
 A broken optional Add-On must not silently convert a successful built-in service execution into a failed core pipeline execution.
 
-## 19. Event Dispatch Flow
+## 19. Event Failure Isolation
+
+Event dispatch isolates failures between matching Add-Ons. If one Add-On raises an exception while handling an event, the manager logs the failure and continues dispatching the same event to the other matching active Add-Ons.
+
+This protects the optional extension layer from turning one broken Add-On into a failure of other Add-Ons or the built-in pipeline.
+
+## 20. Result Routing Guardrails
+
+`result_key` is optional and is validated by the host before installation. It must be a lowercase identifier and cannot target reserved core state keys such as `services`, `evidence`, `breach`, `ai`, or `tenant_id`.
+
+A result-producing Add-On must return a mapping when it returns a result. The host rejects incompatible result types before storing or routing the output.
+
+## 21. Event Dispatch Flow
 
 The canonical runtime flow is:
 
