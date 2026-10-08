@@ -20,6 +20,7 @@ def _zip_with_manifest(
 ) -> bytes:
     manifest = {
         "id": addon_id,
+        "owner": "test",
         "name": "Structural Test",
         "caption": "Structural",
         "version": "1.0.0",
@@ -82,6 +83,7 @@ def test_structural_gate_rejects_missing_entrypoint(
     manager = AddonManager(tmp_path / "addons")
     manifest = {
         "id": "missing-entrypoint",
+            "owner": "test",
         "name": "Structural Test",
         "caption": "Structural",
         "version": "1.0.0",
