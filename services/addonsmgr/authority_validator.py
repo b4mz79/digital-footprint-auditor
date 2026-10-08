@@ -38,6 +38,7 @@ _FORBIDDEN_ATTRIBUTES = frozenset({
     "__bases__", "__builtins__", "__class__", "__closure__", "__code__",
     "__dict__", "__globals__", "__getattribute__", "__loader__", "__mro__",
     "__reduce__", "__reduce_ex__", "__spec__", "__subclasses__",
+    "config", "connection", "connections", "runtime", "secrets", "session_state",
 })
 _FORBIDDEN_CALL_ATTRIBUTES = frozenset({
     "chmod",
