@@ -14,8 +14,8 @@ from typing import Iterable
 
 import httpx
 
-from services.evidence.models import EvidenceRecord
-from services.evidence.url_verifier import verify_public_url
+from services.enrichment.evidence.models import EvidenceRecord
+from services.enrichment.evidence.url_verifier import verify_public_url
 from utils.envutil import env_non_negative_int, env_positive_float
 from utils.logging_setup import get_logger
 
