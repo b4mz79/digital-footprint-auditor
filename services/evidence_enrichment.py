@@ -118,7 +118,7 @@ async def enrich_evidence(
         _fingerprint_domains(domains),
     )
     logger.info(
-        "[Evidence Enrichment] Firecrawl enabled; domains=%d max_results=%d timeout=%.1fs domain_concurrency=%d request_concurrency=%d requests_per_minute=%d cooldown=%.1fs",
+        "[Evidence Enrichment] Firecrawl enabled; domains=%d max_results=%d timeout=%.1fs domain_concurrency=%d request_concurrency=%d requests_per_minute=%d cooldown=%.1fs max_contextual=%d max_per_domain=%d",
         len(domains),
         max_results,
         timeout_seconds,
