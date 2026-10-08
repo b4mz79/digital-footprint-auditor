@@ -15,8 +15,6 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
 import ipaddress
-import json
-import os
 import re
 from typing import Any, Iterable
 from urllib.parse import urlsplit
@@ -32,7 +30,6 @@ from services.enrichment.evidence.models import (
 )
 from utils.domains import root_domain
 from utils.logging_setup import get_logger
-from utils.paths import resolve_data_path
 from utils.privacy import clean_web_snippet, clean_web_title
 
 logger = get_logger("FirecrawlEvidence")
@@ -47,8 +44,6 @@ DEFAULT_COOLDOWN_SECONDS = 60.0
 MAX_RESPONSE_BYTES = 1_000_000
 MAX_TITLE_LENGTH = 512
 MAX_SUMMARY_LENGTH = 600
-CONTEXTUAL_FILTER_DUMP_FILE = "contextual_filter_dump.md"
-CONTEXTUAL_FILTER_DUMP_SCHEMA_VERSION = "contextual-filter-dump-v2"
 CONTEXTUAL_FILTER_NAME = "security_publication_context_v2"
 
 PAGE_TYPE_REJECT_PATTERNS = (r"/(?:category|categories|author|authors|tag|tags|topic|topics|archive|archives|search)(?:/|$)", r"/page/\d+(?:/|$)", r"(?:^|&)(?:page|paged|offset)=\d+")
@@ -459,15 +454,6 @@ class FirecrawlSecurityPublicationProvider:
         self._request_rate_gate = _RequestRateGate(self.requests_per_minute)
         self._cooldown_until = 0.0
         self._cooldown_lock = asyncio.Lock()
-        self._filter_dump_lock = asyncio.Lock()
-        self._filter_dump_dir = resolve_data_path(
-            os.getenv("EVIDENCE_CONTEXTUAL_FILTER_DUMP_DIR"),
-            "cache/evidence",
-        )
-        self._filter_candidates: list[dict[str, Any]] = []
-        self._filter_accepted: list[dict[str, Any]] = []
-        self._filter_dump_finalized = False
-        self._reset_filter_dumps()
         self.publishers = tuple(
             SecurityPublisher(name=name, domain=domain)
             for name, domain in publishers
@@ -497,49 +483,6 @@ class FirecrawlSecurityPublicationProvider:
     async def _set_cooldown(self) -> None:
         async with self._cooldown_lock:
             self._cooldown_until = max(self._cooldown_until, time.monotonic() + self.cooldown_seconds)
-
-    @staticmethod
-    def _dump_item(*, domain: str, publisher: SecurityPublisher, url: str, title: str, summary: str, published_at: Any, decision: str, decision_reason: str, signals: dict[str, str | bool]) -> dict[str, Any]:
-        return {"domain": domain, "publisher": publisher.name, "publisher_domain": publisher.domain, "url": url, "title": title, "summary": summary, "published_at": None if published_at is None else str(published_at)[:64], "decision": decision, "decision_reason": decision_reason, "signals": signals}
-
-    def _render_filter_dump(self) -> str:
-        before = {"schema_version": CONTEXTUAL_FILTER_DUMP_SCHEMA_VERSION, "filter": CONTEXTUAL_FILTER_NAME, "generated_at": _utc_now(), "records": self._filter_candidates}
-        after = {"schema_version": CONTEXTUAL_FILTER_DUMP_SCHEMA_VERSION, "filter": CONTEXTUAL_FILTER_NAME, "generated_at": _utc_now(), "records": self._filter_accepted}
-        return "BEFORE\n```json\n" + json.dumps(before, ensure_ascii=False, indent=2) + "\n```\n---\nAFTER\n```json\n" + json.dumps(after, ensure_ascii=False, indent=2) + "\n```\n"
-
-    def _reset_filter_dumps(self) -> None:
-        # Start a new in-memory run. The dump file is written only when the
-        # run is finalized, so readers never observe a partially-built dump.
-        self._filter_candidates.clear()
-        self._filter_accepted.clear()
-        self._filter_dump_finalized = False
-
-    async def _record_filter_dump(self, *, candidate: dict[str, Any], accepted: bool) -> None:
-        async with self._filter_dump_lock:
-            if self._filter_dump_finalized:
-                raise RuntimeError("Contextual filter dump already finalized.")
-            self._filter_candidates.append(candidate)
-            if accepted:
-                self._filter_accepted.append(candidate)
-
-    async def finalize_filter_dump(self) -> None:
-        """Persist one complete dump for the current enrichment run."""
-        async with self._filter_dump_lock:
-            if self._filter_dump_finalized:
-                return
-            try:
-                self._filter_dump_dir.mkdir(parents=True, exist_ok=True)
-                dump_path = self._filter_dump_dir / CONTEXTUAL_FILTER_DUMP_FILE
-                dump_path.write_text(self._render_filter_dump(), encoding="utf-8")
-                self._filter_dump_finalized = True
-                logger.info(
-                    "[Firecrawl] Contextual filter dump finalized; candidates=%d accepted=%d path=%s",
-                    len(self._filter_candidates),
-                    len(self._filter_accepted),
-                    dump_path,
-                )
-            except (OSError, TypeError, ValueError) as exc:
-                logger.warning("[Firecrawl] Could not finalize contextual filter dump: %s", exc)
 
     async def _search_publisher(
         self,
