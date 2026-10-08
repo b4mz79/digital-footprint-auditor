@@ -31,6 +31,19 @@ _LIFECYCLE_HOOKS = (
 _MAX_ZIP_FILES = 500
 _MAX_UNCOMPRESSED_BYTES = 50 * 1024 * 1024
 _ADDON_RESULT_KEY_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+_ADDON_CAPABILITIES = frozenset({
+    "event",
+    "event.data",
+    "scan.state",
+    "scan.services",
+    "scan.evidence",
+    "scan.breach",
+    "scan.ai",
+    "scan.identity",
+    "scan.lang",
+    "scan.tenant",
+    "addon.context",
+})
 _RESERVED_RESULT_KEYS = frozenset({
     "email", "phone", "lang", "tenant_id", "events", "services", "evidence",
     "breach", "ai", "ai_lang", "addons", "addon_events",
@@ -64,6 +77,7 @@ class AddonManifest:
     result_key: str | None = None
     ai_context: bool = False
     default_active: bool = False
+    capabilities: tuple[str, ...] = ()
     ui_entrypoint: str | None = None
     ui_function: str | None = None
     lifecycle: tuple[tuple[str, str | None], ...] = ()
@@ -89,6 +103,7 @@ class AddonManifest:
             "result_key": self.result_key,
             "ai_context": self.ai_context,
             "default_active": self.default_active,
+            "capabilities": list(self.capabilities),
             "ui": ({
                 "entrypoint": self.ui_entrypoint,
                 "function": self.ui_function,
@@ -273,17 +288,7 @@ class AddonManager:
                 if event.get("name") == event_name
             )
             logger.info("[Add-On] event hook matched: id=%s event=%s function=%s", addon["id"], event_name, addon["invocation"]["function"])
-            addon_payload = dict(payload)
-            addon_contexts = payload.get("addon_contexts")
-            if isinstance(addon_contexts, Mapping):
-                extra_context = addon_contexts.get(str(addon["id"]))
-                if extra_context is not None:
-                    if not isinstance(extra_context, Mapping):
-                        raise TypeError(
-                            f"context add-on {addon['id']!r} harus berupa mapping"
-                        )
-                    addon_payload.update(dict(extra_context))
-            addon_payload.pop("addon_contexts", None)
+            addon_payload = self._build_execution_context(addon, payload)
             try:
                 result = self._execute(
                     addon,
@@ -305,6 +310,89 @@ class AddonManager:
             results.append(result)
 
         return tuple(results)
+
+    def _build_execution_context(
+        self,
+        addon: Mapping[str, Any],
+        payload: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """Build the capability-scoped payload visible to an Add-On."""
+        raw_capabilities = addon.get("capabilities", ())
+        capabilities = {
+            str(item).strip()
+            for item in raw_capabilities
+            if isinstance(item, str) and item.strip()
+        }
+        result: dict[str, Any] = {}
+
+        if "event" in capabilities:
+            event = payload.get("event")
+            if isinstance(event, str):
+                result["event"] = event
+
+        if "event.data" in capabilities:
+            result["data"] = self._copy_context_value(payload.get("data", {}))
+
+        state = payload.get("state")
+        if not isinstance(state, Mapping):
+            state = {}
+
+        if "scan.state" in capabilities:
+            result["state"] = self._copy_context_value({
+                "email": state.get("email", ""),
+                "phone": state.get("phone", ""),
+                "lang": state.get("lang", ""),
+                "tenant_id": state.get("tenant_id", ""),
+                "services": state.get("services", []),
+                "evidence": state.get("evidence", []),
+                "breach": state.get("breach", {}),
+                "ai": state.get("ai"),
+                "ai_lang": state.get("ai_lang"),
+            })
+        else:
+            scan: dict[str, Any] = {}
+            if "scan.services" in capabilities:
+                scan["services"] = self._copy_context_value(state.get("services", []))
+            if "scan.evidence" in capabilities:
+                scan["evidence"] = self._copy_context_value(state.get("evidence", []))
+            if "scan.breach" in capabilities:
+                scan["breach"] = self._copy_context_value(state.get("breach", {}))
+            if "scan.ai" in capabilities:
+                scan["ai"] = self._copy_context_value(state.get("ai"))
+                scan["ai_lang"] = state.get("ai_lang")
+            if "scan.identity" in capabilities:
+                result["identity"] = {
+                    "email": str(state.get("email", "")),
+                    "phone": str(state.get("phone", "")),
+                }
+            if "scan.lang" in capabilities:
+                result["lang"] = str(state.get("lang", ""))
+            if "scan.tenant" in capabilities:
+                result["tenant_id"] = str(state.get("tenant_id", ""))
+            if scan:
+                result["scan"] = scan
+
+        if "addon.context" in capabilities:
+            addon_contexts = payload.get("addon_contexts")
+            if isinstance(addon_contexts, Mapping):
+                extra = addon_contexts.get(str(addon.get("id", "")))
+                if extra is not None:
+                    if not isinstance(extra, Mapping):
+                        raise TypeError(
+                            f"context add-on {addon['id']!r} harus berupa mapping"
+                        )
+                    result["addon_context"] = self._copy_context_value(extra)
+
+        return result
+
+    @staticmethod
+    def _copy_context_value(value: Any) -> Any:
+        try:
+            return json.loads(json.dumps(value, ensure_ascii=False))
+        except (TypeError, ValueError) as exc:
+            raise TypeError(
+                "add-on capability payload must be JSON-serializable"
+            ) from exc
 
     def _execute_ui(
         self,
@@ -740,6 +828,20 @@ class AddonManager:
             if ui_entrypoint.startswith("/") or ".." in Path(ui_entrypoint).parts:
                 raise ValueError("add-on UI entrypoint must stay inside its package")
 
+        raw_capabilities = payload.get("capabilities", [])
+        if not isinstance(raw_capabilities, list):
+            raise ValueError("add-on capabilities must be an array")
+        capabilities: list[str] = []
+        for capability in raw_capabilities:
+            if not isinstance(capability, str) or capability.strip() not in _ADDON_CAPABILITIES:
+                raise ValueError(
+                    "unsupported add-on capability: "
+                    + str(capability)
+                )
+            normalized = capability.strip()
+            if normalized not in capabilities:
+                capabilities.append(normalized)
+
         return AddonManifest(
             addon_id=addon_id,
             name=name,
@@ -756,6 +858,7 @@ class AddonManager:
             result_key=self._parse_result_key(payload.get("result_key")),
             ai_context=self._strict_bool_field(payload, "ai_context", False),
             default_active=self._strict_bool_field(payload, "default_active", False),
+            capabilities=tuple(capabilities),
             ui_entrypoint=ui_entrypoint,
             ui_function=ui_function,
             lifecycle=tuple(lifecycle),
