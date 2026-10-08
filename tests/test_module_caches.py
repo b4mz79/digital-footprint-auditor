@@ -17,7 +17,7 @@ def test_osint_cache_roundtrip(monkeypatch, tmp_path):
     monkeypatch.setenv("CACHE_SECRET_KEY", Fernet.generate_key().decode("ascii"))
     monkeypatch.setenv("PII_PEPPER_KEY", "p" * 32)
     monkeypatch.setattr(
-        osint_cache,
+        osint_scanner,
         "_cache_path",
         lambda *args, **kwargs: tmp_path / "osint_cache_test.json",
     )
@@ -30,7 +30,7 @@ def test_osint_cache_roundtrip(monkeypatch, tmp_path):
 
 def test_osint_cache_rejects_schema_mismatch(monkeypatch):
     monkeypatch.setattr(
-        osint_cache,
+        osint_scanner,
         "load_encrypted_json",
         lambda *args, **kwargs: {
             "cache_schema_version": osint_scanner.OSINT_CACHE_SCHEMA_VERSION - 1,
@@ -106,7 +106,7 @@ def test_imap_cache_roundtrip(monkeypatch, tmp_path):
     monkeypatch.setenv("CACHE_SECRET_KEY", Fernet.generate_key().decode("ascii"))
     monkeypatch.setenv("PII_PEPPER_KEY", "p" * 32)
     monkeypatch.setattr(
-        imap_cache,
+        imap_scanner,
         "_cache_path",
         lambda *args, **kwargs: tmp_path / "imap_cache_test.json",
     )
