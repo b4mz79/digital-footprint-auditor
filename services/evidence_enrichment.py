@@ -21,7 +21,7 @@ from services.evidence.models import EvidenceRecord
 from services.evidence.security_publications import (
     FirecrawlSecurityPublicationProvider,
 )
-from utils.envutil import env_non_negative_int, env_positive_float
+from utils.envutil import env_bool, env_non_negative_int, env_positive_float
 from utils.logging_setup import get_logger
 
 logger = get_logger("EvidenceEnrichment")
@@ -45,6 +45,10 @@ async def enrich_evidence(
     """
     base = list(records)
     logger.info("[Evidence Enrichment] Starting; base_records=%d", len(base))
+
+    if not env_bool("EVIDENCE_ENRICHMENT_ENABLED", True):
+        logger.info("[Evidence Enrichment] Disabled by EVIDENCE_ENRICHMENT_ENABLED=false; returning base evidence unchanged.")
+        return base
     api_key = (
         firecrawl_api_key
         if firecrawl_api_key is not None
