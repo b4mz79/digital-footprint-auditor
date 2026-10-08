@@ -381,8 +381,10 @@ before_uninstall
 ```
 INSTALL
   install
-  after_install
+  (no package code execution)
 ```
+
+`after_install` remains a declared lifecycle name for compatibility, but it is not executed by the current installer. Installation is an untrusted input boundary.
 
 ### Activate
 
@@ -468,9 +470,9 @@ The Add-On package must remain within its own installation boundary.
 
 The ZIP installer must never allow an Add-On archive to write outside the intended Add-On directory.
 
-> **Runtime security boundary:** the package directory is an installation boundary, not a process sandbox. Add-On Python code executes in the Privacy Auditor process and therefore has the same operating-system permissions as the host process. Only install Add-Ons whose code you trust.
+> **Security boundary:** the package directory is an installation boundary, not a process sandbox. The legacy in-process Python runtime is **disabled by default**. Add-On execution requires the future sandboxed worker runtime; `ADDON_RUNTIME_MODE=in_process` is a developer-only compatibility escape hatch and must not be used for untrusted packages.
 
-Installation starts inactive even when the manifest declares `default_active`; activation is an explicit host action. This prevents installation alone from executing Add-On code during normal invocation/event dispatch.
+Installation never executes `after_install` code. Activation and invocation are also fail-closed while the sandboxed runtime is unavailable.
 
 ## 18. Error Isolation
 
@@ -519,9 +521,9 @@ AddonManager.dispatch_event()
         ↓
 Find active Add-Ons subscribed to event
         ↓
-Validate input
+Capability-scoped payload
         ↓
-Load Add-On entrypoint
+Sandboxed worker runtime
         ↓
 Call run(context)
         ↓
@@ -811,6 +813,7 @@ Before distributing an Add-On:
 - [ ] lifecycle hooks, if used, are from the supported set
 - [ ] package passes ZIP security validation
 - [ ] inactive state prevents execution
+- [ ] execution uses the sandboxed worker runtime
 - [ ] failures are isolated
 - [ ] integration tests pass
 - [ ] real local execution has been validated
