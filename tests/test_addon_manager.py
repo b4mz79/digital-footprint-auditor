@@ -514,6 +514,23 @@ def test_install_copy_failure_does_not_leave_partial_target(
     )
 
 
+def test_install_state_persistence_failure_removes_target(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = AddonManager(tmp_path / "addons")
+
+    def fail_save_state(state: object) -> None:
+        raise OSError("simulated state persistence failure")
+
+    monkeypatch.setattr(manager, "_save_state", fail_save_state)
+
+    with pytest.raises(OSError, match="simulated state persistence failure"):
+        manager.install_zip(_zip_package(addon_id="state-failure-addon"))
+
+    assert not (tmp_path / "addons" / "state-failure-addon").exists()
+
+
 def test_install_rejects_duplicate(tmp_path: Path) -> None:
     manager = AddonManager(tmp_path / "addons")
     payload = _zip_package()
