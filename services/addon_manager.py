@@ -413,6 +413,10 @@ class AddonManager:
                 raise ValueError(
                     f"add-on {addon['id']} must return a result"
                 )
+            if return_type == "result" and not isinstance(result, Mapping):
+                raise TypeError(
+                    f"add-on {addon['id']} result must be a mapping"
+                )
             if return_type == "none" and result is not None:
                 raise ValueError(
                     f"add-on {addon['id']} must not return a result"
