@@ -169,7 +169,6 @@ def run_scan(
                 {
                     "data": dict(data or {}),
                 },
-            ,
                 owner=owner,
             )
         except Exception as exc:
