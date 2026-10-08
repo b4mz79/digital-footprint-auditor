@@ -568,7 +568,7 @@ with st.sidebar:
         value=True,
     )
     enable_evidence_enrichment = st.checkbox(
-        "🔎 Enable Evidence Enrichment",
+        t("enable_evidence_enrichment", lang=lang),
         value=True,
         help="Run the Evidence Enrichment pipeline stage.",
     )
