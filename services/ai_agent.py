@@ -511,7 +511,7 @@ def safe_filename_identity(email_addr: str, phone: str = "", lang: str = "id") -
 
 def safe_tenant_identity(tenant_id: str) -> str:
     tenant = _validate_tenant_id(tenant_id)
-    return tenant_identity(tenant)\n
+    return tenant_identity(tenant)
 
 def get_cache_filepath_ext(email: str, phone: str = "", lang: str = "id", tenant_id: str = "default") -> Path:
     tenant_hash = safe_tenant_identity(tenant_id)
