@@ -364,6 +364,7 @@ async def test_firecrawl_provider_returns_contextual_evidence() -> None:
     assert record.verification_scope == "url_accessibility"
     assert record.verification_state == "unknown"
     assert record.metadata["status"] == "contextual_accepted"
+    assert len(record.summary) <= 600
 
 
 @pytest.mark.asyncio
@@ -673,3 +674,64 @@ async def test_enrich_evidence_stops_scheduling_domains_after_rate_limit(monkeyp
 
     assert len(result) == 4
     assert sorted(calls) == ["four.example", "one.example"]
+
+
+@pytest.mark.asyncio
+async def test_enrich_evidence_applies_contextual_output_budget(monkeypatch) -> None:
+    base_records = [
+        EvidenceRecord(
+            evidence_id=f"base-{domain}",
+            source="OSINT / Holehe",
+            source_type="osint",
+            relation=EvidenceRelation.TARGET_RESOURCE,
+            directness=EvidenceDirectness.DIRECT,
+            confidence=0.80,
+            observed_at="2026-01-01T00:00:00+00:00",
+            published_at=None,
+            domain=domain,
+            url="",
+            title=f"Target-associated service: {domain}",
+            summary="Observed service association.",
+        )
+        for domain in ("one.example", "two.example", "three.example")
+    ]
+
+    class FakeProvider:
+        def __init__(self, **kwargs):
+            self.cooldown_active = False
+
+        async def search_domain(self, domain):
+            return [
+                EvidenceRecord(
+                    evidence_id=f"context-{domain}-{idx}",
+                    source="Kaspersky Securelist",
+                    source_type="security_publication",
+                    relation=EvidenceRelation.SECURITY_PUBLICATION,
+                    directness=EvidenceDirectness.CONTEXTUAL,
+                    confidence=0.65,
+                    observed_at="2026-01-01T00:00:00+00:00",
+                    published_at=f"2025-12-{idx:02d}",
+                    domain=domain,
+                    url=f"https://securelist.com/{domain}/{idx}",
+                    title=f"{domain} security context {idx}",
+                    summary="Security incident context.",
+                )
+                for idx in (1, 2, 3)
+            ]
+
+    import services.evidence_enrichment as enrichment
+    monkeypatch.setattr(enrichment, "FirecrawlSecurityPublicationProvider", FakeProvider)
+    monkeypatch.setenv("FIRECRAWL_MAX_CONTEXTUAL_RECORDS", "4")
+    monkeypatch.setenv("FIRECRAWL_MAX_CONTEXTUAL_RECORDS_PER_DOMAIN", "1")
+    monkeypatch.setenv("FIRECRAWL_DOMAIN_CONCURRENCY", "3")
+
+    result = await enrich_evidence(base_records, firecrawl_api_key="test-key")
+
+    contextual = [
+        record
+        for record in result
+        if record.relation is EvidenceRelation.SECURITY_PUBLICATION
+    ]
+    assert len(contextual) == 3
+    assert len(contextual) <= 4
+    assert len({record.domain for record in contextual}) == 3
