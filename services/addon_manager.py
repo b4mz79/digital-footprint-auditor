@@ -19,6 +19,7 @@ from utils.logging_setup import get_logger
 
 
 _ADDON_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,63}$")
+_OWNER_RE = re.compile(r"^[a-z][a-z0-9_-]{1,63}$")
 _ADDON_TYPES = frozenset({"backend", "ui", "hybrid"})
 _INVOCATION_MODES = frozenset({"on_demand", "on_event"})
 _RETURN_TYPES = frozenset({"result", "none"})
@@ -35,7 +36,7 @@ _MAX_UNCOMPRESSED_BYTES = 50 * 1024 * 1024
 _ADDON_RESULT_KEY_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 _RESERVED_RESULT_KEYS = frozenset({
     "email", "phone", "lang", "tenant_id", "events", "services", "evidence",
-    "breach", "ai", "ai_lang", "addons", "addon_events",
+    "breach", "ai", "ai_lang", "addons", "addon_events", "owner", "event", "state",
 })
 _STATE_FILENAME = ".addons-state.json"
 
@@ -45,6 +46,7 @@ logger = get_logger("AddonManager")
 @dataclass(frozen=True, slots=True)
 class AddonManifest:
     addon_id: str
+    owner: str
     name: str
     caption: str
     version: str
@@ -67,6 +69,7 @@ class AddonManifest:
     def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.addon_id,
+            "owner": self.owner,
             "name": self.name,
             "caption": self.caption,
             "version": self.version,
@@ -232,12 +235,15 @@ class AddonManager:
         self,
         addon_id: str,
         context: Mapping[str, Any],
+        *,
+        owner: str,
     ) -> tuple[dict[str, Any], Any]:
         addon = self.get(addon_id)
         if addon is None:
             raise ValueError(f"add-on is not installed: {addon_id}")
         if not addon["active"]:
             raise ValueError(f"add-on is not active: {addon_id}")
+        self._require_owner(addon, owner)
         if addon["invocation"]["mode"] != "on_demand":
             raise ValueError(
                 f"add-on {addon_id} is not configured for on-demand invocation"
@@ -255,6 +261,8 @@ class AddonManager:
         self,
         addon_id: str,
         context: Mapping[str, Any],
+        *,
+        owner: str,
     ) -> tuple[dict[str, Any], Any]:
         """Invoke the UI entrypoint of an active UI-capable add-on."""
         addon = self.get(addon_id)
@@ -262,6 +270,7 @@ class AddonManager:
             raise ValueError(f"add-on is not installed: {addon_id}")
         if not addon["active"]:
             raise ValueError(f"add-on is not active: {addon_id}")
+        self._require_owner(addon, owner)
         if addon["type"] == "backend":
             raise ValueError(f"backend add-on has no UI entrypoint: {addon_id}")
 
@@ -275,15 +284,20 @@ class AddonManager:
         self,
         event_name: str,
         context: Mapping[str, Any] | None = None,
+        *,
+        owner: str,
     ) -> tuple[tuple[dict[str, Any], Any], ...]:
         if not isinstance(event_name, str) or not event_name.strip():
             raise ValueError("event_name is required")
 
+        self._validate_owner(owner)
         payload = context or {}
-        logger.info("[Add-On] dispatch_event: event=%s", event_name)
+        logger.info("[Add-On] dispatch_event: owner=%s event=%s", owner, event_name)
         results: list[tuple[dict[str, Any], Any]] = []
         for addon in self.list():
             if not addon["active"]:
+                continue
+            if addon["owner"] != owner:
                 continue
             if addon["invocation"]["mode"] != "on_event":
                 continue
@@ -632,12 +646,15 @@ class AddonManager:
         addon_id = str(payload.get("id", "")).strip()
         self._validate_id(addon_id)
 
-        required = ("name", "caption", "version", "entrypoint", "type", "invocation")
+        required = ("owner", "name", "caption", "version", "entrypoint", "type", "invocation")
         if any(key not in payload for key in required):
             raise ValueError(
                 "add-on manifest requires id, name, caption, version, "
                 "entrypoint, type and invocation"
             )
+
+        owner = str(payload["owner"]).strip().lower()
+        self._validate_owner(owner)
 
         name = str(payload["name"]).strip()
         caption = str(payload["caption"]).strip()
@@ -814,6 +831,7 @@ class AddonManager:
 
         return AddonManifest(
             addon_id=addon_id,
+            owner=owner,
             name=name,
             caption=caption,
             version=version,
@@ -900,6 +918,8 @@ class AddonManager:
             name = field.strip()
             if not name or not re.fullmatch(r"[a-zA-Z][a-zA-Z0-9_-]{0,63}", name):
                 raise ValueError(f"{label} entries must be simple field names")
+            if name in {"owner", "event", "state"}:
+                raise ValueError(f"{label} contains reserved host metadata field: {name}")
             if name not in normalized:
                 normalized.append(name)
         if input_spec.get("required") and not normalized:
@@ -924,6 +944,21 @@ class AddonManager:
                 f"add-on result_key targets a reserved host state key: {result_key}"
             )
         return result_key
+
+    @staticmethod
+    def _validate_owner(owner: str) -> None:
+        if not isinstance(owner, str) or not _OWNER_RE.fullmatch(owner.strip().lower()):
+            raise ValueError("add-on owner must be a lowercase built-in module identifier")
+
+    @classmethod
+    def _require_owner(cls, addon: Mapping[str, Any], owner: str) -> None:
+        cls._validate_owner(owner)
+        addon_owner = str(addon.get("owner", "")).strip().lower()
+        if addon_owner != owner.strip().lower():
+            raise ValueError(
+                f"add-on owner mismatch: {addon.get('id', '<unknown>')} belongs to "
+                f"{addon_owner!r}, not {owner!r}"
+            )
 
     @staticmethod
     def _validate_id(addon_id: str) -> None:
