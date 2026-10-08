@@ -26,8 +26,8 @@ from utils.logging_setup import get_logger
 
 logger = get_logger("EvidenceEnrichment")
 
-DEFAULT_MAX_CONTEXTUAL_RECORDS = 50
-DEFAULT_MAX_CONTEXTUAL_RECORDS_PER_DOMAIN = 2
+DEFAULT_MAX_CONTEXTUAL_RECORDS = 20
+DEFAULT_MAX_CONTEXTUAL_RECORDS_PER_DOMAIN = 1
 
 
 def _fingerprint_domains(domains: list[str]) -> str:
@@ -209,11 +209,12 @@ async def enrich_evidence(
     ordered_contextual = sorted(
         unique_contextual.values(),
         key=lambda record: (
-            record.published_at is None,
+            record.published_at is not None,
             record.published_at or "",
-            -record.confidence,
+            record.confidence,
             record.evidence_id,
         ),
+        reverse=True,
     )
     selected_contextual: list[EvidenceRecord] = []
     per_domain_counts: dict[str, int] = {}
