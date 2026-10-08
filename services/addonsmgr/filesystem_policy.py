@@ -1,16 +1,18 @@
 from __future__ import annotations
 
+import os
 import shutil
 import stat
 from pathlib import Path
 
 
 def apply_package_permissions(package_root: Path) -> None:
-    """Protect package files while allowing owner-only writes inside the add-on directory.
+    """Protect package files while allowing writes only inside the package directory.
 
-    POSIX mode bits are meaningful on POSIX filesystems. On Windows, Python's
-    chmod support is limited to the read-only attribute; this is not an ACL or
-    process-isolation boundary.
+    POSIX filesystems can enforce the intended owner-only mode bits. On Windows,
+    Python's chmod support is limited to the read-only attribute, so POSIX group/
+    other mode-bit checks are not meaningful there. Windows validation therefore
+    checks effective write access instead. Neither mechanism is process isolation.
     """
     root = package_root.resolve()
     if not root.is_dir():
@@ -34,17 +36,31 @@ def apply_package_permissions(package_root: Path) -> None:
             )
 
     root.chmod(0o700)
+
     for path in [root, *paths]:
         if path.is_symlink():
             raise ValueError("installed add-on package symlinks are not allowed")
+
         if path.is_dir():
-            mode = path.stat().st_mode
-            if not mode & stat.S_IWUSR or mode & (stat.S_IWGRP | stat.S_IWOTH):
-                raise OSError(f"add-on directory permissions are too broad or not writable: {path.name}")
+            if os.name == "nt":
+                if not os.access(path, os.W_OK):
+                    raise OSError(
+                        f"add-on directory is not writable by the current user: {path.name}"
+                    )
+            else:
+                mode = path.stat().st_mode
+                if not mode & stat.S_IWUSR or mode & (stat.S_IWGRP | stat.S_IWOTH):
+                    raise OSError(
+                        f"add-on directory permissions are too broad or not writable: {path.name}"
+                    )
         elif path.is_file():
-            mode = path.stat().st_mode
-            if mode & (stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH):
-                raise OSError(f"add-on file remains writable: {path.name}")
+            if os.name == "nt":
+                if os.access(path, os.W_OK):
+                    raise OSError(f"add-on file remains writable: {path.name}")
+            else:
+                mode = path.stat().st_mode
+                if mode & (stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH):
+                    raise OSError(f"add-on file remains writable: {path.name}")
 
 
 def remove_package_tree(package_root: Path) -> None:
