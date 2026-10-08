@@ -244,7 +244,8 @@ def run_scan(
                 emit(_event("info", "info_imap_scanning", stage="imap"))
                 try:
                     found = scan_gmail_inbox(email, gmail_app_password, lang=lang)
-                    save_imap_cache(email, found, tenant_id=tenant_id)
+                    if imap_cache_on:
+                        save_imap_cache(email, found, tenant_id=tenant_id)
                 except Exception as exc:
                     emit(_event("error", text=f"Error IMAP: {exc}", stage="imap"))
                     found = None
@@ -267,7 +268,8 @@ def run_scan(
             emit(_event("info", "info_osint_scanning", stage="osint"))
             try:
                 found = scan_osint_footprint(email, lang=lang)
-                save_osint_cache(email, found, tenant_id=tenant_id)
+                if osint_cache_on:
+                    save_osint_cache(email, found, tenant_id=tenant_id)
             except Exception as exc:
                 emit(_event("error", text=f"Error OSINT: {exc}", stage="osint"))
                 found = None
