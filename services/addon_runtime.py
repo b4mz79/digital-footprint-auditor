@@ -19,6 +19,7 @@ _AC_NAME_PREFIX = "PrivacyAuditorAddon_"
 _AC_NAME_MAX = 64
 
 _CREATE_NO_WINDOW = 0x08000000
+_CREATE_UNICODE_ENVIRONMENT = 0x00000400
 _EXTENDED_STARTUPINFO_PRESENT = 0x00080000
 _STARTF_USESTDHANDLES = 0x00000100
 _PROC_THREAD_ATTRIBUTE_HANDLE_LIST = 0x00020002
@@ -541,7 +542,7 @@ def _launch_process(
         process_info = _PROCESS_INFORMATION()
         command_buffer = ctypes.create_unicode_buffer(command_line)
         created = kernel32.CreateProcessW(
-            None,
+            str(executable),
             command_buffer,
             None,
             None,
