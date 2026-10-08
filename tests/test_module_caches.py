@@ -69,10 +69,44 @@ def test_pipeline_osint_cache_hit_skips_scanner(monkeypatch):
     assert state["services"][0]["domain"] == "cached.example"
 
 
-def test_pipeline_osint_cache_off_runs_and_writes(monkeypatch):
+def test_pipeline_osint_cache_off_runs_without_writing(monkeypatch):
     monkeypatch.setenv("OSINT_CACHE_ENABLED", "false")
+    monkeypatch.setattr(
+        pipeline,
+        "scan_osint_footprint",
+        lambda email, lang="id": [
+            {"name": "Fresh", "domain": "fresh.example", "source": "OSINT"}
+        ],
+    )
+    monkeypatch.setattr(
+        pipeline,
+        "save_osint_cache",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("OSINT cache must not be written when disabled")
+        ),
+    )
+    monkeypatch.setenv("FIRECRAWL_API_KEY", "")
+
+    state = pipeline.run_scan(
+        email="user@example.com",
+        enable_imap=False,
+        enable_osint=True,
+        enable_breach=False,
+        with_ai=False,
+    )
+
+    assert state["services"][0]["domain"] == "fresh.example"
+
+
+def test_pipeline_osint_cache_enabled_miss_writes(monkeypatch):
+    monkeypatch.setenv("OSINT_CACHE_ENABLED", "true")
     saved = []
 
+    monkeypatch.setattr(
+        pipeline,
+        "load_osint_cache",
+        lambda *args, **kwargs: None,
+    )
     monkeypatch.setattr(
         pipeline,
         "scan_osint_footprint",
@@ -117,8 +151,9 @@ def test_imap_cache_roundtrip(monkeypatch, tmp_path):
     assert imap_scanner.load_imap_cache("user@example.com") == findings
 
 
-def test_pipeline_force_refresh_bypasses_osint_cache(monkeypatch):
+def test_pipeline_force_refresh_bypasses_osint_cache_and_writes(monkeypatch):
     monkeypatch.setenv("OSINT_CACHE_ENABLED", "true")
+    saved = []
     monkeypatch.setattr(
         pipeline,
         "load_osint_cache",
@@ -136,7 +171,7 @@ def test_pipeline_force_refresh_bypasses_osint_cache(monkeypatch):
     monkeypatch.setattr(
         pipeline,
         "save_osint_cache",
-        lambda *args, **kwargs: None,
+        lambda email, findings, tenant_id="default": saved.append(findings),
     )
     monkeypatch.setenv("FIRECRAWL_API_KEY", "")
 
@@ -150,10 +185,80 @@ def test_pipeline_force_refresh_bypasses_osint_cache(monkeypatch):
     )
 
     assert state["services"][0]["domain"] == "fresh.example"
+    assert saved == [
+        [{"name": "Fresh", "domain": "fresh.example", "source": "OSINT"}]
+    ]
 
 
 def test_cache_directories_are_module_specific():
     assert imap_scanner.IMAP_CACHE_DIR != osint_scanner.OSINT_CACHE_DIR
+
+
+def test_pipeline_imap_cache_off_runs_without_writing(monkeypatch):
+    monkeypatch.setenv("IMAP_CACHE_ENABLED", "false")
+    monkeypatch.setattr(
+        pipeline,
+        "scan_gmail_inbox",
+        lambda email, app_password, lang="id": [
+            {"name": "Fresh IMAP", "domain": "imap.example", "source": "IMAP"}
+        ],
+    )
+    monkeypatch.setattr(
+        pipeline,
+        "save_imap_cache",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("IMAP cache must not be written when disabled")
+        ),
+    )
+    monkeypatch.setenv("FIRECRAWL_API_KEY", "")
+
+    state = pipeline.run_scan(
+        email="user@example.com",
+        gmail_app_password="synthetic-password",
+        enable_imap=True,
+        enable_osint=False,
+        enable_breach=False,
+        with_ai=False,
+    )
+
+    assert state["services"][0]["domain"] == "imap.example"
+
+
+def test_pipeline_imap_cache_enabled_miss_writes(monkeypatch):
+    monkeypatch.setenv("IMAP_CACHE_ENABLED", "true")
+    saved = []
+    monkeypatch.setattr(
+        pipeline,
+        "load_imap_cache",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        pipeline,
+        "scan_gmail_inbox",
+        lambda email, app_password, lang="id": [
+            {"name": "Fresh IMAP", "domain": "imap.example", "source": "IMAP"}
+        ],
+    )
+    monkeypatch.setattr(
+        pipeline,
+        "save_imap_cache",
+        lambda email, findings, tenant_id="default": saved.append(findings),
+    )
+    monkeypatch.setenv("FIRECRAWL_API_KEY", "")
+
+    state = pipeline.run_scan(
+        email="user@example.com",
+        gmail_app_password="synthetic-password",
+        enable_imap=True,
+        enable_osint=False,
+        enable_breach=False,
+        with_ai=False,
+    )
+
+    assert state["services"][0]["domain"] == "imap.example"
+    assert saved == [
+        [{"name": "Fresh IMAP", "domain": "imap.example", "source": "IMAP"}]
+    ]
 
 
 def test_pipeline_imap_cache_hit_skips_scanner(monkeypatch):
