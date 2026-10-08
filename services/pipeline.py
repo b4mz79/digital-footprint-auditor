@@ -15,7 +15,6 @@ from services.ai_agent import (
 )
 import services.ai_agent as ai_agent
 from services.breach_scanner import BREACH_CACHE_DIR, scan_data_breaches
-from services.enrichment.cache import ENRICHMENT_CACHE_DIR
 from services.imap_cache import (
     IMAP_CACHE_DIR,
     imap_cache_enabled,
@@ -28,11 +27,11 @@ from services.osint_cache import (
     osint_cache_enabled,
     save_osint_cache,
 )
-from services.evidence_enrichment import enrich_evidence
+from services.evidence_enrichment import ENRICHMENT_CACHE_DIR, enrich_evidence
 from services.enrichment.evidence_verification import verify_evidence_records
 from services.enrichment.evidence import evidence_to_dicts, service_findings_to_evidence
-from services.imap_scanner import scan_gmail_inbox
-from services.osint_scanner import scan_osint_footprint
+from services.imap_scanner import IMAP_CACHE_DIR, imap_cache_enabled, load_imap_cache, save_imap_cache, scan_gmail_inbox
+from services.osint_scanner import OSINT_CACHE_DIR, load_osint_cache, osint_cache_enabled, save_osint_cache, scan_osint_footprint
 from utils.envutil import env_bool, env_non_negative_int
 from utils.logging_setup import get_logger
 
@@ -237,8 +236,6 @@ def run_scan(
                 ),
                 live_payload,
             )
-
-    cache_enabled = discovery_cache_enabled()
 
     # Step 1: Gmail via IMAP
     if enable_imap:
