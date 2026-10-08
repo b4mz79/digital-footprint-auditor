@@ -26,7 +26,8 @@
     {
       "name": "discovery.imap.completed",
       "input": {
-        "required": true
+        "required": true,
+        "fields": ["services"]
       },
       "return": {
         "type": "result",
