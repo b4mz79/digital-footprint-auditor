@@ -15,8 +15,8 @@ from services.ai_agent import (
 )
 import services.ai_agent as ai_agent
 from services.breach_scanner import BREACH_CACHE_DIR, scan_data_breaches
-from services.evidence_enrichment import ENRICHMENT_CACHE_DIR, enrich_evidence
-from services.enrichment.evidence_verification import verify_evidence_records
+from services.enrichment.orchestration import ENRICHMENT_CACHE_DIR, enrich_evidence
+from services.enrichment.verification import verify_evidence_records
 from services.enrichment.evidence import evidence_to_dicts, service_findings_to_evidence
 from services.imap_scanner import IMAP_CACHE_DIR, imap_cache_enabled, load_imap_cache, save_imap_cache, scan_gmail_inbox
 from services.osint_scanner import OSINT_CACHE_DIR, load_osint_cache, osint_cache_enabled, save_osint_cache, scan_osint_footprint
