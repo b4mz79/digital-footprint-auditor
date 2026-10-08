@@ -178,6 +178,7 @@ _AI_SEMAPHORES: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Se
 AI_TIMEOUT_SECONDS = _env_positive_float("AI_TIMEOUT_SECONDS", 300.0, 900.0)
 OLLAMA_TIMEOUT_SECONDS = _env_positive_float("OLLAMA_TIMEOUT_SECONDS", 120.0, 1800.0)
 MAX_LLM_OUTPUT_TOKENS = _env_non_negative_int("MAX_LLM_OUTPUT_TOKENS", 4096, 16_384) or 4096
+AI_FORENSIC_TELEMETRY = _env_bool("AI_FORENSIC_TELEMETRY", False)
 EXPOSE_CACHE_PATH = _env_bool("EXPOSE_CACHE_PATH", False)
 ALLOW_REMOTE_OLLAMA = _env_bool("OLLAMA_ALLOW_REMOTE", False)
 TRUST_ENV_FOR_OLLAMA = _env_bool("OLLAMA_TRUST_ENV", False)
@@ -271,6 +272,14 @@ def _redact_text_for_llm(value: object, max_len: int = MAX_SERVICE_FIELD_LENGTH)
     text = redact_loose_phones(text, "[PHONE_REDACTED]")
     text = SECRET_KV_RE.sub(lambda m: f"{m.group(1)}=[REDACTED]", text)
     return " ".join(text.split())[:max_len]
+
+
+def _safe_exception_detail(exc: BaseException, max_len: int = 240) -> str:
+    return _redact_text_for_llm(str(exc), max_len=max_len) or type(exc).__name__
+
+
+def _estimated_tokens(char_count: int) -> int:
+    return max(0, (int(char_count) + 3) // 4)
 
 
 def _redact_url_for_llm(value: object) -> str:
@@ -770,6 +779,9 @@ def build_user_prompt(
         "Do not upgrade a risk conclusion solely because a security publication mentions a related domain.\n"
         "The real target identity is intentionally withheld from the cloud model."
     )
+    if AI_FORENSIC_TELEMETRY:
+        logger.info("[AI Forensic] user_chars=%d user_estimated_tokens=%d", len(prompt), _estimated_tokens(len(prompt)))
+
     if len(prompt) > MAX_PROMPT_CHARS:
         raise ValueError("LLM prompt terlalu besar.")
     return prompt
@@ -1562,9 +1574,14 @@ async def _run_provider_chain(
 
                 except Exception as exc:
                     logger.warning(
-                        "[Gemini] Key #%d gagal: %s",
+                        "[Gemini] Key #%d gagal: %s: %s | user_chars=%d system_chars=%d combined_chars=%d estimated_tokens=%d",
                         idx,
                         type(exc).__name__,
+                        _safe_exception_detail(exc),
+                        len(user_prompt),
+                        len(sys_prompt),
+                        len(user_prompt) + len(sys_prompt),
+                        _estimated_tokens(len(user_prompt) + len(sys_prompt)),
                     )
 
             # All Gemini keys exhausted.
@@ -1627,9 +1644,14 @@ async def _run_provider_chain(
 
             except Exception as exc:
                 logger.warning(
-                    "[Groq Cloud] Gagal: %s. "
+                    "[Groq Cloud] Gagal: %s: %s. user_chars=%d system_chars=%d combined_chars=%d estimated_tokens=%d. "
                     "Rotasi ke provider berikutnya.",
                     type(exc).__name__,
+                    _safe_exception_detail(exc),
+                    len(user_prompt),
+                    len(sys_prompt),
+                    len(user_prompt) + len(sys_prompt),
+                    _estimated_tokens(len(user_prompt) + len(sys_prompt)),
                 )
 
         # ---------------------------------------------------------------------
@@ -1685,9 +1707,14 @@ async def _run_provider_chain(
 
             except Exception as exc:
                 logger.warning(
-                    "[OpenAI] Gagal: %s. "
+                    "[OpenAI] Gagal: %s: %s. user_chars=%d system_chars=%d combined_chars=%d estimated_tokens=%d. "
                     "Rotasi ke provider berikutnya.",
                     type(exc).__name__,
+                    _safe_exception_detail(exc),
+                    len(user_prompt),
+                    len(sys_prompt),
+                    len(user_prompt) + len(sys_prompt),
+                    _estimated_tokens(len(user_prompt) + len(sys_prompt)),
                 )
 
         # ---------------------------------------------------------------------
