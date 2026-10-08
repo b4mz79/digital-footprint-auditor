@@ -2,15 +2,15 @@ from __future__ import annotations
 
 import ctypes
 import json
+import msvcrt
 import os
 import shutil
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 from typing import Any, Mapping
 
-from services.addon_runtime_worker import _PROTOCOL_VERSION, _MAX_RESPONSE_BYTES
+from services.addon_runtime_worker import _MAX_RESPONSE_BYTES, _PROTOCOL_VERSION
 
 
 _RUNTIME_EXECUTABLE_ENV = "ADDON_RUNTIME_EXECUTABLE"
@@ -18,13 +18,17 @@ _RUNTIME_TIMEOUT_ENV = "ADDON_RUNTIME_TIMEOUT_SECONDS"
 _DEFAULT_TIMEOUT_SECONDS = 60.0
 _AC_NAME_PREFIX = "PrivacyAuditorAddon_"
 _AC_NAME_MAX = 64
+
 _CREATE_NO_WINDOW = 0x08000000
 _EXTENDED_STARTUPINFO_PRESENT = 0x00080000
+_STARTF_USESTDHANDLES = 0x00000100
+_PROC_THREAD_ATTRIBUTE_HANDLE_LIST = 0x00020002
 _PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES = 0x00020005
+
 _WAIT_OBJECT_0 = 0x00000000
 _WAIT_TIMEOUT = 0x00000102
-_ERROR_ALREADY_EXISTS = 183
 _E_HR_ALREADY_EXISTS = 0x800700B7
+
 _SID_TYPE = ctypes.c_void_p
 
 
@@ -90,7 +94,9 @@ def _runtime_timeout() -> float:
     try:
         value = float(raw)
     except ValueError as exc:
-        raise ValueError("ADDON_RUNTIME_TIMEOUT_SECONDS must be numeric") from exc
+        raise ValueError(
+            "ADDON_RUNTIME_TIMEOUT_SECONDS must be numeric"
+        ) from exc
     if value <= 0 or value > 900:
         raise ValueError(
             "ADDON_RUNTIME_TIMEOUT_SECONDS must be between 0 and 900 seconds"
@@ -115,9 +121,15 @@ def _advapi32() -> Any:
     return ctypes.WinDLL("advapi32", use_last_error=True)
 
 
+def _ole32() -> Any:
+    return ctypes.WinDLL("ole32", use_last_error=True)
+
+
 def _configure_win32() -> None:
     userenv = _userenv()
     kernel32 = _kernel32()
+    advapi32 = _advapi32()
+    ole32 = _ole32()
 
     userenv.CreateAppContainerProfile.argtypes = [
         ctypes.c_wchar_p,
@@ -177,7 +189,10 @@ def _configure_win32() -> None:
     ]
     kernel32.CreateProcessW.restype = ctypes.c_int
 
-    kernel32.WaitForSingleObject.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
+    kernel32.WaitForSingleObject.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_uint32,
+    ]
     kernel32.WaitForSingleObject.restype = ctypes.c_uint32
 
     kernel32.GetExitCodeProcess.argtypes = [
@@ -186,20 +201,32 @@ def _configure_win32() -> None:
     ]
     kernel32.GetExitCodeProcess.restype = ctypes.c_int
 
-    kernel32.TerminateProcess.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
+    kernel32.TerminateProcess.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_uint32,
+    ]
     kernel32.TerminateProcess.restype = ctypes.c_int
 
     kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
     kernel32.CloseHandle.restype = ctypes.c_int
 
-    _advapi32().ConvertSidToStringSidW.argtypes = [
+    kernel32.LocalFree.argtypes = [ctypes.c_void_p]
+    kernel32.LocalFree.restype = ctypes.c_void_p
+
+    advapi32.ConvertSidToStringSidW.argtypes = [
         _SID_TYPE,
         ctypes.POINTER(ctypes.c_wchar_p),
     ]
-    _advapi32().ConvertSidToStringSidW.restype = ctypes.c_int
+    advapi32.ConvertSidToStringSidW.restype = ctypes.c_int
 
-    _advapi32().FreeSid.argtypes = [_SID_TYPE]
-    _advapi32().FreeSid.restype = ctypes.c_void_p
+    advapi32.ConvertStringSidToSidW.argtypes = [
+        ctypes.c_wchar_p,
+        ctypes.POINTER(_SID_TYPE),
+    ]
+    advapi32.ConvertStringSidToSidW.restype = ctypes.c_int
+
+    ole32.CoTaskMemFree.argtypes = [ctypes.c_void_p]
+    ole32.CoTaskMemFree.restype = None
 
 
 def _win_error(prefix: str) -> OSError:
@@ -220,9 +247,11 @@ def _create_or_derive_profile(name: str) -> tuple[str, Path]:
         0,
         ctypes.byref(sid),
     )
-    if hr != 0 and ctypes.c_uint32(hr).value != _E_HR_ALREADY_EXISTS:
+    hr_u32 = ctypes.c_uint32(hr).value
+    if hr != 0 and hr_u32 != _E_HR_ALREADY_EXISTS:
         raise OSError(
-            f"CreateAppContainerProfile failed: HRESULT 0x{ctypes.c_uint32(hr).value:08X}"
+            "CreateAppContainerProfile failed: "
+            f"HRESULT 0x{hr_u32:08X}"
         )
 
     if not sid.value:
@@ -242,10 +271,14 @@ def _create_or_derive_profile(name: str) -> tuple[str, Path]:
         ctypes.byref(sid_text_ptr),
     ):
         raise _win_error("ConvertSidToStringSidW failed")
-    sid_text = sid_text_ptr.value or ""
+
+    try:
+        sid_text = sid_text_ptr.value or ""
+    finally:
+        _kernel32().LocalFree(sid_text_ptr)
+
     if not sid_text:
         raise RuntimeError("AppContainer SID conversion returned an empty SID")
-    _kernel32().LocalFree(sid_text_ptr)
 
     folder_ptr = ctypes.c_wchar_p()
     hr = userenv.GetAppContainerFolderPath(
@@ -257,8 +290,12 @@ def _create_or_derive_profile(name: str) -> tuple[str, Path]:
             "GetAppContainerFolderPath failed: "
             f"HRESULT 0x{ctypes.c_uint32(hr).value:08X}"
         )
-    folder = Path(folder_ptr.value or "")
-    _kernel32().CoTaskMemFree(folder_ptr)
+
+    try:
+        folder = Path(folder_ptr.value or "")
+    finally:
+        _ole32().CoTaskMemFree(folder_ptr)
+
     if not folder:
         raise RuntimeError("AppContainer profile path is empty")
 
@@ -270,8 +307,7 @@ def _profile_name(addon_id: str) -> str:
         char if (char.isalnum() or char in "-_.") else "_"
         for char in addon_id
     )
-    name = f"{_AC_NAME_PREFIX}{safe}"
-    return name[:_AC_NAME_MAX]
+    return f"{_AC_NAME_PREFIX}{safe}"[:_AC_NAME_MAX]
 
 
 def _stage_request(
@@ -297,9 +333,15 @@ def _stage_request(
     response_path = runtime_dir / "response.json"
     staged_request = dict(request)
     staged_request["package_root"] = str(staged_addon)
-    staged_request["entrypoint"] = str(request["entrypoint"]).replace("\", "/")
+    staged_request["entrypoint"] = (
+        str(request["entrypoint"]).replace("\\", "/")
+    )
     request_path.write_text(
-        json.dumps(staged_request, ensure_ascii=False, separators=(",", ":")),
+        json.dumps(
+            staged_request,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ),
         encoding="utf-8",
     )
     return request_path, response_path
@@ -307,15 +349,23 @@ def _stage_request(
 
 def _safe_environment(profile_dir: Path) -> dict[str, str]:
     system_root = os.getenv("SystemRoot", r"C:\Windows")
-    path = os.getenv("PATH", "")
     return {
         "SystemRoot": system_root,
         "WINDIR": os.getenv("WINDIR", system_root),
-        "PATH": path,
+        "PATH": os.getenv("PATH", ""),
         "TEMP": str(profile_dir / "Temp"),
         "TMP": str(profile_dir / "Temp"),
         "PYTHONDONTWRITEBYTECODE": "1",
     }
+
+
+def _environment_block(environment: Mapping[str, str]) -> ctypes.Array:
+    values = [
+        f"{key}={value}"
+        for key, value in sorted(environment.items())
+        if key and " " not in key and " " not in value
+    ]
+    return ctypes.create_unicode_buffer(" ".join(values) + "  ")
 
 
 def _python_command(
@@ -323,39 +373,46 @@ def _python_command(
     worker_path: Path,
     request_path: Path,
 ) -> str:
-    if executable.suffix.lower() == ".exe":
-        return subprocess.list2cmdline(
-            [
-                str(executable),
-                "-I",
-                "-B",
-                str(worker_path),
-                str(request_path),
-            ]
+    if executable.suffix.lower() != ".exe":
+        raise ValueError(
+            f"runtime executable must be an .exe file: {executable}"
         )
-    raise ValueError(f"runtime executable must be an .exe file: {executable}")
+    return subprocess.list2cmdline(
+        [
+            str(executable),
+            "-I",
+            "-B",
+            str(worker_path),
+            str(request_path),
+        ]
+    )
 
 
 def _grant_read_execute(path: Path, sid_text: str) -> None:
     if not path.exists():
         raise FileNotFoundError(path)
-    target = str(path)
+
     if path.is_dir():
-        target = str(path)
         permissions = "(OI)(CI)RX"
-        recursive = "/T"
-    else:
-        permissions = "RX"
-        recursive = ""
-    completed = subprocess.run(
-        [
+        args = [
             "icacls",
-            target,
+            str(path),
             "/grant",
             f"*{sid_text}:{permissions}",
-            recursive,
+            "/T",
             "/C",
-        ],
+        ]
+    else:
+        args = [
+            "icacls",
+            str(path),
+            "/grant",
+            f"*{sid_text}:RX",
+            "/C",
+        ]
+
+    completed = subprocess.run(
+        args,
         capture_output=True,
         text=True,
         check=False,
@@ -371,15 +428,17 @@ def _grant_read_execute(path: Path, sid_text: str) -> None:
 def _remove_access(path: Path, sid_text: str) -> None:
     if not path.exists():
         return
+
+    args = [
+        "icacls",
+        str(path),
+        "/remove",
+        f"*{sid_text}",
+        "/T",
+        "/C",
+    ]
     completed = subprocess.run(
-        [
-            "icacls",
-            str(path),
-            "/remove",
-            f"*{sid_text}",
-            "/T",
-            "/C",
-        ],
+        args,
         capture_output=True,
         text=True,
         check=False,
@@ -398,6 +457,7 @@ def _launch_process(
     cwd: Path,
     response_path: Path,
     sid_text: str,
+    environment: Mapping[str, str],
     timeout_seconds: float,
 ) -> int:
     _configure_win32()
@@ -406,20 +466,31 @@ def _launch_process(
     response_file = open(response_path, "w", encoding="utf-8")
     response_fd = response_file.fileno()
     os.set_handle_inheritable(response_fd, True)
-    response_handle = ctypes.c_void_p(msvcrt.get_osfhandle(response_fd))
+    response_handle = ctypes.c_void_p(
+        msvcrt.get_osfhandle(response_fd)
+    )
 
     attribute_size = ctypes.c_size_t(0)
     kernel32.InitializeProcThreadAttributeList(
-        None, 1, 0, ctypes.byref(attribute_size)
+        None,
+        2,
+        0,
+        ctypes.byref(attribute_size),
     )
     if attribute_size.value == 0:
         response_file.close()
-        raise _win_error("InitializeProcThreadAttributeList sizing failed")
+        raise _win_error(
+            "InitializeProcThreadAttributeList sizing failed"
+        )
 
     attribute_buffer = ctypes.create_string_buffer(attribute_size.value)
-    if not kernel32.InitializeProcThreadAttributeList(
+    attribute_ptr = ctypes.cast(
         ctypes.byref(attribute_buffer),
-        1,
+        ctypes.c_void_p,
+    )
+    if not kernel32.InitializeProcThreadAttributeList(
+        attribute_ptr,
+        2,
         0,
         ctypes.byref(attribute_size),
     ):
@@ -433,10 +504,12 @@ def _launch_process(
         CapabilityCount=0,
         Reserved=0,
     )
+    handle_list = (ctypes.c_void_p * 1)(response_handle.value)
+    environment_block = _environment_block(environment)
 
     try:
         if not kernel32.UpdateProcThreadAttribute(
-            ctypes.byref(attribute_buffer),
+            attribute_ptr,
             0,
             _PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES,
             ctypes.byref(security_capabilities),
@@ -444,15 +517,23 @@ def _launch_process(
             None,
             None,
         ):
-            raise _win_error("UpdateProcThreadAttribute failed")
+            raise _win_error("UpdateProcThreadAttribute(security) failed")
+
+        if not kernel32.UpdateProcThreadAttribute(
+            attribute_ptr,
+            0,
+            _PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+            ctypes.cast(handle_list, ctypes.c_void_p),
+            ctypes.sizeof(handle_list),
+            None,
+            None,
+        ):
+            raise _win_error("UpdateProcThreadAttribute(handles) failed")
 
         startup = _STARTUPINFOEX()
         startup.StartupInfo.cb = ctypes.sizeof(_STARTUPINFOEX)
-        startup.lpAttributeList = ctypes.cast(
-            ctypes.byref(attribute_buffer),
-            ctypes.c_void_p,
-        )
-        startup.StartupInfo.dwFlags = 0x00000100
+        startup.lpAttributeList = attribute_ptr
+        startup.StartupInfo.dwFlags = _STARTF_USESTDHANDLES
         startup.StartupInfo.hStdOutput = response_handle
         startup.StartupInfo.hStdError = response_handle
 
@@ -465,7 +546,7 @@ def _launch_process(
             None,
             True,
             _EXTENDED_STARTUPINFO_PRESENT | _CREATE_NO_WINDOW,
-            None,
+            ctypes.cast(environment_block, ctypes.c_void_p),
             str(cwd),
             ctypes.byref(startup),
             ctypes.byref(process_info),
@@ -474,14 +555,16 @@ def _launch_process(
             raise _win_error("CreateProcessW(AppContainer) failed")
 
         try:
-            timeout_ms = int(timeout_seconds * 1000)
             wait_result = kernel32.WaitForSingleObject(
                 process_info.hProcess,
-                timeout_ms,
+                int(timeout_seconds * 1000),
             )
             if wait_result == _WAIT_TIMEOUT:
                 kernel32.TerminateProcess(process_info.hProcess, 124)
-                kernel32.WaitForSingleObject(process_info.hProcess, 5000)
+                kernel32.WaitForSingleObject(
+                    process_info.hProcess,
+                    5000,
+                )
                 raise TimeoutError(
                     f"add-on runtime exceeded {timeout_seconds:.1f} seconds"
                 )
@@ -499,9 +582,7 @@ def _launch_process(
             kernel32.CloseHandle(process_info.hThread)
             kernel32.CloseHandle(process_info.hProcess)
     finally:
-        kernel32.DeleteProcThreadAttributeList(
-            ctypes.byref(attribute_buffer)
-        )
+        kernel32.DeleteProcThreadAttributeList(attribute_ptr)
         response_file.close()
         _free_sid(sid_buffer)
 
@@ -579,12 +660,10 @@ def execute_addon(
 
     runtime_root = executable.parent
     needs_runtime_acl = executable.name.lower().startswith("python")
-    if needs_runtime_acl:
-        _grant_read_execute(runtime_root, sid_text)
-    else:
-        _grant_read_execute(executable, sid_text)
+    acl_target = runtime_root if needs_runtime_acl else executable
 
     try:
+        _grant_read_execute(acl_target, sid_text)
         command_line = _python_command(
             executable,
             profile_dir / "PrivacyAuditorRuntime" / "addon_runtime_worker.py",
@@ -596,12 +675,14 @@ def execute_addon(
             profile_dir / "PrivacyAuditorRuntime",
             response_path,
             sid_text,
+            _safe_environment(profile_dir),
             _runtime_timeout(),
         )
         if not response_path.is_file():
             raise RuntimeError(
                 f"sandbox runtime produced no response (exit={exit_code})"
             )
+
         response = _load_response(response_path)
         if not response.get("ok"):
             error = response.get("error")
@@ -610,13 +691,12 @@ def execute_addon(
                     f"add-on sandbox error: {error.get('type')}: "
                     f"{error.get('message')}"
                 )
-            raise RuntimeError("add-on sandbox returned an unknown error")
+            raise RuntimeError(
+                "add-on sandbox returned an unknown error"
+            )
         return response.get("result")
     finally:
-        if needs_runtime_acl:
-            _remove_access(runtime_root, sid_text)
-        else:
-            _remove_access(executable, sid_text)
+        _remove_access(acl_target, sid_text)
         shutil.rmtree(
             profile_dir / "PrivacyAuditorRuntime",
             ignore_errors=True,
