@@ -15,11 +15,18 @@ from services.ai_agent import (
 )
 import services.ai_agent as ai_agent
 from services.breach_scanner import BREACH_CACHE_DIR, scan_data_breaches
-from services.enrichment.discovery_cache import (
-    DISCOVERY_CACHE_DIR,
-    discovery_cache_enabled,
-    load_discovery_cache,
-    save_discovery_cache,
+from services.enrichment_cache import ENRICHMENT_CACHE_DIR
+from services.imap_cache import (
+    IMAP_CACHE_DIR,
+    imap_cache_enabled,
+    load_imap_cache,
+    save_imap_cache,
+)
+from services.osint_cache import (
+    OSINT_CACHE_DIR,
+    load_osint_cache,
+    osint_cache_enabled,
+    save_osint_cache,
 )
 from services.evidence_enrichment import enrich_evidence
 from services.enrichment.evidence_verification import verify_evidence_records
@@ -51,7 +58,9 @@ def clear_all_caches() -> int:
     return clear_cache_files(
         AI_CACHE_DIR,
         BREACH_CACHE_DIR,
-        DISCOVERY_CACHE_DIR,
+        IMAP_CACHE_DIR,
+        OSINT_CACHE_DIR,
+        ENRICHMENT_CACHE_DIR,
     )
 
 
@@ -230,16 +239,16 @@ def run_scan(
         if not gmail_app_password:
             emit(_event("warning", "warn_no_gmail_pass", stage="imap"))
         else:
-            cached = load_discovery_cache("imap", email, tenant_id=tenant_id) if cache_enabled else None
+            cached = load_imap_cache(email, tenant_id=tenant_id) if (imap_cache_on and not force_refresh) else None
             if cached is not None:
-                logger.info("[Discovery Cache] IMAP HIT")
+                logger.info("[IMAP Cache] HIT")
                 found = cached
             else:
-                logger.info("[Discovery Cache] IMAP %s", "MISS" if cache_enabled else "OFF -> fresh scan")
+                logger.info("[IMAP Cache] %s", "MISS" if imap_cache_on else "OFF -> fresh scan")
                 emit(_event("info", "info_imap_scanning", stage="imap"))
                 try:
                     found = scan_gmail_inbox(email, gmail_app_password, lang=lang)
-                    save_discovery_cache("imap", found, email, tenant_id=tenant_id)
+                    save_imap_cache(email, found, tenant_id=tenant_id)
                 except Exception as exc:
                     emit(_event("error", text=f"Error IMAP: {exc}", stage="imap"))
                     found = None
@@ -253,16 +262,16 @@ def run_scan(
 
     # Step 2: OSINT via Holehe
     if enable_osint:
-        cached = load_discovery_cache("osint", email, tenant_id=tenant_id) if cache_enabled else None
+        cached = load_osint_cache(email, tenant_id=tenant_id) if (osint_cache_on and not force_refresh) else None
         if cached is not None:
-            logger.info("[Discovery Cache] OSINT HIT")
+            logger.info("[OSINT Cache] HIT")
             found = cached
         else:
-            logger.info("[Discovery Cache] OSINT %s", "MISS" if cache_enabled else "OFF -> fresh scan")
+            logger.info("[OSINT Cache] %s", "MISS" if osint_cache_on else "OFF -> fresh scan")
             emit(_event("info", "info_osint_scanning", stage="osint"))
             try:
                 found = scan_osint_footprint(email, lang=lang)
-                save_discovery_cache("osint", found, email, tenant_id=tenant_id)
+                save_osint_cache(email, found, tenant_id=tenant_id)
             except Exception as exc:
                 emit(_event("error", text=f"Error OSINT: {exc}", stage="osint"))
                 found = None
@@ -282,7 +291,7 @@ def run_scan(
                 scan_data_breaches(
                     email=email,
                     phone=phone,
-                    force_refresh=(force_refresh or not cache_enabled),
+                    force_refresh=force_refresh,
                     lang=lang,
                     tenant_id=tenant_id,
                 )
@@ -337,7 +346,7 @@ def run_scan(
         )
 
         try:
-            enriched_evidence = asyncio.run(enrich_evidence(local_evidence))
+            enriched_evidence = asyncio.run(\n                enrich_evidence(\n                    local_evidence,\n                    force_refresh=force_refresh,\n                    tenant_id=tenant_id,\n                )\n            )
         except Exception as exc:
             # Preserve normalized evidence if optional enrichment is unavailable.
             logger.warning("[Pipeline] Evidence enrichment failed: %s", exc)
