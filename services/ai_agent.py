@@ -286,7 +286,8 @@ def _log_ai_forensic_payload(
     *,
     system_prompt: str,
     user_prompt: str,
-    services_chars: int,
+    scan_data_chars: int,
+    breach_evidence_chars: int,
     evidence_chars: int,
     status_chars: int,
     addon_chars: int,
@@ -297,7 +298,8 @@ def _log_ai_forensic_payload(
         return
 
     component_chars = {
-        "services": int(services_chars),
+        "scan_data": int(scan_data_chars),
+        "breach_evidence": int(breach_evidence_chars),
         "evidence": int(evidence_chars),
         "scan_status": int(status_chars),
         "addons": int(addon_chars),
@@ -323,13 +325,16 @@ def _log_ai_forensic_payload(
     )
     logger.info(
         "[AI Forensic] components "
-        "services_chars=%d services_estimated_tokens=%d "
+        "scan_data_chars=%d scan_data_estimated_tokens=%d "
+        "breach_evidence_chars=%d breach_evidence_estimated_tokens=%d "
         "evidence_chars=%d evidence_estimated_tokens=%d "
         "scan_status_chars=%d scan_status_estimated_tokens=%d "
         "addons_chars=%d addons_estimated_tokens=%d "
         "prompt_overhead_chars=%d prompt_overhead_estimated_tokens=%d",
-        component_chars["services"],
-        _estimated_tokens(component_chars["services"]),
+        component_chars["scan_data"],
+        _estimated_tokens(component_chars["scan_data"]),
+        component_chars["breach_evidence"],
+        _estimated_tokens(component_chars["breach_evidence"]),
         component_chars["evidence"],
         _estimated_tokens(component_chars["evidence"]),
         component_chars["scan_status"],
@@ -2607,11 +2612,20 @@ async def analyze_smart_cache(
         _log_ai_forensic_payload(
             system_prompt=sys_prompt,
             user_prompt=user_prompt,
-            services_chars=len(json.dumps(
+            scan_data_chars=len(json.dumps(
                 safe_services_forensic,
                 ensure_ascii=False,
                 separators=(",", ":"),
             )),
+            breach_evidence_chars=sum(
+                len(json.dumps(
+                    item.get("breach_evidence", ""),
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ))
+                for item in safe_services_forensic
+                if isinstance(item, Mapping) and item.get("breach_evidence")
+            ),
             evidence_chars=len(json.dumps(
                 evidence,
                 ensure_ascii=False,
