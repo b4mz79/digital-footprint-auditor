@@ -121,7 +121,25 @@ async def enrich_evidence(
     cache_material = {
         "schema": 1,
         "domains": domains,
-        "base_records": [record.to_dict() for record in base],
+        "base_records": [
+            {
+                "evidence_id": record.evidence_id,
+                "source": record.source,
+                "source_type": record.source_type,
+                "relation": record.relation.value,
+                "directness": record.directness.value,
+                "confidence": record.confidence,
+                "published_at": record.published_at,
+                "domain": record.domain,
+                "url": record.url,
+                "title": record.title,
+                "summary": record.summary,
+                "assertion_scope": record.assertion_scope,
+                "provenance": record.provenance,
+                "metadata": record.metadata,
+            }
+            for record in base
+        ],
         "provider": "firecrawl_security_publication",
         "max_results": max_results,
         "timeout_seconds": timeout_seconds,
