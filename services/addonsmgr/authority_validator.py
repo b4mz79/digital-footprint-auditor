@@ -6,7 +6,7 @@ from pathlib import Path
 
 # The community contract starts with a deliberately small import surface.
 # Expand this set only when a reviewed use case requires another dependency.
-_ALLOWED_IMPORT_ROOTS = frozenset({"__future__", "typing", "streamlit"})
+_ALLOWED_IMPORT_MODULES = frozenset({"__future__", "typing", "streamlit"})
 _ALLOWED_RESOURCE_SUFFIXES = frozenset({
     ".py",
     ".json",
@@ -33,6 +33,12 @@ _FORBIDDEN_CALL_NAMES = frozenset({
     "setattr",
     "vars",
 })
+_FORBIDDEN_NAMES = frozenset({"__builtins__", "__loader__", "__spec__"})
+_FORBIDDEN_ATTRIBUTES = frozenset({
+    "__bases__", "__builtins__", "__class__", "__closure__", "__code__",
+    "__dict__", "__globals__", "__getattribute__", "__loader__", "__mro__",
+    "__reduce__", "__reduce_ex__", "__spec__", "__subclasses__",
+})
 _FORBIDDEN_CALL_ATTRIBUTES = frozenset({
     "chmod",
     "chown",
@@ -48,7 +54,6 @@ _FORBIDDEN_CALL_ATTRIBUTES = frozenset({
     "read_text",
     "remove",
     "rename",
-    "replace",
     "rmdir",
     "rmtree",
     "system",
@@ -115,6 +120,12 @@ def _validate_python_tree(tree: ast.AST, relative_path: str) -> None:
             module = node.module or ""
             _validate_import(module, relative_path, node.lineno)
 
+        elif isinstance(node, ast.Name) and node.id in _FORBIDDEN_NAMES:
+            _reject(relative_path, node.lineno, f"forbidden runtime introspection name: {node.id}")
+
+        elif isinstance(node, ast.Attribute) and node.attr in _FORBIDDEN_ATTRIBUTES:
+            _reject(relative_path, node.lineno, f"forbidden runtime introspection attribute: {node.attr}")
+
         elif isinstance(node, ast.Call):
             if isinstance(node.func, ast.Name):
                 if node.func.id in _FORBIDDEN_CALL_NAMES:
@@ -132,8 +143,7 @@ def _validate_python_tree(tree: ast.AST, relative_path: str) -> None:
 
 
 def _validate_import(module: str, relative_path: str, line_number: int) -> None:
-    root = module.split(".", 1)[0]
-    if root not in _ALLOWED_IMPORT_ROOTS:
+    if module not in _ALLOWED_IMPORT_MODULES:
         _reject(
             relative_path,
             line_number,
