@@ -33,11 +33,12 @@ class _FakeAddonManager:
         )
 
 
-def test_pipeline_addon_invocation_and_events_are_fully_dynamic(monkeypatch) -> None:
+def test_pipeline_dispatches_owned_evidence_events(monkeypatch) -> None:
     manager = _FakeAddonManager()
     emitted: list[dict[str, Any]] = []
 
     monkeypatch.setattr(pipeline, "get_addon_manager", lambda: manager)
+
     async def _enrich(evidence, **kwargs):
         return evidence
 
@@ -72,18 +73,18 @@ def test_pipeline_addon_invocation_and_events_are_fully_dynamic(monkeypatch) -> 
         "event": "evidence.verified"
     }
 
+    assert state["addons"]["event-addon"] == {
+        "event": "evidence.verified"
+    }
+    assert state["addon_owners"]["event-addon"] == "evidence"
+
     addon_success_events = [
         event
         for event in emitted
-        if event.get("stage") == "demo-addon"
+        if event.get("stage") == "event-addon"
     ]
     assert addon_success_events
     assert all(
-        event.get("stage") != "addon:demo-addon"
+        event.get("stage") != "addon:event-addon"
         for event in emitted
     )
-
-    assert state["addons"]["demo-addon"] == {
-        "demo_result": {"ok": True}
-    }
-    assert state["demo_result"] == {"ok": True}
