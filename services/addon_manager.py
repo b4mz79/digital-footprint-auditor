@@ -530,6 +530,15 @@ class AddonManager:
         if addon is None:
             raise ValueError(f"add-on is not installed: {addon_id}")
 
+        # Deactivation must remain available as a fail-safe control even when
+        # no executable Add-On runtime is available. Lifecycle code is skipped
+        # in that case; the registry state is still forced inactive.
+        if not active and not _in_process_runtime_enabled():
+            state = self._load_state()
+            state[addon_id] = False
+            self._save_state(state)
+            return self.get(addon_id) or addon
+
         self._run_lifecycle_hook(
             addon_id,
             "before_activate" if active else "before_deactivate",
