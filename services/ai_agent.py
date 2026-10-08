@@ -629,8 +629,8 @@ def _sanitize_evidence_records(evidence_records: list | None) -> list[dict[str, 
     Evidence records can be numerous and contain long publication summaries.
     The AI contract needs representative evidence and provenance, not the
     entire raw enrichment payload. Bound the serialized evidence block so the
-    overall prompt remains usable while preserving contextual security records
-    ahead of generic service-discovery records.
+    overall prompt remains usable while preserving newly produced enrichment
+    evidence ahead of less-specific evidence.
     """
     if evidence_records is None:
         return []
