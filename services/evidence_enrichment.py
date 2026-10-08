@@ -345,13 +345,7 @@ async def enrich_evidence(
                     break
     
         finally:
-            try:
-                await provider.finalize_filter_dump()
-            except Exception as exc:
-                logger.warning(
-                    "[Evidence Enrichment] Contextual filter dump finalization failed: %s",
-                    type(exc).__name__,
-                )
+            pass
     merged: dict[str, EvidenceRecord] = {
         record.evidence_id: record for record in base
     }
