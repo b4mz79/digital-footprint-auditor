@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import ctypes
 import json
-import msvcrt
 import os
 import shutil
 import subprocess
@@ -462,6 +461,8 @@ def _launch_process(
 ) -> int:
     _configure_win32()
     kernel32 = _kernel32()
+
+    import msvcrt
 
     response_file = open(response_path, "w", encoding="utf-8")
     response_fd = response_file.fileno()
