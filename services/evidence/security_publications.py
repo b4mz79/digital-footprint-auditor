@@ -24,7 +24,7 @@ import time
 
 import httpx
 
-from services.evidence.models import (
+from services.enrichment.evidence.models import (
     EvidenceDirectness,
     EvidenceRecord,
     EvidenceRelation,
