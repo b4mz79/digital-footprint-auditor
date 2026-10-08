@@ -11,7 +11,7 @@ from services.addonsmgr.filesystem_policy import (
 )
 
 
-def test_package_permissions_make_files_and_directories_read_only(
+def test_package_permissions_protect_files_and_limit_directory_writes(
     tmp_path: Path,
 ) -> None:
     root = tmp_path / "addon"
