@@ -14,6 +14,11 @@ from pathlib import Path
 from typing import Any, BinaryIO, Mapping
 from uuid import uuid4
 
+from services.addonsmgr.authority_validator import validate_package_authority
+from services.addonsmgr.filesystem_policy import (
+    apply_package_permissions,
+    remove_package_tree,
+)
 from services.addonsmgr.security_validator import validate_package_security
 from services.addonsmgr.structural_validator import validate_package_structure
 from utils.logging_setup import get_logger
@@ -159,6 +164,7 @@ class AddonManager:
             package_root = self._locate_package_root(extract_root)
             manifest = self._read_manifest(package_root / "manifest.json")
             validate_package_structure(package_root, manifest)
+            validate_package_authority(package_root)
             validate_package_security(package_root)
 
             target = self.root / manifest.addon_id
@@ -172,10 +178,20 @@ class AddonManager:
                 shutil.copytree(package_root, staging)
                 try:
                     shutil.copytree(staging, target)
+                    # ZIP metadata is not trusted. Apply host-owned package
+                    # permissions only after the final copy is complete.
+                    apply_package_permissions(target)
                 except Exception:
-                    # Never leave a partially copied target behind when the
-                    # final install copy fails.
-                    shutil.rmtree(target, ignore_errors=True)
+                    # Never leave a partially copied or partially permissioned
+                    # target behind when installation fails.
+                    if target.exists():
+                        try:
+                            remove_package_tree(target)
+                        except OSError:
+                            logger.exception(
+                                "[Add-On] failed to clean rejected install: %s",
+                                manifest.addon_id,
+                            )
                     raise
             finally:
                 if staging.exists():
@@ -188,7 +204,13 @@ class AddonManager:
         except Exception:
             # The package must not remain installed if registry persistence
             # fails before post-install initialization begins.
-            shutil.rmtree(target, ignore_errors=True)
+            try:
+                remove_package_tree(target)
+            except OSError:
+                logger.exception(
+                    "[Add-On] failed to clean install after state persistence error: %s",
+                    manifest.addon_id,
+                )
             raise
 
         try:
@@ -201,7 +223,13 @@ class AddonManager:
             # Installation is transactional from the host perspective: if
             # post-install initialization fails, remove the installed package
             # and its state. There is intentionally no after_uninstall hook.
-            shutil.rmtree(target, ignore_errors=True)
+            try:
+                remove_package_tree(target)
+            except OSError:
+                logger.exception(
+                    "[Add-On] failed to clean install after lifecycle error: %s",
+                    manifest.addon_id,
+                )
             state = self._load_state()
             state.pop(manifest.addon_id, None)
             self._save_state(state)
@@ -227,7 +255,7 @@ class AddonManager:
             {"event": "before_uninstall"},
         )
 
-        shutil.rmtree(target)
+        remove_package_tree(target)
         state = self._load_state()
         state.pop(addon_id, None)
         self._save_state(state)
