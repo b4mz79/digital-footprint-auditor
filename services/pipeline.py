@@ -15,7 +15,7 @@ from services.ai_agent import (
 )
 import services.ai_agent as ai_agent
 from services.breach_scanner import BREACH_CACHE_DIR, scan_data_breaches
-from services.enrichment_cache import ENRICHMENT_CACHE_DIR
+from services.enrichment.cache import ENRICHMENT_CACHE_DIR
 from services.imap_cache import (
     IMAP_CACHE_DIR,
     imap_cache_enabled,
