@@ -5,7 +5,6 @@ separate pipeline stage and therefore is intentionally not part of this cache.
 """
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
 from typing import Any
