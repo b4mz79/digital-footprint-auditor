@@ -282,6 +282,156 @@ def _estimated_tokens(char_count: int) -> int:
     return max(0, (int(char_count) + 3) // 4)
 
 
+def _log_ai_forensic_payload(
+    *,
+    system_prompt: str,
+    user_prompt: str,
+    services_chars: int,
+    evidence_chars: int,
+    status_chars: int,
+    addon_chars: int,
+    evidence_records: list[dict[str, Any]],
+) -> None:
+    """Emit safe payload decomposition telemetry without changing the AI payload."""
+    if not AI_FORENSIC_TELEMETRY:
+        return
+
+    component_chars = {
+        "services": int(services_chars),
+        "evidence": int(evidence_chars),
+        "scan_status": int(status_chars),
+        "addons": int(addon_chars),
+    }
+    system_chars = len(system_prompt)
+    user_chars = len(user_prompt)
+    combined_chars = system_chars + user_chars
+    component_sum = sum(component_chars.values())
+    prompt_overhead_chars = max(0, user_chars - component_sum)
+
+    logger.info(
+        "[AI Forensic] payload "
+        "system_chars=%d system_estimated_tokens=%d "
+        "user_chars=%d user_estimated_tokens=%d "
+        "combined_chars=%d combined_estimated_tokens=%d "
+        "provider_budget_note=estimated_4chars_per_token",
+        system_chars,
+        _estimated_tokens(system_chars),
+        user_chars,
+        _estimated_tokens(user_chars),
+        combined_chars,
+        _estimated_tokens(combined_chars),
+    )
+    logger.info(
+        "[AI Forensic] components "
+        "services_chars=%d services_estimated_tokens=%d "
+        "evidence_chars=%d evidence_estimated_tokens=%d "
+        "scan_status_chars=%d scan_status_estimated_tokens=%d "
+        "addons_chars=%d addons_estimated_tokens=%d "
+        "prompt_overhead_chars=%d prompt_overhead_estimated_tokens=%d",
+        component_chars["services"],
+        _estimated_tokens(component_chars["services"]),
+        component_chars["evidence"],
+        _estimated_tokens(component_chars["evidence"]),
+        component_chars["scan_status"],
+        _estimated_tokens(component_chars["scan_status"]),
+        component_chars["addons"],
+        _estimated_tokens(component_chars["addons"]),
+        prompt_overhead_chars,
+        _estimated_tokens(prompt_overhead_chars),
+    )
+
+    evidence_counts = {
+        "total": 0,
+        "direct": 0,
+        "contextual": 0,
+        "security_publication": 0,
+        "verified": 0,
+        "unverified_or_unknown": 0,
+        "service_discovery": 0,
+    }
+    evidence_sizes = {
+        "direct": 0,
+        "contextual": 0,
+        "security_publication": 0,
+        "verified": 0,
+        "unverified_or_unknown": 0,
+        "service_discovery": 0,
+    }
+
+    for item in evidence_records:
+        if not isinstance(item, Mapping):
+            continue
+
+        encoded_chars = len(json.dumps(item, ensure_ascii=False, separators=(",", ":")))
+        evidence_counts["total"] += 1
+
+        directness = str(item.get("directness", "") or "").strip().lower()
+        relation = str(item.get("relation", "") or "").strip().lower()
+        provenance = item.get("provenance")
+        finding_type = ""
+        if isinstance(provenance, Mapping):
+            finding_type = str(provenance.get("finding_type", "") or "").strip().lower()
+
+        is_security_publication = (
+            relation == "security_publication"
+            or finding_type == "security_context"
+        )
+        is_contextual = is_security_publication or directness in {
+            "contextual",
+            "indirect",
+        }
+        is_direct = directness == "direct"
+
+        if is_security_publication:
+            evidence_counts["security_publication"] += 1
+            evidence_sizes["security_publication"] += encoded_chars
+
+        if is_contextual:
+            evidence_counts["contextual"] += 1
+            evidence_sizes["contextual"] += encoded_chars
+
+        if is_direct:
+            evidence_counts["direct"] += 1
+            evidence_sizes["direct"] += encoded_chars
+
+        verification_state = str(
+            item.get("verification_state", "") or ""
+        ).strip().lower()
+        if verification_state == "reachable":
+            evidence_counts["verified"] += 1
+            evidence_sizes["verified"] += encoded_chars
+        else:
+            evidence_counts["unverified_or_unknown"] += 1
+            evidence_sizes["unverified_or_unknown"] += encoded_chars
+
+        if finding_type == "service_discovery":
+            evidence_counts["service_discovery"] += 1
+            evidence_sizes["service_discovery"] += encoded_chars
+
+    logger.info(
+        "[AI Forensic] evidence "
+        "count=%d direct_count=%d direct_chars=%d "
+        "contextual_count=%d contextual_chars=%d "
+        "security_publication_count=%d security_publication_chars=%d "
+        "verified_count=%d verified_chars=%d "
+        "unverified_or_unknown_count=%d unverified_or_unknown_chars=%d "
+        "service_discovery_count=%d service_discovery_chars=%d",
+        evidence_counts["total"],
+        evidence_counts["direct"],
+        evidence_sizes["direct"],
+        evidence_counts["contextual"],
+        evidence_sizes["contextual"],
+        evidence_counts["security_publication"],
+        evidence_sizes["security_publication"],
+        evidence_counts["verified"],
+        evidence_sizes["verified"],
+        evidence_counts["unverified_or_unknown"],
+        evidence_sizes["unverified_or_unknown"],
+        evidence_counts["service_discovery"],
+        evidence_sizes["service_discovery"],
+    )
+
+
 def _redact_url_for_llm(value: object) -> str:
     raw = _safe_component(str(value or ""), 4096)
     if not raw:
@@ -2441,6 +2591,44 @@ async def analyze_smart_cache(
         addon_results=addons,
         scan_status=scan_status,
     )
+
+    if AI_FORENSIC_TELEMETRY:
+        safe_services_forensic = _sanitize_service_records(
+            _attach_breach_evidence(services, findings)
+        )
+        safe_status_forensic = {
+            "breach_scan_complete": bool(scan_status.get("breach_scan_complete", False)),
+            "failed_engines": [
+                _redact_text_for_llm(name, 128)
+                for name in scan_status.get("failed_engines", [])
+                if name
+            ][:20],
+        }
+        _log_ai_forensic_payload(
+            system_prompt=sys_prompt,
+            user_prompt=user_prompt,
+            services_chars=len(json.dumps(
+                safe_services_forensic,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )),
+            evidence_chars=len(json.dumps(
+                evidence,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )),
+            status_chars=len(json.dumps(
+                safe_status_forensic,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )),
+            addon_chars=len(json.dumps(
+                addons,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )),
+            evidence_records=evidence,
+        )
 
     # -------------------------------------------------------------------------
     # Provider failover chain
