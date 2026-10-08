@@ -705,3 +705,41 @@ async def test_enrich_evidence_applies_contextual_output_budget(monkeypatch) -> 
     assert len(contextual) == 3
     assert len(contextual) <= 4
     assert len({record.domain for record in contextual}) == 3
+
+
+@pytest.mark.asyncio
+async def test_enrichment_cache_hit_skips_firecrawl(monkeypatch) -> None:
+    from services import evidence_enrichment as module
+
+    base = EvidenceRecord(
+        evidence_id="base-cache",
+        source="OSINT",
+        source_type="osint",
+        relation=EvidenceRelation.TARGET_RESOURCE,
+        directness=EvidenceDirectness.DIRECT,
+        confidence=0.8,
+        observed_at="2026-10-05T00:00:00+00:00",
+        published_at=None,
+        domain="example.com",
+        url="",
+        title="Target-associated service: Example",
+        summary="Observed service association.",
+        assertion_scope="service_association_only",
+    )
+    cached = base.to_dict()
+
+    monkeypatch.setenv("FIRECRAWL_API_KEY", "test-key")
+    monkeypatch.setenv("EVIDENCE_ENRICHMENT_CACHE_ENABLED", "true")
+    monkeypatch.setattr(module, "load_enrichment_cache", lambda *args, **kwargs: [cached])
+    monkeypatch.setattr(
+        module,
+        "FirecrawlSecurityPublicationProvider",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("Firecrawl must be skipped on enrichment cache hit")
+        ),
+    )
+
+    result = await module.enrich_evidence([base], tenant_id="tenant-a")
+
+    assert len(result) == 1
+    assert result[0].evidence_id == "base-cache"
