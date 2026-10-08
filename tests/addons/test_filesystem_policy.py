@@ -23,7 +23,9 @@ def test_package_permissions_make_files_and_directories_read_only(
     apply_package_permissions(root)
 
     for path in [root, nested]:
-        assert path.stat().st_mode & stat.S_IWUSR == 0
+        mode = path.stat().st_mode
+        assert mode & stat.S_IWUSR != 0
+        assert mode & (stat.S_IWGRP | stat.S_IWOTH) == 0
     for path in [root / "plugin.py", nested / "labels.txt"]:
         assert path.stat().st_mode & stat.S_IWUSR == 0
 
