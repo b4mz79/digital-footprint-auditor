@@ -20,6 +20,7 @@ def _zip_package(
     events: list[dict] | None = None,
     return_type: str = "result",
     return_required: bool = True,
+    input_fields: list[str] | None = None,
     ui_body: str | None = None,
     lifecycle: dict[str, str | None] | None = None,
 ) -> bytes:
@@ -33,7 +34,10 @@ def _zip_package(
         "invocation": {
             "function": "run",
             "mode": mode,
-            "input": {"required": True},
+            "input": {
+                "required": True,
+                "fields": input_fields if input_fields is not None else ["value"],
+            },
             "return": {
                 "type": return_type,
                 "required": return_required,
@@ -66,7 +70,10 @@ def test_install_discover_activate_invoke_uninstall(tmp_path: Path) -> None:
     assert installed["type"] == "backend"
     assert installed["invocation"]["function"] == "run"
     assert installed["invocation"]["mode"] == "on_demand"
-    assert installed["invocation"]["input"]["required"] is True
+    assert installed["invocation"]["input"] == {
+        "required": True,
+        "fields": ["value"],
+    }
     assert installed["invocation"]["return"] == {
         "type": "result",
         "required": True,
@@ -292,9 +299,10 @@ def test_dispatch_event_invokes_matching_active_addon(tmp_path: Path) -> None:
         mode="on_event",
         events=[{"name": "evidence.enriched"}],
         return_required=False,
+        input_fields=["value"],
         plugin_body=(
             "def run(context):\n"
-            "    return {'event': context['event'], 'value': context['value']}\n"
+            "    return {'event': context['event'], 'value': context['data']['value'], 'keys': sorted(context['data'])}\n"
         ),
     )
     manager.install_zip(payload)
@@ -302,13 +310,63 @@ def test_dispatch_event_invokes_matching_active_addon(tmp_path: Path) -> None:
 
     results = manager.dispatch_event(
         "evidence.enriched",
-        {"event": "evidence.enriched", "value": 42},
+        {
+            "data": {
+                "value": 42,
+                "secret": "must-not-reach-addon",
+            }
+        },
     )
 
     assert len(results) == 1
     addon, result = results[0]
     assert addon["id"] == "event-addon"
-    assert result == {"event": "evidence.enriched", "value": 42}
+    assert result == {
+        "event": "evidence.enriched",
+        "value": 42,
+        "keys": ["value"],
+    }
+
+
+
+def test_dispatch_event_filters_undeclared_input_fields(tmp_path: Path) -> None:
+    manager = AddonManager(tmp_path / "addons")
+    payload = _zip_package(
+        addon_id="filtered-addon",
+        mode="on_event",
+        events=[{"name": "evidence.verified"}],
+        input_fields=["evidence"],
+        plugin_body=(
+            "def run(context):\n"
+            "    return {\n"
+            "        'data_keys': sorted(context.get('data', {})),\n"
+            "        'has_state': 'state' in context,\n"
+            "        'event': context.get('event'),\n"
+            "    }\n"
+        ),
+    )
+    manager.install_zip(payload)
+    manager.activate("filtered-addon")
+
+    results = manager.dispatch_event(
+        "evidence.verified",
+        {
+            "data": {
+                "evidence": [{"evidence_id": "e1"}],
+                "services": ["must-not-reach-addon"],
+                "breach": {"findings": ["must-not-reach-addon"]},
+                "secret": "must-not-reach-addon",
+            },
+            "state": {"email": "must-not-reach-addon"},
+        },
+    )
+
+    assert len(results) == 1
+    assert results[0][1] == {
+        "data_keys": ["evidence"],
+        "has_state": False,
+        "event": "evidence.verified",
+    }
 
 
 def test_dispatch_event_isolates_one_broken_addon_from_others(tmp_path: Path) -> None:
