@@ -84,12 +84,12 @@ async def enrich_evidence(
         "FIRECRAWL_MAX_CONTEXTUAL_RECORDS",
         DEFAULT_MAX_CONTEXTUAL_RECORDS,
         200,
-    ) or DEFAULT_MAX_CONTEXTUAL_RECORDS
+    )
     max_contextual_per_domain = env_non_negative_int(
         "FIRECRAWL_MAX_CONTEXTUAL_RECORDS_PER_DOMAIN",
         DEFAULT_MAX_CONTEXTUAL_RECORDS_PER_DOMAIN,
         10,
-    ) or DEFAULT_MAX_CONTEXTUAL_RECORDS_PER_DOMAIN
+    )
     requests_per_minute = env_non_negative_int(
         "FIRECRAWL_REQUESTS_PER_MINUTE",
         10,
@@ -146,7 +146,7 @@ async def enrich_evidence(
             cooldown_seconds=cooldown_seconds,
         )
 
-        async def enrich_domain(domain: str):
+        async def enrich_domain(domain: str) -> list[EvidenceRecord]:
             async with domain_gate:
                 return await provider.search_domain(domain)
 
@@ -156,28 +156,23 @@ async def enrich_evidence(
         # storm (the request gate prevented that), but it did create a large
         # task/log storm. Once a provider-wide rate limit is observed, do not
         # schedule another domain batch.
-        results: list[object] = []
-        try:
-            for start in range(0, len(domains), domain_concurrency):
-                batch = domains[start : start + domain_concurrency]
-                batch_results = await asyncio.gather(
-                    *(enrich_domain(domain) for domain in batch),
-                    return_exceptions=True,
-                )
-                results.extend(batch_results)
+        results: list[list[EvidenceRecord] | Exception] = []
+        for start in range(0, len(domains), domain_concurrency):
+            batch = domains[start : start + domain_concurrency]
+            batch_results = await asyncio.gather(
+                *(enrich_domain(domain) for domain in batch),
+                return_exceptions=True,
+            )
+            results.extend(batch_results)
 
-                if provider.cooldown_active:
-                    logger.warning(
-                        "[Evidence Enrichment] Firecrawl cooldown active; "
-                        "stopping remaining domain batches after %d/%d domains.",
-                        min(start + len(batch), len(domains)),
-                        len(domains),
-                    )
-                    break
-        finally:
-            # Contextual filter dumps are test/diagnostic artifacts only.
-            # Runtime enrichment must not generate or persist them.
-            pass
+            if provider.cooldown_active:
+                logger.warning(
+                    "[Evidence Enrichment] Firecrawl cooldown active; "
+                    "stopping remaining domain batches after %d/%d domains.",
+                    min(start + len(batch), len(domains)),
+                    len(domains),
+                )
+                break
 
     merged: dict[str, EvidenceRecord] = {
         record.evidence_id: record for record in base
