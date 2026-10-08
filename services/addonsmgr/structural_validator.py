@@ -2,7 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from services.addon_manager import AddonManifest
+from typing import Protocol
+
+
+class _ManifestLike(Protocol):
+    entrypoint: str
+    ui_entrypoint: str | None
+
 
 
 _MAX_PACKAGE_FILES = 500
