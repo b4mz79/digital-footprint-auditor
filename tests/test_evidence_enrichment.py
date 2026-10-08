@@ -496,7 +496,7 @@ async def test_firecrawl_provider_applies_configured_request_spacing() -> None:
 
 @pytest.mark.asyncio
 async def test_enrich_evidence_passes_configured_request_rate(monkeypatch) -> None:
-    captured: dict[str, int] = {}
+    captured: dict[str, object] = {}
 
     class FakeProvider:
         def __init__(self, **kwargs):
@@ -504,7 +504,7 @@ async def test_enrich_evidence_passes_configured_request_rate(monkeypatch) -> No
             self.cooldown_active = False
 
         async def finalize_filter_dump(self):
-            return None
+            captured["filter_dump_finalized"] = True
 
         async def search_domain(self, domain):
             return []
@@ -532,6 +532,7 @@ async def test_enrich_evidence_passes_configured_request_rate(monkeypatch) -> No
 
     assert len(result) == 1
     assert captured["requests_per_minute"] == 7
+    assert captured["filter_dump_finalized"] is True
 
 
 @pytest.mark.asyncio
