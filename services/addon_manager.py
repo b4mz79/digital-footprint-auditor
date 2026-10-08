@@ -811,7 +811,7 @@ class AddonManager:
         return result_key
 
     @staticmethod
-    def _validate_id(addon_id: str) -> None
+    def _validate_id(addon_id: str) -> None:
         if not _ADDON_ID_RE.fullmatch(addon_id):
             raise ValueError(
                 "add-on id must contain 2-64 lowercase letters, numbers, '-' or '_'"
