@@ -440,6 +440,7 @@ class AddonManager:
         *,
         module_prefix: str,
     ) -> Any:
+        self._require_execution_runtime()
         package_root = self.root / str(addon["id"])
         entrypoint = self._safe_entrypoint(
             package_root,
