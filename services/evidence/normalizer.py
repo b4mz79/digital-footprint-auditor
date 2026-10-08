@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 import re
 from typing import Any, Iterable
 
-from services.evidence.models import (
+from services.enrichment.evidence.models import (
     EvidenceDirectness,
     EvidenceRecord,
     EvidenceRelation,
