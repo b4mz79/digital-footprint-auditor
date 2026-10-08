@@ -4,8 +4,6 @@ import re
 import time
 import html
 import asyncio
-import hmac
-import hashlib
 import random
 from urllib.parse import quote, urlsplit, urlunsplit
 from pathlib import Path
@@ -23,6 +21,7 @@ try:
 except ImportError:  # pragma: no cover - cache_security living inside the services package
     from services.cache_security import save_encrypted_json, load_encrypted_json
 
+from utils.cache_identity import hmac_identity, tenant_identity
 from utils.envutil import env_bool as _env_bool, env_non_negative_int as _env_non_negative_int
 from utils.logging_setup import get_logger, log_level
 from utils.paths import resolve_data_path
@@ -181,26 +180,16 @@ def mask_sensitive_snippet(subject_text: str) -> str:
         masked,
     )
 
-def _pii_pepper() -> str:
-    secret_pepper = os.getenv("PII_PEPPER_KEY", "").strip()
-    if len(secret_pepper) < 32:
-        raise RuntimeError("PII_PEPPER_KEY harus dikonfigurasi dan minimal 32 karakter.")
-    return secret_pepper
-
-def _hmac_identity(value: str) -> str:
-    return hmac.new(_pii_pepper().encode("utf-8"), value.encode("utf-8"), hashlib.sha256).hexdigest()
-
 def safe_filename_identity(email_addr: str, phone: str = "") -> str:
-    """Create an HMAC-based cache identity without a hard-coded fallback key."""
+    """Create an HMAC-based cache identity without exposing target PII."""
     normalized_email = email_addr.strip().lower()
     normalized_phone = re.sub(r"\D", "", phone.strip())
     return hmac_identity(f"{normalized_email}_{normalized_phone}")
 
+
 def safe_tenant_identity(tenant_id: str) -> str:
-    tenant_id = tenant_id.strip()
-    if not tenant_id or len(tenant_id) > 128 or CONTROL_CHARS_RE.search(tenant_id):
-        raise ValueError("tenant_id tidak valid.")
-    return _hmac_identity(tenant_id)
+    return tenant_identity(tenant_id)
+
 
 DEFAULT_PHONE_REGION = (os.getenv("DEFAULT_PHONE_REGION", "ID").strip().upper() or "ID")[:2]
 MAX_PHONE_VARIANTS = _env_non_negative_int("PHONE_VARIANTS_MAX", 12, maximum=18) or 1
