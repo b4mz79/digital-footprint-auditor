@@ -212,63 +212,73 @@ def render_services(scan_state: dict) -> None:
 
 
 def render_evidence(scan_state: dict) -> None:
-    """Render normalized evidence and contextual enrichment without implying risk."""
+    """Render newly discovered contextual evidence without duplicating findings.
+
+    Scanner findings already have their own user-facing table. Base
+    EvidenceRecords are retained internally for provenance, verification, AI,
+    and future deterministic consumers, but scanner mirrors must not become a
+    second Findings surface. Only enrichment evidence is presented here.
+    """
     evidence = scan_state.get("evidence") or []
-    if not evidence:
+    contextual = [
+        item
+        for item in evidence
+        if item.get("relation") == "security_publication"
+        and item.get("directness") == "contextual"
+    ]
+    if not contextual:
         return
 
-    contextual = [
-        item for item in evidence
-        if item.get("relation") == "security_publication"
-    ]
-    verified = [
-        item for item in evidence
-        if item.get("relation") == "verification"
-    ]
-
     st.divider()
-    st.subheader("🔎 Evidence & Enrichment")
+    st.subheader(t("evidence_supporting_title", lang=lang))
     st.caption(
-        f"{len(evidence)} evidence record(s) • "
-        f"{len(contextual)} contextual security-publication record(s) • "
-        f"{len(verified)} verification record(s)"
+        t(
+            "evidence_supporting_caption",
+            lang=lang,
+            count=len(contextual),
+        )
     )
 
-    with st.expander("Evidence provenance / provenance bukti", expanded=False):
-        for item in evidence:
-            relation = str(item.get("relation", "unknown"))
-            directness = str(item.get("directness", "unknown"))
-            confidence = float(item.get("confidence", 0.0) or 0.0)
+    with st.expander(
+        t("evidence_supporting_expander", lang=lang),
+        expanded=True,
+    ):
+        for item in contextual:
+            title = str(item.get("title") or t("evidence_default_title", lang=lang))
+            st.markdown(f"**{_md_escape(title)}**")
 
-            st.markdown(
-                f"**{_md_escape(item.get('title', 'Evidence'))}** "
-                f"— `{relation}` / `{directness}` / "
-                f"confidence `{confidence:.2f}`"
-            )
             source = item.get("source", "")
-            source_type = item.get("source_type", "")
-            if source or source_type:
-                st.caption(
-                    f"{t('source_label', lang=lang)}: {source} "
-                    f"| type: {source_type}"
-                )
-
             published_at = item.get("published_at")
             observed_at = item.get("observed_at")
+            metadata = []
+            if source:
+                metadata.append(
+                    f"{t('source_label', lang=lang)}: {_md_escape(source)}"
+                )
             if published_at:
-                st.caption(f"Published: {published_at}")
+                metadata.append(
+                    f"{t('evidence_published_label', lang=lang)}: "
+                    f"{_md_escape(published_at)}"
+                )
             if observed_at:
-                st.caption(f"Observed: {observed_at}")
+                metadata.append(
+                    f"{t('evidence_observed_label', lang=lang)}: "
+                    f"{_md_escape(observed_at)}"
+                )
+            if metadata:
+                st.caption(" | ".join(metadata))
 
             summary = item.get("summary", "")
             if summary:
-                # Evidence text is untrusted web content. Render it as plain
-                # text so Markdown/HTML cannot become UI artefacts.
+                # Evidence text is untrusted web content. Render as plain text
+                # so Markdown/HTML cannot become UI artefacts.
                 st.text(str(summary))
 
             url = item.get("url", "")
             if isinstance(url, str) and url.startswith(("https://", "http://")):
-                st.markdown(f"🔗 [{_md_escape(url)}]({url})")
+                st.markdown(
+                    f"🔗 [{_md_escape(url)}]({url})"
+                )
 
             st.caption("---")
 
