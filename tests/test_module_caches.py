@@ -136,6 +136,26 @@ def test_pipeline_osint_cache_enabled_miss_writes(monkeypatch):
 
 
 
+def test_holehe_module_concurrency_is_bounded(monkeypatch):
+    monkeypatch.setattr(osint_scanner, "HOLEHE_MAX_CONCURRENCY", 3)
+
+    state = {"active": 0, "max_active": 0}
+
+    async def fake_module(email, client, out):
+        state["active"] += 1
+        state["max_active"] = max(state["max_active"], state["active"])
+        await osint_scanner.trio.sleep(0.01)
+        state["active"] -= 1
+
+    modules = [fake_module for _ in range(8)]
+    monkeypatch.setattr(osint_scanner, "_load_holehe_modules", lambda: modules)
+
+    result = osint_scanner.trio.run(osint_scanner._run_holehe, "user@example.com")
+
+    assert result == ([], 0, 0)
+    assert state["max_active"] == 3
+
+
 def test_imap_header_parser_skips_oversized_payload(monkeypatch):
     monkeypatch.setattr(imap_scanner, "IMAP_MAX_HEADER_BYTES", 32)
 
