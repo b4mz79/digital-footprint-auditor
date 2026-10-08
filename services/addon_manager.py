@@ -755,6 +755,12 @@ class AddonManager:
                 raise ValueError(
                     f"add-on event input.required must be a boolean: {event_name}"
                 )
+            # Omitted event fields inherit the invocation projection.
+            if "fields" not in event_input:
+                event_input = {
+                    **event_input,
+                    "fields": list(input_fields),
+                }
             event_fields = self._parse_input_fields(
                 event_input,
                 f"add-on event input.fields: {event_name}",
