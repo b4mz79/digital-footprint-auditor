@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from services.enrichment.evidence.models import EvidenceDirectness, EvidenceRecord, EvidenceRelation
-from services.enrichment.evidence_verification import verify_evidence_records
+from services.enrichment.verification import verify_evidence_records
 
 
 @pytest.mark.asyncio
@@ -19,7 +19,7 @@ async def test_verify_evidence_records_annotates_url_accessibility(monkeypatch) 
         assert url == "https://example.com/report"
         return Result()
 
-    monkeypatch.setattr("services.enrichment.evidence_verification.verify_public_url", fake_verify)
+    monkeypatch.setattr("services.enrichment.verification.verify_public_url", fake_verify)
 
     record = EvidenceRecord(
         evidence_id="e1",
@@ -87,7 +87,7 @@ async def test_verify_evidence_records_isolates_per_record_failure(monkeypatch) 
 
         return Result()
 
-    monkeypatch.setattr("services.enrichment.evidence_verification.verify_public_url", fake_verify)
+    monkeypatch.setattr("services.enrichment.verification.verify_public_url", fake_verify)
 
     def make_record(evidence_id: str, url: str) -> EvidenceRecord:
         return EvidenceRecord(
