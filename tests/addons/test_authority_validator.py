@@ -44,7 +44,7 @@ def test_authority_gate_accepts_just_sample_style_imports(tmp_path: Path) -> Non
     "source",
     [
         "import os\n",
-        "from pathlib import Path\n",
+        "import socket\n",
         "import requests\n",
         "from subprocess import run\n",
     ],
