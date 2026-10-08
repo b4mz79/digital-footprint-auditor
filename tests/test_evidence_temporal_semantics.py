@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import pytest
 
-from services.evidence.models import (
+from services.enrichment.evidence.models import (
     EvidenceDirectness,
     EvidenceRecord,
     EvidenceRelation,
 )
-from services.evidence.security_publications import _normalize_source_timestamp
+from services.enrichment.evidence.security_publications import _normalize_source_timestamp
 
 
 def _record(**overrides) -> EvidenceRecord:
