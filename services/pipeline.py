@@ -79,7 +79,13 @@ def purge_expired_caches() -> int:
         BREACH_CACHE_DIR,
         max_age_seconds,
     ) + purge_expired(
-        DISCOVERY_CACHE_DIR,
+        IMAP_CACHE_DIR,
+        max_age_seconds,
+    ) + purge_expired(
+        OSINT_CACHE_DIR,
+        max_age_seconds,
+    ) + purge_expired(
+        ENRICHMENT_CACHE_DIR,
         max_age_seconds,
     )
 
