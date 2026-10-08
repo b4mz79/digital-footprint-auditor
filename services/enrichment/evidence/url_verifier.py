@@ -54,9 +54,21 @@ def _is_public_hostname(hostname: str) -> bool:
         return False
 
     try:
-        addresses = {item[4][0] for item in socket.getaddrinfo(host, None, type=socket.SOCK_STREAM)}
+        addresses = {
+            item[4][0]
+            for item in socket.getaddrinfo(
+                host,
+                None,
+                type=socket.SOCK_STREAM,
+            )
+        }
     except OSError:
-        return True
+        # DNS failure is not evidence that a hostname is public. Fail closed
+        # rather than allowing an unresolvable name through the SSRF guard.
+        return False
+
+    if not addresses:
+        return False
 
     for address in addresses:
         try:
