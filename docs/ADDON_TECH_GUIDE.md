@@ -544,7 +544,7 @@ just-sample
 {"jumlah_email": ...}
 ```
 
-## 20. UI Rendering Flow
+## 22. UI Rendering Flow
 
 Backend execution and UI rendering are separate steps.
 
@@ -566,7 +566,7 @@ This separation allows the host to preserve runtime state independently from pre
 
 The Add-On UI should not execute the backend operation again merely to obtain data for rendering.
 
-## 21. Reference Add-On: just-sample
+## 23. Reference Add-On: just-sample
 
 ### Purpose
 
@@ -604,7 +604,7 @@ It renders:
 
 The implementation is intentionally small so that developers can understand the host contract without needing to understand the entire Privacy Auditor core.
 
-## 22. Testing
+## 24. Testing
 
 An Add-On should be tested independently from the full application whenever possible.
 
@@ -656,7 +656,7 @@ For `just-sample`, a real integration test should:
 6. assert the returned `jumlah_email`
 7. verify an unrelated event does not execute it
 
-## 23. Pipeline Integration
+## 25. Pipeline Integration
 
 The Add-On system is integrated with the existing pipeline through host contracts and canonical events.
 
@@ -683,7 +683,7 @@ The core pipeline must remain functional when:
 - an Add-On fails
 - an Add-On is uninstalled
 
-## 24. AI Context
+## 26. AI Context
 
 An Add-On may declare:
 
@@ -702,7 +702,7 @@ It does **not** mean that an Add-On can:
 
 The Add-On provides structured context; the host remains responsible for how that context enters the AI layer.
 
-## 25. What an Add-On Must Not Do
+## 27. What an Add-On Must Not Do
 
 An Add-On should not:
 
@@ -717,7 +717,7 @@ An Add-On should not:
 - use UI code as a replacement for backend processing
 - claim risk authority merely because its result is available to AI
 
-## 26. Compatibility Principles
+## 28. Compatibility Principles
 
 An Add-On should remain compatible with the host by depending on stable contracts rather than implementation details.
 
@@ -745,7 +745,7 @@ Internal implementation detail
 
 When the host evolves, compatibility should be evaluated against the declared contract.
 
-## 27. Future Extension Points
+## 29. Future Extension Points
 
 The current Add-On architecture leaves room for future capabilities without requiring them today.
 
@@ -766,7 +766,7 @@ These are extension points, not requirements of the current contract.
 
 Do not implement them merely because the architecture leaves room for them.
 
-## 28. Definition of Done
+## 30. Definition of Done
 
 An Add-On is not considered complete merely because its ZIP installs.
 
@@ -794,7 +794,7 @@ REAL TEST
 DOCUMENT
 ```
 
-## 29. Developer Checklist
+## 31. Developer Checklist
 
 Before distributing an Add-On:
 
