@@ -3,6 +3,8 @@ from __future__ import annotations
 import httpx
 import pytest
 
+from services.enrichment.evidence import url_verifier
+
 from services.enrichment.evidence.url_verifier import verify_public_url
 
 
@@ -52,3 +54,16 @@ async def test_verify_public_url_uses_existing_url_without_following_redirects()
 async def test_verify_public_url_rejects_unsafe_targets(url: str) -> None:
     with pytest.raises(ValueError):
         await verify_public_url(url)
+
+
+@pytest.mark.parametrize("resolved", [[], None])
+def test_verify_public_url_rejects_unresolvable_hostname(monkeypatch, resolved) -> None:
+    def fake_getaddrinfo(*args, **kwargs):
+        if resolved is None:
+            raise OSError("synthetic DNS failure")
+        return resolved
+
+    monkeypatch.setattr(url_verifier.socket, "getaddrinfo", fake_getaddrinfo)
+
+    with pytest.raises(ValueError, match="hostname is not public"):
+        url_verifier._validate_url("https://unresolvable.example/report")
