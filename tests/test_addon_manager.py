@@ -13,6 +13,7 @@ from services.addon_manager import AddonManager
 def _zip_package(
     *,
     addon_id: str = "demo-addon",
+    owner: str = "test",
     entrypoint: str = "plugin.py",
     plugin_body: str = "def run(context):\n    return {'ok': True, 'value': context['value']}\n",
     addon_type: str = "backend",
@@ -26,6 +27,7 @@ def _zip_package(
 ) -> bytes:
     manifest = {
         "id": addon_id,
+        "owner": owner,
         "name": "Demo Add-on",
         "caption": "Demo",
         "version": "1.0.0",
@@ -85,10 +87,10 @@ def test_install_discover_activate_invoke_uninstall(tmp_path: Path) -> None:
     assert listed["caption"] == "Demo"
 
     with pytest.raises(ValueError, match="not active"):
-        manager.invoke("demo-addon", {"data": {"value": 7, "secret": "drop"}})
+        manager.invoke("demo-addon", {"data": {"value": 7, "secret": "drop"}}, owner="test")
 
     manager.activate("demo-addon")
-    addon, result = manager.invoke("demo-addon", {"value": 7})
+    addon, result = manager.invoke("demo-addon", {"value": 7}, owner="test")
     assert addon["id"] == "demo-addon"
     assert result == {"ok": True, "value": 7}
 
@@ -242,6 +244,7 @@ def test_invoke_ui_for_active_non_backend_addon(tmp_path: Path) -> None:
     addon, result = manager.invoke_ui(
         "hybrid-addon",
         {"result": {"ok": True}},
+        owner="test",
     )
 
     assert addon["id"] == "hybrid-addon"
@@ -255,7 +258,7 @@ def test_backend_addon_has_no_ui_invoker(tmp_path: Path) -> None:
 
     manager.activate("demo-addon")
     with pytest.raises(ValueError, match="no UI entrypoint"):
-        manager.invoke_ui("demo-addon", {})
+        manager.invoke_ui("demo-addon", {}, owner="test")
 
 
 def test_ui_addon_requires_ui_contract(tmp_path: Path) -> None:
@@ -275,7 +278,7 @@ def test_invoke_rejects_event_only_addon(tmp_path: Path) -> None:
     manager.activate("event-addon")
 
     with pytest.raises(ValueError, match="not configured for on-demand"):
-        manager.invoke("event-addon", {})
+        manager.invoke("event-addon", {}, owner="test")
 
 
 def test_result_contract_rejects_non_mapping_output(tmp_path: Path) -> None:
@@ -289,7 +292,7 @@ def test_result_contract_rejects_non_mapping_output(tmp_path: Path) -> None:
     manager.activate("bad-result-addon")
 
     with pytest.raises(TypeError, match="result must be a mapping"):
-        manager.invoke("bad-result-addon", {})
+        manager.invoke("bad-result-addon", {}, owner="test")
 
 
 def test_dispatch_event_invokes_matching_active_addon(tmp_path: Path) -> None:
@@ -316,6 +319,7 @@ def test_dispatch_event_invokes_matching_active_addon(tmp_path: Path) -> None:
                 "secret": "must-not-reach-addon",
             }
         },
+        owner="test",
     )
 
     assert len(results) == 1
@@ -359,6 +363,7 @@ def test_dispatch_event_filters_undeclared_input_fields(tmp_path: Path) -> None:
             },
             "state": {"email": "must-not-reach-addon"},
         },
+        owner="test",
     )
 
     assert len(results) == 1
@@ -390,7 +395,7 @@ def test_dispatch_event_isolates_one_broken_addon_from_others(tmp_path: Path) ->
     manager.activate("failing-addon")
     manager.activate("healthy-addon")
 
-    results = manager.dispatch_event("evidence.enriched", {})
+    results = manager.dispatch_event("evidence.enriched", {}, owner="test")
 
     assert len(results) == 1
     assert results[0][0]["id"] == "healthy-addon"
@@ -535,7 +540,7 @@ def test_invoke_loads_addon_as_isolated_package(tmp_path: Path) -> None:
     manager.install_zip(buffer.getvalue())
     manager.activate("package-addon")
 
-    _, result = manager.invoke("package-addon", {})
+    _, result = manager.invoke("package-addon", {}, owner="test")
     assert result == {"value": 42}
 
 
@@ -633,3 +638,44 @@ def test_install_rejects_invalid_entrypoint_path(tmp_path: Path) -> None:
     manager = AddonManager(tmp_path / "addons")
     with pytest.raises(ValueError, match="entrypoint"):
         manager.install_zip(buffer.getvalue())
+
+
+def test_dispatch_event_rejects_cross_owner_addon(tmp_path: Path) -> None:
+    manager = AddonManager(tmp_path / "addons")
+    manager.install_zip(
+        _zip_package(
+            addon_id="imap-addon",
+            owner="imap",
+            mode="on_event",
+            events=[{"name": "discovery.imap.completed"}],
+            input_fields=["services"],
+        )
+    )
+    manager.activate("imap-addon")
+
+    assert manager.dispatch_event(
+        "discovery.imap.completed",
+        {"data": {"services": ["ok"]}},
+        owner="osint",
+    ) == ()
+
+
+def test_invoke_rejects_cross_owner_execution(tmp_path: Path) -> None:
+    manager = AddonManager(tmp_path / "addons")
+    manager.install_zip(_zip_package(owner="imap"))
+    manager.activate("demo-addon")
+
+    with pytest.raises(ValueError, match="owner mismatch"):
+        manager.invoke("demo-addon", {"value": 7}, owner="evidence")
+
+
+def test_manifest_rejects_security_metadata_input_fields(tmp_path: Path) -> None:
+    manager = AddonManager(tmp_path / "addons")
+    for field in ("owner", "event", "state"):
+        with pytest.raises(ValueError, match="reserved host metadata"):
+            manager.install_zip(
+                _zip_package(
+                    addon_id=f"reserved-{field}",
+                    input_fields=[field],
+                )
+            )
