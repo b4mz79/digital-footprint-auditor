@@ -276,7 +276,7 @@ def test_result_contract_rejects_non_mapping_output(tmp_path: Path) -> None:
     manager.install_zip(
         _zip_package(
             addon_id="bad-result-addon",
-            plugin_body="def run(context): return ['not', 'a', 'mapping']\\n",
+            plugin_body="def run(context): return ['not', 'a', 'mapping']\n",
         )
     )
     manager.activate("bad-result-addon")
@@ -384,7 +384,7 @@ def test_manifest_rejects_result_key_that_can_mutate_host_state(tmp_path: Path) 
             )
             archive.writestr(
                 f"{addon_id}/plugin.py",
-                "def run(context): return {'ok': True}\\n",
+                "def run(context): return {'ok': True}\n",
             )
 
         with pytest.raises(ValueError, match="result_key"):
