@@ -4,13 +4,13 @@ import os
 
 from cryptography.fernet import Fernet
 
-from services import imap_cache, osint_cache
+from services import imap_scanner, osint_scanner
 from services import pipeline
 
 
 def test_osint_cache_disabled_by_default(monkeypatch):
     monkeypatch.delenv("OSINT_CACHE_ENABLED", raising=False)
-    assert osint_cache.osint_cache_enabled() is False
+    assert osint_scanner.osint_cache_enabled() is False
 
 
 def test_osint_cache_roundtrip(monkeypatch, tmp_path):
@@ -23,9 +23,9 @@ def test_osint_cache_roundtrip(monkeypatch, tmp_path):
     )
     findings = [{"name": "Example", "domain": "example.com"}]
 
-    osint_cache.save_osint_cache("user@example.com", findings)
+    osint_scanner.save_osint_cache("user@example.com", findings)
 
-    assert osint_cache.load_osint_cache("user@example.com") == findings
+    assert osint_scanner.load_osint_cache("user@example.com") == findings
 
 
 def test_osint_cache_rejects_schema_mismatch(monkeypatch):
@@ -33,11 +33,11 @@ def test_osint_cache_rejects_schema_mismatch(monkeypatch):
         osint_cache,
         "load_encrypted_json",
         lambda *args, **kwargs: {
-            "cache_schema_version": osint_cache.OSINT_CACHE_SCHEMA_VERSION - 1,
+            "cache_schema_version": osint_scanner.OSINT_CACHE_SCHEMA_VERSION - 1,
             "findings": [],
         },
     )
-    assert osint_cache.load_osint_cache("user@example.com") is None
+    assert osint_scanner.load_osint_cache("user@example.com") is None
 
 
 def test_pipeline_osint_cache_hit_skips_scanner(monkeypatch):
@@ -112,9 +112,9 @@ def test_imap_cache_roundtrip(monkeypatch, tmp_path):
     )
     findings = [{"name": "Example", "domain": "example.com"}]
 
-    imap_cache.save_imap_cache("user@example.com", findings)
+    imap_scanner.save_imap_cache("user@example.com", findings)
 
-    assert imap_cache.load_imap_cache("user@example.com") == findings
+    assert imap_scanner.load_imap_cache("user@example.com") == findings
 
 
 def test_pipeline_force_refresh_bypasses_osint_cache(monkeypatch):
@@ -153,7 +153,7 @@ def test_pipeline_force_refresh_bypasses_osint_cache(monkeypatch):
 
 
 def test_cache_directories_are_module_specific():
-    assert imap_cache.IMAP_CACHE_DIR != osint_cache.OSINT_CACHE_DIR
+    assert imap_scanner.IMAP_CACHE_DIR != osint_scanner.OSINT_CACHE_DIR
 
 
 def test_pipeline_imap_cache_hit_skips_scanner(monkeypatch):
