@@ -346,7 +346,6 @@ def render_addon_uis(
                 else [],
             )
             ui_context = {
-                "state": scan_state,
                 "result": ui_result,
                 "lang": lang,
             }
@@ -356,7 +355,7 @@ def render_addon_uis(
                 # container() calls can accumulate UI blocks on each event.
                 slot.empty()
                 with slot.container():
-                    addon_manager.invoke_ui(addon_id, ui_context)
+                    addon_manager.invoke_ui(addon_id, ui_context, owner=str(addon.get("owner", "")))
             else:
                 addon_manager.invoke_ui(addon_id, ui_context)
         except Exception as exc:
@@ -940,7 +939,6 @@ if run_scan:
                     live_state["addons"][addon_id] = result
                     slot = _addon_ui_slot(addon_ui_slots, addon)
                     ui_context = {
-                        "state": live_state,
                         "result": result,
                         "lang": lang,
                     }
@@ -950,9 +948,9 @@ if run_scan:
                             # appending another UI block for every pipeline event.
                             slot.empty()
                             with slot.container():
-                                addon_manager.invoke_ui(addon_id, ui_context)
+                                addon_manager.invoke_ui(addon_id, ui_context, owner=str(live_data.get("owner", addon.get("owner", ""))))
                         else:
-                            addon_manager.invoke_ui(addon_id, ui_context)
+                            addon_manager.invoke_ui(addon_id, ui_context, owner=str(live_data.get("owner", addon.get("owner", ""))))
                     except Exception as exc:
                         if slot is not None:
                             slot.empty()
@@ -1043,7 +1041,7 @@ if run_scan:
                 if slot is not None:
                     slot.empty()
                     with slot.container():
-                        addon_manager.invoke_ui(addon_id, ui_context)
+                        addon_manager.invoke_ui(addon_id, ui_context, owner=str(addon.get("owner", "")))
                 else:
                     addon_manager.invoke_ui(addon_id, ui_context)
             except Exception as exc:
