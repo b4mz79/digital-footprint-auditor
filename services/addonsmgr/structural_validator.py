@@ -12,7 +12,7 @@ _ALLOWED_ENTRYPOINT_SUFFIX = ".py"
 
 def validate_package_structure(
     package_root: Path,
-    manifest: AddonManifest,
+    manifest: _ManifestLike,
 ) -> None:
     """Validate the extracted add-on package without executing its code.
 
