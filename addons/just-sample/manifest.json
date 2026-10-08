@@ -9,7 +9,8 @@
     "function": "run",
     "mode": "on_event",
     "input": {
-      "required": true
+      "required": true,
+      "fields": ["services"]
     },
     "return": {
       "type": "result",
