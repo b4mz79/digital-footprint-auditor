@@ -330,8 +330,7 @@ async def enrich_evidence(
     output = list(merged.values())
 
     if (
-        enrichment_cache_enabled()
-        and failed == 0
+        failed == 0
         and len(results) == len(domains)
         and not provider.cooldown_active
     ):
