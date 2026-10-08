@@ -940,7 +940,7 @@ if run_scan:
                             # appending another UI block for every pipeline event.
                             slot.empty()
                             with slot.container():
-                                addon_manager.invoke_ui(addon_id, ui_context, owner=str(live_data.get("owner", addon.get("owner", ""))))
+                                addon_manager.invoke_ui(addon_id, ui_context, owner=str(live_data.get("owner", "")))
                         else:
                             addon_manager.invoke_ui(addon_id, ui_context, owner=str(live_data.get("owner", addon.get("owner", ""))))
                     except Exception as exc:
