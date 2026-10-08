@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from services.evidence.normalizer import service_findings_to_evidence
+from services.enrichment.evidence.normalizer import service_findings_to_evidence
 
 
 def test_service_finding_from_osint_becomes_target_resource_evidence() -> None:
