@@ -345,6 +345,18 @@ def render_addon_uis(
                 if isinstance(ui_result, Mapping)
                 else [],
             )
+            producer_owner = str(
+                (scan_state.get("addon_owners") or {}).get(addon_id, "")
+            ).strip()
+            if not producer_owner:
+                # Fail closed on rerun: a UI renderer must not self-authorize
+                # from the add-on manifest when producer provenance is absent.
+                logger.warning(
+                    "[UI] Skipping add-on render without trusted producer owner: id=%s",
+                    addon_id,
+                )
+                continue
+
             ui_context = {
                 "result": ui_result,
                 "lang": lang,
@@ -355,9 +367,17 @@ def render_addon_uis(
                 # container() calls can accumulate UI blocks on each event.
                 slot.empty()
                 with slot.container():
-                    addon_manager.invoke_ui(addon_id, ui_context, owner=str(addon.get("owner", "")))
+                    addon_manager.invoke_ui(
+                        addon_id,
+                        ui_context,
+                        owner=producer_owner,
+                    )
             else:
-                addon_manager.invoke_ui(addon_id, ui_context, owner=str(addon.get("owner", "")))
+                addon_manager.invoke_ui(
+                    addon_id,
+                    ui_context,
+                    owner=producer_owner,
+                )
         except Exception as exc:
             if slot is not None:
                 slot.empty()
@@ -940,9 +960,15 @@ if run_scan:
                             # appending another UI block for every pipeline event.
                             slot.empty()
                             with slot.container():
-                                addon_manager.invoke_ui(addon_id, ui_context, owner=str(live_data.get("owner", "")))
+                                producer_owner = str(live_data.get("owner", "")).strip()
+                                if not producer_owner:
+                                    raise ValueError("missing trusted add-on producer owner")
+                                addon_manager.invoke_ui(addon_id, ui_context, owner=producer_owner)
                         else:
-                            addon_manager.invoke_ui(addon_id, ui_context, owner=str(live_data.get("owner", addon.get("owner", ""))))
+                            producer_owner = str(live_data.get("owner", "")).strip()
+                            if not producer_owner:
+                                raise ValueError("missing trusted add-on producer owner")
+                            addon_manager.invoke_ui(addon_id, ui_context, owner=producer_owner)
                     except Exception as exc:
                         if slot is not None:
                             slot.empty()
@@ -994,6 +1020,7 @@ if run_scan:
                 "evidence": list(final_state.get("evidence") or []),
                 "breach": final_state.get("breach") or live_state["breach"],
                 "addons": dict(final_state.get("addons") or {}),
+                "addon_owners": dict(final_state.get("addon_owners") or {}),
                 "ai": final_state.get("ai"),
             }
         )
@@ -1006,47 +1033,6 @@ if run_scan:
 
         with evidence_slot.container():
             render_evidence(live_state)
-
-        # On-event Add-Ons are already rendered at their event boundary above.
-        # Re-rendering them here would create a second UI invocation after the
-        # pipeline completes. Only on-demand Add-Ons need final reconciliation.
-        for addon in addon_manager.list():
-            addon_id = str(addon.get("id", "")).strip()
-            if (
-                not addon_id
-                or not addon.get("active")
-                or addon.get("type") == "backend"
-                or addon.get("invocation", {}).get("mode") != "on_demand"
-            ):
-                continue
-            ui_result = live_state["addons"].get(addon_id)
-            if ui_result is None:
-                continue
-            slot = _addon_ui_slot(addon_ui_slots, addon)
-            ui_context = {
-                "result": ui_result,
-                "lang": lang,
-            }
-            try:
-                if slot is not None:
-                    slot.empty()
-                    with slot.container():
-                        addon_manager.invoke_ui(addon_id, ui_context, owner=str(addon.get("owner", "")))
-                else:
-                    addon_manager.invoke_ui(addon_id, ui_context)
-            except Exception as exc:
-                if slot is not None:
-                    slot.empty()
-                    with slot.container():
-                        st.error(
-                            f"UI Add-On {addon_id} gagal: "
-                            f"{type(exc).__name__}: {exc}"
-                        )
-                else:
-                    st.error(
-                        f"UI Add-On {addon_id} gagal: "
-                        f"{type(exc).__name__}: {exc}"
-                    )
 
         with ai_slot.container():
             render_ai(live_state)
