@@ -154,3 +154,35 @@ def test_worker_supports_package_relative_imports(tmp_path: Path) -> None:
 
     assert response["ok"] is True
     assert response["result"] == {"value": 42}
+
+
+def test_worker_main_writes_response_file(tmp_path: Path) -> None:
+    from services import addon_runtime_worker
+
+    root = _package(
+        tmp_path,
+        "def run(context): return {'value': context['value'] + 1}\n",
+    )
+    request_path = tmp_path / "request.json"
+    response_path = tmp_path / "response.json"
+    request_path.write_text(
+        json.dumps(
+            {
+                "protocol_version": 1,
+                "package_root": str(root),
+                "entrypoint": "plugin.py",
+                "function": "run",
+                "context": {"value": 41},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    exit_code = addon_runtime_worker.main(
+        [str(request_path), str(response_path)]
+    )
+
+    assert exit_code == 0
+    response = json.loads(response_path.read_text(encoding="utf-8"))
+    assert response["ok"] is True
+    assert response["result"] == {"value": 42}
