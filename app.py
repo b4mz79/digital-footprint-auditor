@@ -567,6 +567,11 @@ with st.sidebar:
         t("enable_breach", lang=lang),
         value=True,
     )
+    enable_evidence_enrichment = st.checkbox(
+        "🔎 Enable Evidence Enrichment",
+        value=True,
+        help="Run the Evidence Enrichment pipeline stage.",
+    )
     force_refresh_breach = st.checkbox(
         t("force_refresh", lang=lang),
         value=False,
@@ -973,6 +978,7 @@ if run_scan:
             enable_imap=enable_imap,
             enable_osint=enable_osint,
             enable_breach=enable_breach,
+            enable_evidence_enrichment=enable_evidence_enrichment,
             force_refresh=force_refresh_breach,
             lang=lang,
             tenant_id=get_tenant_id(),
