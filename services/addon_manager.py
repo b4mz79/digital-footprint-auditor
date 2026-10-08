@@ -175,7 +175,13 @@ class AddonManager:
 
         state = self._load_state()
         state[manifest.addon_id] = False
-        self._save_state(state)
+        try:
+            self._save_state(state)
+        except Exception:
+            # The package must not remain installed if registry persistence
+            # fails before post-install initialization begins.
+            shutil.rmtree(target, ignore_errors=True)
+            raise
 
         try:
             self._run_lifecycle_hook(
