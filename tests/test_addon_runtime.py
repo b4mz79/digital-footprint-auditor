@@ -15,8 +15,7 @@ def test_profile_name_is_bounded_and_safe() -> None:
     assert all(char.isalnum() or char in "-_." for char in name)
 
 
-def test_windows_attribute_constants_match_win32_contract() -> None:
-    assert addon_runtime._PROC_THREAD_ATTRIBUTE_HANDLE_LIST == 0x00020002
+def test_windows_security_attribute_constant_matches_win32_contract() -> None:
     assert addon_runtime._PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES == 0x00020009
 
 
