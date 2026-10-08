@@ -713,7 +713,7 @@ async def test_enrich_evidence_applies_contextual_output_budget(monkeypatch) -> 
 
 @pytest.mark.asyncio
 async def test_enrichment_cache_hit_skips_firecrawl(monkeypatch) -> None:
-    from services.enrichment import orchestration as module
+    import services.evidence_enrichment as module
 
     base = EvidenceRecord(
         evidence_id="base-cache",
