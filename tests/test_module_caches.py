@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from cryptography.fernet import Fernet
 
 from services import imap_cache, osint_cache
@@ -113,3 +115,42 @@ def test_imap_cache_roundtrip(monkeypatch, tmp_path):
     imap_cache.save_imap_cache("user@example.com", findings)
 
     assert imap_cache.load_imap_cache("user@example.com") == findings
+
+
+def test_pipeline_force_refresh_bypasses_osint_cache(monkeypatch):
+    monkeypatch.setenv("OSINT_CACHE_ENABLED", "true")
+    monkeypatch.setattr(
+        pipeline,
+        "load_osint_cache",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("force refresh must bypass OSINT cache")
+        ),
+    )
+    monkeypatch.setattr(
+        pipeline,
+        "scan_osint_footprint",
+        lambda email, lang="id": [
+            {"name": "Fresh", "domain": "fresh.example", "source": "OSINT"}
+        ],
+    )
+    monkeypatch.setattr(
+        pipeline,
+        "save_osint_cache",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setenv("FIRECRAWL_API_KEY", "")
+
+    state = pipeline.run_scan(
+        email="user@example.com",
+        enable_imap=False,
+        enable_osint=True,
+        enable_breach=False,
+        force_refresh=True,
+        with_ai=False,
+    )
+
+    assert state["services"][0]["domain"] == "fresh.example"
+
+
+def test_cache_directories_are_module_specific():
+    assert imap_cache.IMAP_CACHE_DIR != osint_cache.OSINT_CACHE_DIR
