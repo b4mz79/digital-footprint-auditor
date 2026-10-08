@@ -106,8 +106,6 @@ def run_scan(
     lang: str = "id",
     tenant_id: str | None = None,
     with_ai: bool = True,
-    enabled_addons: tuple[str, ...] | list[str] = (),
-    addon_contexts: Mapping[str, Mapping[str, Any]] | None = None,
     on_event: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     tenant_id = tenant_id or get_tenant_id()
