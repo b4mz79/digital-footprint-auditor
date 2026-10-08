@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from cryptography.fernet import Fernet
 
-from services import discovery_cache, pipeline
+from services.enrichment import discovery_cache
+from services import pipeline
 
 
 def test_discovery_cache_disabled_by_default(monkeypatch):
