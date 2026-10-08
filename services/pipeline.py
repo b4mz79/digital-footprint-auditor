@@ -157,6 +157,7 @@ def run_scan(
                 on_event(event)
 
     def dispatch_addon_event(
+        owner: str,
         event_name: str,
         data: Mapping[str, Any] | None = None,
     ) -> None:
@@ -166,11 +167,9 @@ def run_scan(
             results = addon_manager.dispatch_event(
                 event_name,
                 {
-                    "state": state,
-                    "event": event_name,
                     "data": dict(data or {}),
-                    "addon_contexts": dict(addon_contexts or {}),
                 },
+                owner=owner,
             )
         except Exception as exc:
             logger.warning(
@@ -215,6 +214,7 @@ def run_scan(
                 if result_key
                 else {"addon": addon_id, "result": addon_output}
             )
+            live_payload["owner"] = str(addon.get("owner", ""))
             logger.info(
                 "[Pipeline] Add-on live payload: id=%s result_present=%s payload_keys=%s",
                 addon_id,
@@ -253,7 +253,8 @@ def run_scan(
                 state["services"].extend(found)
                 emit(_event("success", "success_imap", stage="imap", count=len(found)), {"services": found})
                 dispatch_addon_event(
-                    "discovery.imap.completed",
+                    "imap",
+"discovery.imap.completed",
                     {"services": list(found)},
                 )
 
@@ -277,7 +278,8 @@ def run_scan(
             state["services"].extend(found)
             emit(_event("success", "success_osint", stage="osint", count=len(found)), {"services": found})
             dispatch_addon_event(
-                "discovery.osint.completed",
+                "osint",
+"discovery.osint.completed",
                 {"services": list(found)},
             )
 
@@ -310,7 +312,8 @@ def run_scan(
                 {"breach": dict(state["breach"])},
             )
             dispatch_addon_event(
-                "breach.scan.completed",
+                "breach",
+"breach.scan.completed",
                 {"breach": dict(state["breach"])},
             )
         except Exception as exc:
@@ -376,7 +379,8 @@ def run_scan(
 
         state["evidence"] = evidence_to_dicts(verified_evidence)
         dispatch_addon_event(
-            "evidence.verified",
+            "evidence",
+"evidence.verified",
             {"evidence": list(state["evidence"])},
         )
         contextual_count = sum(
@@ -405,67 +409,11 @@ def run_scan(
         )
         state["evidence"] = []
 
-    # Optional add-ons. The application supplies only active IDs;
-    # AddonManager owns manifest validation, loading and invocation.
-    addon_ids = list(enabled_addons)
+    # On-demand add-ons are intentionally not invoked from the global
+    # pipeline. An on-demand add-on must be called by its owning built-in
+    # module through an owner-scoped host call; otherwise the global pipeline
+    # would become a cross-owner execution authority.
 
-    if addon_ids:
-        addon_manager = get_addon_manager()
-        for addon_id in dict.fromkeys(
-            str(item) for item in addon_ids if str(item).strip()
-        ):
-            addon = None
-            try:
-                addon_context: dict[str, Any] = {"state": state}
-                extra_context = (addon_contexts or {}).get(addon_id)
-                if extra_context is not None:
-                    if not isinstance(extra_context, Mapping):
-                        raise TypeError(
-                            f"context add-on {addon_id!r} harus berupa mapping"
-                        )
-                    addon_context.update(dict(extra_context))
-
-                addon, addon_output = addon_manager.invoke(
-                    addon_id,
-                    addon_context,
-                )
-                if not isinstance(addon_output, dict):
-                    raise TypeError(
-                        f"add-on {addon_id!r} returned an invalid result "
-                        f"({type(addon_output).__name__})"
-                    )
-
-                state["addons"][addon_id] = addon_output
-                result_key = addon.get("result_key") if addon else None
-                if result_key:
-                    state[result_key] = addon_output.get(result_key)
-
-                stage = addon_id
-                live_payload = (
-                    {result_key: state[result_key]}
-                    if result_key
-                    else {"addon": addon_id, "result": addon_output}
-                )
-                emit(
-                    _event(
-                        "success",
-                        text=f"Add-on {addon_id} selesai.",
-                        stage=stage,
-                    ),
-                    live_payload,
-                )
-            except Exception as exc:
-                stage = addon_id
-                logger.warning("[Pipeline] Add-on %s failed: %s", addon_id, exc)
-                if addon and addon.get("result_key"):
-                    state[addon["result_key"]] = None
-                emit(
-                    _event(
-                        "error",
-                        text=f"Error Add-on {addon_id}: {exc}",
-                        stage=stage,
-                    )
-                )
     if with_ai:
         addon_ai_context: dict[str, Any] = {}
         try:

@@ -19,6 +19,7 @@ from utils.logging_setup import get_logger
 
 
 _ADDON_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,63}$")
+_OWNER_RE = re.compile(r"^[a-z][a-z0-9_-]{1,63}$")
 _ADDON_TYPES = frozenset({"backend", "ui", "hybrid"})
 _INVOCATION_MODES = frozenset({"on_demand", "on_event"})
 _RETURN_TYPES = frozenset({"result", "none"})
@@ -35,7 +36,7 @@ _MAX_UNCOMPRESSED_BYTES = 50 * 1024 * 1024
 _ADDON_RESULT_KEY_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 _RESERVED_RESULT_KEYS = frozenset({
     "email", "phone", "lang", "tenant_id", "events", "services", "evidence",
-    "breach", "ai", "ai_lang", "addons", "addon_events",
+    "breach", "ai", "ai_lang", "addons", "addon_events", "owner", "event", "state",
 })
 _STATE_FILENAME = ".addons-state.json"
 
@@ -45,6 +46,7 @@ logger = get_logger("AddonManager")
 @dataclass(frozen=True, slots=True)
 class AddonManifest:
     addon_id: str
+    owner: str
     name: str
     caption: str
     version: str
@@ -53,6 +55,7 @@ class AddonManifest:
     invocation_function: str
     invocation_mode: str
     input_required: bool
+    input_fields: tuple[str, ...]
     return_type: str
     return_required: bool
     events: tuple[dict[str, Any], ...] = ()
@@ -66,6 +69,7 @@ class AddonManifest:
     def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.addon_id,
+            "owner": self.owner,
             "name": self.name,
             "caption": self.caption,
             "version": self.version,
@@ -74,7 +78,10 @@ class AddonManifest:
             "invocation": {
                 "function": self.invocation_function,
                 "mode": self.invocation_mode,
-                "input": {"required": self.input_required},
+                "input": {
+                    "required": self.input_required,
+                    "fields": list(self.input_fields),
+                },
                 "return": {
                     "type": self.return_type,
                     "required": self.return_required,
@@ -228,24 +235,34 @@ class AddonManager:
         self,
         addon_id: str,
         context: Mapping[str, Any],
+        *,
+        owner: str,
     ) -> tuple[dict[str, Any], Any]:
         addon = self.get(addon_id)
         if addon is None:
             raise ValueError(f"add-on is not installed: {addon_id}")
         if not addon["active"]:
             raise ValueError(f"add-on is not active: {addon_id}")
+        self._require_owner(addon, owner)
         if addon["invocation"]["mode"] != "on_demand":
             raise ValueError(
                 f"add-on {addon_id} is not configured for on-demand invocation"
             )
 
         logger.info("[Add-On] invoke: id=%s mode=on_demand function=%s", addon_id, addon["invocation"]["function"])
-        return self._execute(addon, context)
+        invocation_context = self._build_invocation_context(
+            addon,
+            context,
+            invocation=addon["invocation"],
+        )
+        return self._execute(addon, invocation_context)
 
     def invoke_ui(
         self,
         addon_id: str,
         context: Mapping[str, Any],
+        *,
+        owner: str,
     ) -> tuple[dict[str, Any], Any]:
         """Invoke the UI entrypoint of an active UI-capable add-on."""
         addon = self.get(addon_id)
@@ -253,6 +270,7 @@ class AddonManager:
             raise ValueError(f"add-on is not installed: {addon_id}")
         if not addon["active"]:
             raise ValueError(f"add-on is not active: {addon_id}")
+        self._require_owner(addon, owner)
         if addon["type"] == "backend":
             raise ValueError(f"backend add-on has no UI entrypoint: {addon_id}")
 
@@ -266,15 +284,20 @@ class AddonManager:
         self,
         event_name: str,
         context: Mapping[str, Any] | None = None,
+        *,
+        owner: str,
     ) -> tuple[tuple[dict[str, Any], Any], ...]:
         if not isinstance(event_name, str) or not event_name.strip():
             raise ValueError("event_name is required")
 
+        self._validate_owner(owner)
         payload = context or {}
-        logger.info("[Add-On] dispatch_event: event=%s", event_name)
+        logger.info("[Add-On] dispatch_event: owner=%s event=%s", owner, event_name)
         results: list[tuple[dict[str, Any], Any]] = []
         for addon in self.list():
             if not addon["active"]:
+                continue
+            if addon["owner"] != owner:
                 continue
             if addon["invocation"]["mode"] != "on_event":
                 continue
@@ -289,18 +312,13 @@ class AddonManager:
                 if event.get("name") == event_name
             )
             logger.info("[Add-On] event hook matched: id=%s event=%s function=%s", addon["id"], event_name, addon["invocation"]["function"])
-            addon_payload = dict(payload)
-            addon_contexts = payload.get("addon_contexts")
-            if isinstance(addon_contexts, Mapping):
-                extra_context = addon_contexts.get(str(addon["id"]))
-                if extra_context is not None:
-                    if not isinstance(extra_context, Mapping):
-                        raise TypeError(
-                            f"context add-on {addon['id']!r} harus berupa mapping"
-                        )
-                    addon_payload.update(dict(extra_context))
-            addon_payload.pop("addon_contexts", None)
             try:
+                addon_payload = self._build_invocation_context(
+                    addon,
+                    payload,
+                    invocation=event_spec,
+                    event_name=event_name,
+                )
                 result = self._execute(
                     addon,
                     addon_payload,
@@ -371,6 +389,60 @@ class AddonManager:
                     module_name + "."
                 ):
                     sys.modules.pop(loaded_name, None)
+
+    @staticmethod
+    def _build_invocation_context(
+        addon: Mapping[str, Any],
+        payload: Mapping[str, Any],
+        *,
+        invocation: Mapping[str, Any],
+        event_name: str | None = None,
+    ) -> dict[str, Any]:
+        """Build the only context visible to an add-on runner."""
+        addon_id = str(addon["id"])
+        if not isinstance(payload, Mapping):
+            raise TypeError(f"add-on {addon_id} requires mapping input")
+
+        input_spec = invocation.get("input")
+        if not isinstance(input_spec, Mapping):
+            raise ValueError(f"add-on {addon_id} input contract is invalid")
+
+        required = bool(input_spec.get("required"))
+        fields = input_spec.get("fields", ())
+        if not isinstance(fields, (list, tuple)):
+            raise ValueError(f"add-on {addon_id} input.fields must be an array")
+
+        context: dict[str, Any] = {}
+        if event_name is not None:
+            context["event"] = event_name
+
+        if not fields:
+            if required:
+                raise ValueError(f"add-on {addon_id} requires input fields")
+            return context
+
+        source = payload.get("data")
+        if not isinstance(source, Mapping):
+            if required:
+                raise TypeError(
+                    f"add-on {addon_id} requires event data as a mapping"
+                )
+            return context
+
+        data: dict[str, Any] = {}
+        for field in fields:
+            if field in source:
+                data[str(field)] = source[field]
+
+        if required and any(field not in data for field in fields):
+            missing = [field for field in fields if field not in data]
+            raise ValueError(
+                f"add-on {addon_id} missing declared input field(s): "
+                + ", ".join(missing)
+            )
+
+        context["data"] = data
+        return context
 
     def _execute(
         self,
@@ -574,12 +646,15 @@ class AddonManager:
         addon_id = str(payload.get("id", "")).strip()
         self._validate_id(addon_id)
 
-        required = ("name", "caption", "version", "entrypoint", "type", "invocation")
+        required = ("owner", "name", "caption", "version", "entrypoint", "type", "invocation")
         if any(key not in payload for key in required):
             raise ValueError(
                 "add-on manifest requires id, name, caption, version, "
                 "entrypoint, type and invocation"
             )
+
+        owner = str(payload["owner"]).strip().lower()
+        self._validate_owner(owner)
 
         name = str(payload["name"]).strip()
         caption = str(payload["caption"]).strip()
@@ -622,6 +697,10 @@ class AddonManager:
             raise ValueError(
                 "add-on invocation.input.required must be a boolean"
             )
+        input_fields = self._parse_input_fields(
+            input_spec,
+            "add-on invocation.input.fields",
+        )
 
         return_spec = invocation.get("return")
         if not isinstance(return_spec, dict):
@@ -646,7 +725,13 @@ class AddonManager:
             event_name = str(item.get("name", "")).strip()
             if not event_name:
                 raise ValueError("add-on event name is required")
-            event_input = item.get("input", {"required": input_spec["required"]})
+            event_input = item.get(
+                "input",
+                {
+                    "required": input_spec["required"],
+                    "fields": list(input_fields),
+                },
+            )
             event_return = item.get(
                 "return",
                 {
@@ -660,6 +745,10 @@ class AddonManager:
                 raise ValueError(
                     f"add-on event input.required must be a boolean: {event_name}"
                 )
+            event_fields = self._parse_input_fields(
+                event_input,
+                f"add-on event input.fields: {event_name}",
+            )
             if not isinstance(event_return, dict):
                 raise ValueError(
                     f"add-on event return must be an object: {event_name}"
@@ -676,7 +765,10 @@ class AddonManager:
             events.append(
                 {
                     "name": event_name,
-                    "input": {"required": event_input["required"]},
+                    "input": {
+                        "required": event_input["required"],
+                        "fields": list(event_fields),
+                    },
                     "return": {
                         "type": event_return_type,
                         "required": event_return["required"],
@@ -739,6 +831,7 @@ class AddonManager:
 
         return AddonManifest(
             addon_id=addon_id,
+            owner=owner,
             name=name,
             caption=caption,
             version=version,
@@ -747,6 +840,7 @@ class AddonManager:
             invocation_function=function_name,
             invocation_mode=mode,
             input_required=input_spec["required"],
+            input_fields=tuple(input_fields),
             return_type=return_type,
             return_required=return_spec["required"],
             events=tuple(events),
@@ -810,6 +904,31 @@ class AddonManager:
         return candidate
 
     @staticmethod
+    def _parse_input_fields(
+        input_spec: Mapping[str, Any],
+        label: str,
+    ) -> tuple[str, ...]:
+        fields = input_spec.get("fields", [])
+        if not isinstance(fields, list):
+            raise ValueError(f"{label} must be an array")
+        normalized: list[str] = []
+        for field in fields:
+            if not isinstance(field, str):
+                raise ValueError(f"{label} entries must be strings")
+            name = field.strip()
+            if not name or not re.fullmatch(r"[a-zA-Z][a-zA-Z0-9_-]{0,63}", name):
+                raise ValueError(f"{label} entries must be simple field names")
+            if name in {"owner", "event", "state"}:
+                raise ValueError(f"{label} contains reserved host metadata field: {name}")
+            if name not in normalized:
+                normalized.append(name)
+        if input_spec.get("required") and not normalized:
+            raise ValueError(
+                f"{label} must declare at least one field when required"
+            )
+        return tuple(normalized)
+
+    @staticmethod
     def _parse_result_key(value: Any) -> str | None:
         if value is None or value == "":
             return None
@@ -825,6 +944,21 @@ class AddonManager:
                 f"add-on result_key targets a reserved host state key: {result_key}"
             )
         return result_key
+
+    @staticmethod
+    def _validate_owner(owner: str) -> None:
+        if not isinstance(owner, str) or not _OWNER_RE.fullmatch(owner.strip().lower()):
+            raise ValueError("add-on owner must be a lowercase built-in module identifier")
+
+    @classmethod
+    def _require_owner(cls, addon: Mapping[str, Any], owner: str) -> None:
+        cls._validate_owner(owner)
+        addon_owner = str(addon.get("owner", "")).strip().lower()
+        if addon_owner != owner.strip().lower():
+            raise ValueError(
+                f"add-on owner mismatch: {addon.get('id', '<unknown>')} belongs to "
+                f"{addon_owner!r}, not {owner!r}"
+            )
 
     @staticmethod
     def _validate_id(addon_id: str) -> None:
