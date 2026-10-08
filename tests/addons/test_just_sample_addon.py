@@ -39,6 +39,7 @@ def test_just_sample_runs_from_imap_completion_event(tmp_path: Path) -> None:
                 ]
             },
         },
+        owner="imap",
     )
 
     assert len(results) == 1
@@ -59,6 +60,7 @@ def test_just_sample_ignores_other_events(tmp_path: Path) -> None:
             "event": "discovery.osint.completed",
             "data": {"services": [{"domain": "example.com"}]},
         },
+        owner="imap",
     )
 
     assert results == ()
