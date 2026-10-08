@@ -8,7 +8,7 @@ import pytest
 
 from utils.privacy import clean_web_snippet, clean_web_title
 
-from services.evidence_enrichment import enrich_evidence
+from services.enrichment.orchestration import enrich_evidence
 
 from services.enrichment.evidence.models import (
     EvidenceDirectness,
@@ -509,7 +509,7 @@ async def test_enrich_evidence_passes_configured_request_rate(monkeypatch) -> No
         async def search_domain(self, domain):
             return []
 
-    import services.evidence_enrichment as enrichment
+    import services.enrichment.orchestration as enrichment
     monkeypatch.setattr(enrichment, "FirecrawlSecurityPublicationProvider", FakeProvider)
     monkeypatch.setenv("FIRECRAWL_REQUESTS_PER_MINUTE", "7")
 
@@ -585,7 +585,7 @@ async def test_enrich_evidence_merges_contextual_records(monkeypatch) -> None:
                 )
             ]
 
-    import services.evidence_enrichment as enrichment
+    import services.enrichment.orchestration as enrichment
     monkeypatch.setattr(enrichment, "FirecrawlSecurityPublicationProvider", FakeProvider)
 
     result = await enrich_evidence(
@@ -633,7 +633,7 @@ async def test_enrich_evidence_stops_scheduling_domains_after_rate_limit(monkeyp
             self.cooldown_active = True
             return []
 
-    import services.evidence_enrichment as enrichment
+    import services.enrichment.orchestration as enrichment
     monkeypatch.setattr(enrichment, "FirecrawlSecurityPublicationProvider", FakeProvider)
     monkeypatch.setenv("FIRECRAWL_DOMAIN_CONCURRENCY", "2")
 
@@ -670,6 +670,9 @@ async def test_enrich_evidence_applies_contextual_output_budget(monkeypatch) -> 
         def __init__(self, **kwargs):
             self.cooldown_active = False
 
+        async def finalize_filter_dump(self):
+            return None
+
         async def search_domain(self, domain):
             return [
                 EvidenceRecord(
@@ -689,7 +692,7 @@ async def test_enrich_evidence_applies_contextual_output_budget(monkeypatch) -> 
                 for idx in (1, 2, 3)
             ]
 
-    import services.evidence_enrichment as enrichment
+    import services.enrichment.orchestration as enrichment
     monkeypatch.setattr(enrichment, "FirecrawlSecurityPublicationProvider", FakeProvider)
     monkeypatch.setenv("FIRECRAWL_MAX_CONTEXTUAL_RECORDS", "4")
     monkeypatch.setenv("FIRECRAWL_MAX_CONTEXTUAL_RECORDS_PER_DOMAIN", "1")
@@ -709,7 +712,7 @@ async def test_enrich_evidence_applies_contextual_output_budget(monkeypatch) -> 
 
 @pytest.mark.asyncio
 async def test_enrichment_cache_hit_skips_firecrawl(monkeypatch) -> None:
-    from services import evidence_enrichment as module
+    from services.enrichment import orchestration as module
 
     base = EvidenceRecord(
         evidence_id="base-cache",
