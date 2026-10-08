@@ -145,7 +145,7 @@ def test_pipeline_passes_enriched_evidence_to_ai(monkeypatch) -> None:
         ],
     )
 
-    async def fake_enrich(records):
+    async def fake_enrich(records, **kwargs):
         base = list(records)
         base.append(
             type(base[0])(
