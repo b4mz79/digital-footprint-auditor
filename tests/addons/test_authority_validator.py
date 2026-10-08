@@ -130,3 +130,38 @@ def test_authority_gate_rejects_host_internals_and_reflection(
 
     with pytest.raises(ValueError, match="not allowlisted|static authority gate"):
         validate_package_authority(root)
+
+
+def test_authority_gate_allows_sibling_path_lifecycle_logging(tmp_path: Path) -> None:
+    root = _package(
+        tmp_path / "package",
+        **{
+            "plugin.py": (
+                "from pathlib import Path\n"
+                "_LOG = Path(__file__).with_name('lifecycle.log')\n"
+                "def after_install(context):\n"
+                "    with _LOG.open('a', encoding='utf-8') as handle:\n"
+                "        handle.write('ok\\n')\n"
+            ),
+        },
+    )
+
+    validate_package_authority(root)
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "from pathlib import Path\ndef run(context): Path('/tmp/outside.txt').write_text('x')\n",
+        "from pathlib import Path\ndef run(context): Path(__file__).parent.parent.joinpath('outside.txt').write_text('x')\n",
+        "from pathlib import Path\ndef run(context): Path(__file__).read_text()\n",
+    ],
+)
+def test_authority_gate_rejects_unconfined_path_access(
+    tmp_path: Path,
+    source: str,
+) -> None:
+    root = _package(tmp_path / "package", **{"plugin.py": source})
+
+    with pytest.raises(ValueError, match="filesystem access must use a literal sibling path"):
+        validate_package_authority(root)
