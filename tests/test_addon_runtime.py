@@ -24,6 +24,27 @@ def test_windows_creation_flags_include_unicode_environment() -> None:
     assert addon_runtime._CREATE_UNICODE_ENVIRONMENT == 0x00000400
 
 
+def test_runtime_acl_targets_include_venv_and_base_python(tmp_path: Path) -> None:
+    venv_root = tmp_path / "venv"
+    scripts = venv_root / "Scripts"
+    scripts.mkdir(parents=True)
+    executable = scripts / "python.exe"
+    executable.write_bytes(b"")
+    base_root = tmp_path / "Python312"
+    base_root.mkdir()
+    (venv_root / "pyvenv.cfg").write_text(
+        f"home = {base_root}\n"
+        "include-system-site-packages = false\n",
+        encoding="utf-8",
+    )
+
+    targets = dict(addon_runtime._runtime_acl_targets(executable))
+    assert targets[scripts] is True
+    assert targets[base_root] is True
+    assert targets[venv_root] is False
+    assert targets[tmp_path] is False
+
+
 def test_runtime_rejects_non_windows(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(addon_runtime.os, "name", "posix")
     with pytest.raises(RuntimeError, match="requires Windows"):
