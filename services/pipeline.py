@@ -166,10 +166,7 @@ def run_scan(
             results = addon_manager.dispatch_event(
                 event_name,
                 {
-                    "state": state,
-                    "event": event_name,
                     "data": dict(data or {}),
-                    "addon_contexts": dict(addon_contexts or {}),
                 },
             )
         except Exception as exc:
@@ -416,15 +413,9 @@ def run_scan(
         ):
             addon = None
             try:
-                addon_context: dict[str, Any] = {"state": state}
-                extra_context = (addon_contexts or {}).get(addon_id)
-                if extra_context is not None:
-                    if not isinstance(extra_context, Mapping):
-                        raise TypeError(
-                            f"context add-on {addon_id!r} harus berupa mapping"
-                        )
-                    addon_context.update(dict(extra_context))
-
+                addon_context: dict[str, Any] = {
+                    "data": dict((addon_contexts or {}).get(addon_id, {}))
+                }
                 addon, addon_output = addon_manager.invoke(
                     addon_id,
                     addon_context,
