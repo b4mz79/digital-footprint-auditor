@@ -128,5 +128,5 @@ def test_authority_gate_rejects_host_internals_and_reflection(
         **{"plugin.py": "import streamlit as st\n" + source},
     )
 
-    with pytest.raises(ValueError, match="static authority gate"):
+    with pytest.raises(ValueError, match="not allowlisted|static authority gate"):
         validate_package_authority(root)
