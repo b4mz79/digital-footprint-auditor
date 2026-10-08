@@ -425,6 +425,7 @@ def test_manifest_rejects_result_key_that_can_mutate_host_state(tmp_path: Path) 
         addon_id = f"result-key-{index}"
         manifest = {
             "id": addon_id,
+        "owner": "test",
             "name": "Demo",
             "caption": "Demo",
             "version": "1.0.0",
@@ -473,6 +474,7 @@ def test_manifest_rejects_invalid_invocation_contract(tmp_path: Path) -> None:
     buffer = io.BytesIO()
     manifest = {
         "id": "invalid-invocation",
+        "owner": "test",
         "name": "Demo",
         "caption": "Demo",
         "version": "1.0.0",
@@ -518,6 +520,7 @@ def test_invoke_loads_addon_as_isolated_package(tmp_path: Path) -> None:
     buffer = io.BytesIO()
     manifest = {
         "id": "package-addon",
+        "owner": "test",
         "name": "Package Add-on",
         "caption": "Package",
         "version": "1.0.0",
@@ -616,6 +619,7 @@ def test_install_rejects_zip_slip(tmp_path: Path) -> None:
 def test_install_rejects_invalid_entrypoint_path(tmp_path: Path) -> None:
     manifest = {
         "id": "demo-addon",
+        "owner": "test",
         "name": "Demo",
         "caption": "Demo",
         "version": "1.0.0",
