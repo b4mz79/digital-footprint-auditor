@@ -39,7 +39,7 @@ def _addon_zip(addon_id: str = "pipeline-addon") -> bytes:
     return buffer.getvalue()
 
 
-def test_install_pipeline_runs_structural_then_security_then_install(
+def test_install_pipeline_runs_structural_authority_and_security_gates(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
