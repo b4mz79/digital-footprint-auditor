@@ -160,13 +160,6 @@ async def enrich_evidence(
     ).hexdigest()
 
 
-    domains = sorted(
-        {
-            record.domain.strip().lower()
-            for record in base
-            if record.domain.strip()
-        }
-    )
     if not domains:
         logger.info("[Evidence Enrichment] No normalized domains available; skipping.")
         return base
