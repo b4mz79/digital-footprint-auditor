@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import hmac
 import html
 import json
 import logging
@@ -29,6 +28,7 @@ try:
 except ImportError:  # pragma: no cover - cache_security living inside the services package
     from services.cache_security import save_encrypted_json, load_encrypted_json
 
+from utils.cache_identity import hmac_identity, tenant_identity
 from utils.domains import root_domain, root_label
 from utils.envutil import (
     env_bool as _env_bool,
@@ -503,24 +503,14 @@ def sanitize_external_text(text: str, max_len: int = 300) -> str:
 # =============================================================================
 
 def safe_filename_identity(email_addr: str, phone: str = "", lang: str = "id") -> str:
-    pepper = os.getenv("PII_PEPPER_KEY", "").strip()
-    if len(pepper) < 32:
-        raise RuntimeError("PII_PEPPER_KEY harus dikonfigurasi dan minimal 32 karakter.")
-
     email_norm = _validate_email(email_addr)
     phone_norm = re.sub(r"\D", "", _validate_phone(phone))
     lang_norm = _validate_lang(lang)
-    raw = f"{email_norm}\x1f{phone_norm}\x1f{lang_norm}".encode("utf-8")
-    return hmac.new(pepper.encode("utf-8"), raw, hashlib.sha256).hexdigest()
+    return hmac_identity(f"{email_norm}\x1f{phone_norm}\x1f{lang_norm}")
 
 
 def safe_tenant_identity(tenant_id: str) -> str:
-    pepper = os.getenv("PII_PEPPER_KEY", "").strip()
-    if len(pepper) < 32:
-        raise RuntimeError("PII_PEPPER_KEY harus dikonfigurasi dan minimal 32 karakter.")
-    tenant = _validate_tenant_id(tenant_id)
-    return hmac.new(pepper.encode("utf-8"), tenant.encode("utf-8"), hashlib.sha256).hexdigest()
-
+    tenant = _validate_tenant_id(tenant_id)\n    return tenant_identity(tenant)\n
 
 def get_cache_filepath_ext(email: str, phone: str = "", lang: str = "id", tenant_id: str = "default") -> Path:
     tenant_hash = safe_tenant_identity(tenant_id)
