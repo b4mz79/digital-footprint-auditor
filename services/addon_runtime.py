@@ -547,7 +547,9 @@ def _launch_process(
             None,
             None,
             True,
-            _EXTENDED_STARTUPINFO_PRESENT | _CREATE_NO_WINDOW,
+            _EXTENDED_STARTUPINFO_PRESENT
+            | _CREATE_NO_WINDOW
+            | _CREATE_UNICODE_ENVIRONMENT,
             ctypes.cast(environment_block, ctypes.c_void_p),
             str(cwd),
             ctypes.byref(startup),
