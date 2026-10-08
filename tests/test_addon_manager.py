@@ -415,7 +415,7 @@ def test_dispatch_event_skips_non_matching_or_inactive_addons(
         )
     )
 
-    assert manager.dispatch_event("evidence.enriched", {}) == ()
+    assert manager.dispatch_event("evidence.enriched", {}, owner="test") == ()
 
 
 def test_manifest_rejects_result_key_that_can_mutate_host_state(tmp_path: Path) -> None:
