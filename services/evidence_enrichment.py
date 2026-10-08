@@ -18,7 +18,7 @@ from typing import Iterable
 
 import httpx
 
-from services.enrichment.evidence.models import EvidenceRecord, EvidenceRelation
+from services.enrichment.evidence.models import EvidenceDirectness, EvidenceRecord, EvidenceRelation
 from services.enrichment_cache import (
     enrichment_cache_enabled,
     load_enrichment_cache,
@@ -111,6 +111,13 @@ async def enrich_evidence(
         3600.0,
     )
 
+    domains = sorted(
+        {
+            record.domain.strip().lower()
+            for record in base
+            if record.domain.strip()
+        }
+    )
     cache_material = {
         "schema": 1,
         "domains": domains,
@@ -156,7 +163,7 @@ async def enrich_evidence(
                         source=item["source"],
                         source_type=item["source_type"],
                         relation=EvidenceRelation(item["relation"]),
-                        directness=item["directness"],
+                        directness=EvidenceDirectness(item["directness"]),
                         confidence=item["confidence"],
                         observed_at=item["observed_at"],
                         published_at=item.get("published_at"),
