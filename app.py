@@ -680,14 +680,6 @@ with st.sidebar:
                             f"Add-On action gagal: {type(exc).__name__}: {exc}"
                         )
 
-    active_addons = tuple(
-        addon["id"]
-        for addon in addon_manager.list()
-        if addon["active"]
-        and addon["invocation"]["mode"] == "on_demand"
-    )
-
-
     run_scan = st.button(
         t("btn_run", lang=lang),
         type="primary",
@@ -990,7 +982,6 @@ if run_scan:
             lang=lang,
             tenant_id=get_tenant_id(),
             with_ai=True,
-            enabled_addons=active_addons,
             on_event=push_event,
         )
 
