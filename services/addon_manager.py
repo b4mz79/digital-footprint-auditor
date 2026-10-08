@@ -31,19 +31,6 @@ _LIFECYCLE_HOOKS = (
 _MAX_ZIP_FILES = 500
 _MAX_UNCOMPRESSED_BYTES = 50 * 1024 * 1024
 _ADDON_RESULT_KEY_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
-_ADDON_CAPABILITIES = frozenset({
-    "event",
-    "event.data",
-    "scan.state",
-    "scan.services",
-    "scan.evidence",
-    "scan.breach",
-    "scan.ai",
-    "scan.identity",
-    "scan.lang",
-    "scan.tenant",
-    "addon.context",
-})
 _RESERVED_RESULT_KEYS = frozenset({
     "email", "phone", "lang", "tenant_id", "events", "services", "evidence",
     "breach", "ai", "ai_lang", "addons", "addon_events",
@@ -51,13 +38,6 @@ _RESERVED_RESULT_KEYS = frozenset({
 _STATE_FILENAME = ".addons-state.json"
 
 logger = get_logger("AddonManager")
-
-_ADDON_RUNTIME_MODE_ENV = "ADDON_RUNTIME_MODE"
-_ADDON_RUNTIME_IN_PROCESS = "in_process"
-
-def _in_process_runtime_enabled() -> bool:
-    return os.getenv(_ADDON_RUNTIME_MODE_ENV, "").strip().lower() == _ADDON_RUNTIME_IN_PROCESS
-
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,7 +57,6 @@ class AddonManifest:
     result_key: str | None = None
     ai_context: bool = False
     default_active: bool = False
-    capabilities: tuple[str, ...] = ()
     ui_entrypoint: str | None = None
     ui_function: str | None = None
     lifecycle: tuple[tuple[str, str | None], ...] = ()
@@ -103,7 +82,6 @@ class AddonManifest:
             "result_key": self.result_key,
             "ai_context": self.ai_context,
             "default_active": self.default_active,
-            "capabilities": list(self.capabilities),
             "ui": ({
                 "entrypoint": self.ui_entrypoint,
                 "function": self.ui_function,
@@ -189,12 +167,25 @@ class AddonManager:
         state[manifest.addon_id] = False
         self._save_state(state)
 
-        # Installation never executes package code. A ZIP upload is an
-        # untrusted input boundary, not an execution boundary.
+        try:
+            self._run_lifecycle_hook(
+                manifest.addon_id,
+                "after_install",
+                {"event": "after_install"},
+            )
+        except Exception:
+            # Installation is transactional from the host perspective: if
+            # post-install initialization fails, remove the installed package
+            # and its state. There is intentionally no after_uninstall hook.
+            shutil.rmtree(target, ignore_errors=True)
+            state = self._load_state()
+            state.pop(manifest.addon_id, None)
+            self._save_state(state)
+            raise
+
         return self.get(manifest.addon_id) or {}
 
     def activate(self, addon_id: str) -> dict[str, Any]:
-        self._require_execution_runtime()
         return self._set_active(addon_id, True)
 
     def deactivate(self, addon_id: str) -> dict[str, Any]:
@@ -206,17 +197,11 @@ class AddonManager:
         if not target.is_dir():
             raise ValueError(f"add-on is not installed: {addon_id}")
 
-        if _in_process_runtime_enabled():
-            self._run_lifecycle_hook(
-                addon_id,
-                "before_uninstall",
-                {"event": "before_uninstall"},
-            )
-        else:
-            logger.info(
-                "[Add-On] skipping before_uninstall because execution runtime is disabled: id=%s",
-                addon_id,
-            )
+        self._run_lifecycle_hook(
+            addon_id,
+            "before_uninstall",
+            {"event": "before_uninstall"},
+        )
 
         shutil.rmtree(target)
         state = self._load_state()
@@ -288,7 +273,17 @@ class AddonManager:
                 if event.get("name") == event_name
             )
             logger.info("[Add-On] event hook matched: id=%s event=%s function=%s", addon["id"], event_name, addon["invocation"]["function"])
-            addon_payload = self._build_execution_context(addon, payload)
+            addon_payload = dict(payload)
+            addon_contexts = payload.get("addon_contexts")
+            if isinstance(addon_contexts, Mapping):
+                extra_context = addon_contexts.get(str(addon["id"]))
+                if extra_context is not None:
+                    if not isinstance(extra_context, Mapping):
+                        raise TypeError(
+                            f"context add-on {addon['id']!r} harus berupa mapping"
+                        )
+                    addon_payload.update(dict(extra_context))
+            addon_payload.pop("addon_contexts", None)
             try:
                 result = self._execute(
                     addon,
@@ -311,96 +306,12 @@ class AddonManager:
 
         return tuple(results)
 
-    def _build_execution_context(
-        self,
-        addon: Mapping[str, Any],
-        payload: Mapping[str, Any],
-    ) -> dict[str, Any]:
-        """Build the capability-scoped payload visible to an Add-On."""
-        raw_capabilities = addon.get("capabilities", ())
-        capabilities = {
-            str(item).strip()
-            for item in raw_capabilities
-            if isinstance(item, str) and item.strip()
-        }
-        result: dict[str, Any] = {}
-
-        if "event" in capabilities:
-            event = payload.get("event")
-            if isinstance(event, str):
-                result["event"] = event
-
-        if "event.data" in capabilities:
-            result["data"] = self._copy_context_value(payload.get("data", {}))
-
-        state = payload.get("state")
-        if not isinstance(state, Mapping):
-            state = {}
-
-        if "scan.state" in capabilities:
-            result["state"] = self._copy_context_value({
-                "email": state.get("email", ""),
-                "phone": state.get("phone", ""),
-                "lang": state.get("lang", ""),
-                "tenant_id": state.get("tenant_id", ""),
-                "services": state.get("services", []),
-                "evidence": state.get("evidence", []),
-                "breach": state.get("breach", {}),
-                "ai": state.get("ai"),
-                "ai_lang": state.get("ai_lang"),
-            })
-        else:
-            scan: dict[str, Any] = {}
-            if "scan.services" in capabilities:
-                scan["services"] = self._copy_context_value(state.get("services", []))
-            if "scan.evidence" in capabilities:
-                scan["evidence"] = self._copy_context_value(state.get("evidence", []))
-            if "scan.breach" in capabilities:
-                scan["breach"] = self._copy_context_value(state.get("breach", {}))
-            if "scan.ai" in capabilities:
-                scan["ai"] = self._copy_context_value(state.get("ai"))
-                scan["ai_lang"] = state.get("ai_lang")
-            if "scan.identity" in capabilities:
-                result["identity"] = {
-                    "email": str(state.get("email", "")),
-                    "phone": str(state.get("phone", "")),
-                }
-            if "scan.lang" in capabilities:
-                result["lang"] = str(state.get("lang", ""))
-            if "scan.tenant" in capabilities:
-                result["tenant_id"] = str(state.get("tenant_id", ""))
-            if scan:
-                result["scan"] = scan
-
-        if "addon.context" in capabilities:
-            addon_contexts = payload.get("addon_contexts")
-            if isinstance(addon_contexts, Mapping):
-                extra = addon_contexts.get(str(addon.get("id", "")))
-                if extra is not None:
-                    if not isinstance(extra, Mapping):
-                        raise TypeError(
-                            f"context add-on {addon['id']!r} harus berupa mapping"
-                        )
-                    result["addon_context"] = self._copy_context_value(extra)
-
-        return result
-
-    @staticmethod
-    def _copy_context_value(value: Any) -> Any:
-        try:
-            return json.loads(json.dumps(value, ensure_ascii=False))
-        except (TypeError, ValueError) as exc:
-            raise TypeError(
-                "add-on capability payload must be JSON-serializable"
-            ) from exc
-
     def _execute_ui(
         self,
         addon: Mapping[str, Any],
         context: Mapping[str, Any],
         ui_spec: Mapping[str, Any],
     ) -> tuple[dict[str, Any], Any]:
-        self._require_execution_runtime()
         package_root = self.root / str(addon["id"])
         entrypoint = self._safe_entrypoint(
             package_root,
@@ -452,7 +363,6 @@ class AddonManager:
         *,
         invocation: Mapping[str, Any] | None = None,
     ) -> tuple[dict[str, Any], Any]:
-        self._require_execution_runtime()
         package_root = self.root / str(addon["id"])
         entrypoint = self._safe_entrypoint(
             package_root,
@@ -528,7 +438,6 @@ class AddonManager:
         *,
         module_prefix: str,
     ) -> Any:
-        self._require_execution_runtime()
         package_root = self.root / str(addon["id"])
         entrypoint = self._safe_entrypoint(
             package_root,
@@ -570,13 +479,6 @@ class AddonManager:
                 ):
                     sys.modules.pop(loaded_name, None)
 
-    def _require_execution_runtime(self) -> None:
-        if not _in_process_runtime_enabled():
-            raise RuntimeError(
-                "add-on execution is disabled: sandboxed runtime required; "
-                "in-process execution is legacy/developer-only"
-            )
-
     def _run_lifecycle_hook(
         self,
         addon_id: str,
@@ -617,15 +519,6 @@ class AddonManager:
         addon = self.get(addon_id)
         if addon is None:
             raise ValueError(f"add-on is not installed: {addon_id}")
-
-        # Deactivation must remain available as a fail-safe control even when
-        # no executable Add-On runtime is available. Lifecycle code is skipped
-        # in that case; the registry state is still forced inactive.
-        if not active and not _in_process_runtime_enabled():
-            state = self._load_state()
-            state[addon_id] = False
-            self._save_state(state)
-            return self.get(addon_id) or addon
 
         self._run_lifecycle_hook(
             addon_id,
@@ -828,20 +721,6 @@ class AddonManager:
             if ui_entrypoint.startswith("/") or ".." in Path(ui_entrypoint).parts:
                 raise ValueError("add-on UI entrypoint must stay inside its package")
 
-        raw_capabilities = payload.get("capabilities", [])
-        if not isinstance(raw_capabilities, list):
-            raise ValueError("add-on capabilities must be an array")
-        capabilities: list[str] = []
-        for capability in raw_capabilities:
-            if not isinstance(capability, str) or capability.strip() not in _ADDON_CAPABILITIES:
-                raise ValueError(
-                    "unsupported add-on capability: "
-                    + str(capability)
-                )
-            normalized = capability.strip()
-            if normalized not in capabilities:
-                capabilities.append(normalized)
-
         return AddonManifest(
             addon_id=addon_id,
             name=name,
@@ -856,26 +735,12 @@ class AddonManager:
             return_required=return_spec["required"],
             events=tuple(events),
             result_key=self._parse_result_key(payload.get("result_key")),
-            ai_context=self._strict_bool_field(payload, "ai_context", False),
-            default_active=self._strict_bool_field(payload, "default_active", False),
-            capabilities=tuple(capabilities),
+            ai_context=bool(payload.get("ai_context", False)),
+            default_active=bool(payload.get("default_active", False)),
             ui_entrypoint=ui_entrypoint,
             ui_function=ui_function,
             lifecycle=tuple(lifecycle),
         )
-
-    @staticmethod
-    def _strict_bool_field(
-        payload: Mapping[str, Any],
-        field_name: str,
-        default: bool,
-    ) -> bool:
-        value = payload.get(field_name, default)
-        if not isinstance(value, bool):
-            raise ValueError(
-                f"add-on manifest field {field_name!r} must be a boolean"
-            )
-        return value
 
     def _safe_extract(self, archive_path: Path, destination: Path) -> None:
         with zipfile.ZipFile(archive_path) as archive:

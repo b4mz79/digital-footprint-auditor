@@ -33,9 +33,6 @@
     }
   ],
   "result_key": "scorecard",
-  "capabilities": [
-    "scan.state"
-  ],
   "ai_context": true,
   "default_active": true
 }

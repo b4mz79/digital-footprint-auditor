@@ -33,10 +33,6 @@
     }
   ],
   "result_key": null,
-  "capabilities": [
-    "event",
-    "event.data"
-  ],
   "ai_context": false,
   "default_active": true
 }

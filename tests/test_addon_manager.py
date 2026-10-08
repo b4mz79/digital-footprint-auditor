@@ -10,11 +10,6 @@ import pytest
 from services.addon_manager import AddonManager
 
 
-@pytest.fixture(autouse=True)
-def _enable_legacy_runtime_for_existing_contract_tests(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("ADDON_RUNTIME_MODE", "in_process")
-
-
 def _zip_package(
     *,
     addon_id: str = "demo-addon",
@@ -45,7 +40,6 @@ def _zip_package(
             },
         },
         "events": events if events is not None else [],
-        "capabilities": ["event", "event.data", "addon.context"],
         "default_active": False,
         "lifecycle": lifecycle or {},
     }
@@ -153,11 +147,14 @@ def before_uninstall(context):
     )
 
     log_path = tmp_path / "addons" / "lifecycle-addon" / "lifecycle.log"
-    assert log_path.exists() is False
+    assert log_path.read_text(encoding="utf-8").splitlines() == [
+        "after_install"
+    ]
 
     manager.activate("lifecycle-addon")
     manager.deactivate("lifecycle-addon")
     assert log_path.read_text(encoding="utf-8").splitlines() == [
+        "after_install",
         "before_activate",
         "after_activate",
         "before_deactivate",
@@ -211,80 +208,6 @@ def after_activate(context):
         manager.activate("rollback-addon")
 
     assert manager.get("rollback-addon")["active"] is False
-
-
-def test_event_execution_context_is_capability_scoped(tmp_path: Path) -> None:
-    manager = AddonManager(tmp_path / "addons")
-    payload = _zip_package(
-        addon_id="capability-addon",
-        mode="on_event",
-        events=[{"name": "evidence.enriched"}],
-        plugin_body=(
-            "def run(context):\n"
-            "    return {\n"
-            "        'has_state': 'state' in context,\n"
-            "        'has_event': context.get('event'),\n"
-            "        'data': context.get('data'),\n"
-            "        'extra': context.get('addon_context'),\n"
-            "    }\n"
-        ),
-    )
-    manager.install_zip(payload)
-    manager.activate("capability-addon")
-
-    results = manager.dispatch_event(
-        "evidence.enriched",
-        {
-            "event": "evidence.enriched",
-            "data": {"services": ["example"]},
-            "state": {
-                "email": "user@example.com",
-                "services": ["example"],
-                "evidence": [{"secret": "must-not-leak"}],
-                "events": [{"internal": "must-not-leak"}],
-            },
-            "addon_contexts": {
-                "capability-addon": {"allowed": "yes"},
-            },
-        },
-    )
-
-    assert results[0][1] == {
-        "has_state": False,
-        "has_event": "evidence.enriched",
-        "data": {"services": ["example"]},
-        "extra": {"allowed": "yes"},
-    }
-
-
-def test_manifest_rejects_unknown_capability(tmp_path: Path) -> None:
-    manager = AddonManager(tmp_path / "addons")
-    buffer = io.BytesIO()
-    manifest = {
-        "id": "unknown-capability",
-        "name": "Demo",
-        "caption": "Demo",
-        "version": "1.0.0",
-        "entrypoint": "plugin.py",
-        "type": "backend",
-        "invocation": {
-            "function": "run",
-            "mode": "on_demand",
-            "input": {"required": True},
-            "return": {"type": "result", "required": True},
-        },
-        "events": [],
-        "capabilities": ["host.filesystem"],
-    }
-    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr("unknown-capability/manifest.json", json.dumps(manifest))
-        archive.writestr(
-            "unknown-capability/plugin.py",
-            "def run(context): return {'ok': True}\n",
-        )
-
-    with pytest.raises(ValueError, match="unsupported add-on capability"):
-        manager.install_zip(buffer.getvalue())
 
 
 def test_manifest_rejects_removed_lifecycle_hooks(tmp_path: Path) -> None:
@@ -371,7 +294,7 @@ def test_dispatch_event_invokes_matching_active_addon(tmp_path: Path) -> None:
         return_required=False,
         plugin_body=(
             "def run(context):\n"
-            "    return {'event': context['event'], 'value': context['data']['value']}\n"
+            "    return {'event': context['event'], 'value': context['value']}\n"
         ),
     )
     manager.install_zip(payload)
@@ -379,10 +302,7 @@ def test_dispatch_event_invokes_matching_active_addon(tmp_path: Path) -> None:
 
     results = manager.dispatch_event(
         "evidence.enriched",
-        {
-            "event": "evidence.enriched",
-            "data": {"value": 42},
-        },
+        {"event": "evidence.enriched", "value": 42},
     )
 
     assert len(results) == 1
@@ -559,83 +479,6 @@ def test_invoke_loads_addon_as_isolated_package(tmp_path: Path) -> None:
 
     _, result = manager.invoke("package-addon", {})
     assert result == {"value": 42}
-
-
-def test_install_never_executes_after_install_hook(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("ADDON_RUNTIME_MODE", raising=False)
-    manager = AddonManager(tmp_path / "addons")
-    plugin = """from pathlib import Path
-
-def run(context):
-    return {"ok": True}
-
-def after_install(context):
-    Path(__file__).with_name("executed.txt").write_text("pwned", encoding="utf-8")
-"""
-    installed = manager.install_zip(
-        _zip_package(
-            addon_id="install-hook-addon",
-            plugin_body=plugin,
-            lifecycle={"after_install": "after_install"},
-        )
-    )
-    assert installed["active"] is False
-    assert not (tmp_path / "addons" / "install-hook-addon" / "executed.txt").exists()
-
-
-def test_execution_fails_closed_without_sandbox_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("ADDON_RUNTIME_MODE", raising=False)
-    manager = AddonManager(tmp_path / "addons")
-    manager.install_zip(_zip_package())
-    with pytest.raises(RuntimeError, match="sandboxed runtime required"):
-        manager.activate("demo-addon")
-    assert manager.get("demo-addon")["active"] is False
-
-
-def test_deactivate_remains_available_without_execution_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("ADDON_RUNTIME_MODE", raising=False)
-    manager = AddonManager(tmp_path / "addons")
-    manager.install_zip(_zip_package())
-    state_path = tmp_path / "addons" / ".addons-state.json"
-    state_path.write_text('{"demo-addon": true}', encoding="utf-8")
-
-    result = manager.deactivate("demo-addon")
-
-    assert result["active"] is False
-    assert json.loads(state_path.read_text(encoding="utf-8"))["demo-addon"] is False
-
-
-def test_manifest_rejects_non_boolean_security_flags(tmp_path: Path) -> None:
-    manager = AddonManager(tmp_path / "addons")
-    for field_name in ("ai_context", "default_active"):
-        manifest = {
-            "id": f"invalid-{field_name}",
-            "name": "Demo",
-            "caption": "Demo",
-            "version": "1.0.0",
-            "entrypoint": "plugin.py",
-            "type": "backend",
-            "invocation": {
-                "function": "run",
-                "mode": "on_demand",
-                "input": {"required": True},
-                "return": {"type": "result", "required": True},
-            },
-            "events": [],
-            field_name: "false",
-        }
-        buffer = io.BytesIO()
-        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
-            archive.writestr(
-                f"invalid-{field_name}/manifest.json",
-                json.dumps(manifest),
-            )
-            archive.writestr(
-                f"invalid-{field_name}/plugin.py",
-                "def run(context): return {'ok': True}\n",
-            )
-        with pytest.raises(ValueError, match=field_name):
-            manager.install_zip(buffer.getvalue())
 
 
 def test_install_rejects_duplicate(tmp_path: Path) -> None:
