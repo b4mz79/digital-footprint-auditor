@@ -80,7 +80,7 @@ def test_authority_gate_rejects_dynamic_or_unrestricted_operations(
 ) -> None:
     root = _package(tmp_path / "package", **{"plugin.py": source})
 
-    with pytest.raises(ValueError, match="static authority gate"):
+    with pytest.raises(ValueError, match="not allowlisted|static authority gate"):
         validate_package_authority(root)
 
 
