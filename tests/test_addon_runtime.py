@@ -20,6 +20,10 @@ def test_windows_attribute_constants_match_win32_contract() -> None:
     assert addon_runtime._PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES == 0x00020009
 
 
+def test_windows_creation_flags_include_unicode_environment() -> None:
+    assert addon_runtime._CREATE_UNICODE_ENVIRONMENT == 0x00000400
+
+
 def test_runtime_rejects_non_windows(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(addon_runtime.os, "name", "posix")
     with pytest.raises(RuntimeError, match="requires Windows"):
