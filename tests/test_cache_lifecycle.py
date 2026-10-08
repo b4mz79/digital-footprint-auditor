@@ -43,10 +43,13 @@ def test_purge_expired_rejects_negative_retention(tmp_path) -> None:
 def test_purge_expired_removes_only_cache_files(tmp_path) -> None:
     old_audit = tmp_path / "audit_cache_old.json"
     old_breach = tmp_path / "breach_cache_old.json"
+    old_imap = tmp_path / "imap_cache_old.json"
+    old_osint = tmp_path / "osint_cache_old.json"
+    old_enrichment = tmp_path / "enrichment_cache_old.json"
     fresh_audit = tmp_path / "audit_cache_fresh.json"
     unrelated = tmp_path / "notes.txt"
 
-    for path in (old_audit, old_breach, fresh_audit, unrelated):
+    for path in (old_audit, old_breach, old_imap, old_osint, old_enrichment, fresh_audit, unrelated):
         path.write_text("x", encoding="utf-8")
 
     old_mtime = 10.0
@@ -55,14 +58,20 @@ def test_purge_expired_removes_only_cache_files(tmp_path) -> None:
 
     os.utime(old_audit, (old_mtime, old_mtime))
     os.utime(old_breach, (old_mtime, old_mtime))
+    os.utime(old_imap, (old_mtime, old_mtime))
+    os.utime(old_osint, (old_mtime, old_mtime))
+    os.utime(old_enrichment, (old_mtime, old_mtime))
     os.utime(fresh_audit, (fresh_mtime, fresh_mtime))
     os.utime(unrelated, (old_mtime, old_mtime))
 
     removed = cache_security.purge_expired(tmp_path, 50.0, now=100.0)
 
-    assert removed == 2
+    assert removed == 5
     assert not old_audit.exists()
     assert not old_breach.exists()
+    assert not old_imap.exists()
+    assert not old_osint.exists()
+    assert not old_enrichment.exists()
     assert fresh_audit.exists()
     assert unrelated.exists()
 
