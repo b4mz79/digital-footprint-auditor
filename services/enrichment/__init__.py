@@ -2,20 +2,8 @@
 
 Supporting cache, verification, and evidence-domain components for the
 Evidence Enrichment capability.
+
+The package initializer is intentionally side-effect free. Import concrete
+modules explicitly so importing one evidence primitive does not initialize
+cache directories or external-service dependencies.
 """
-
-from .discovery_cache import (
-    DISCOVERY_CACHE_DIR,
-    discovery_cache_enabled,
-    load_discovery_cache,
-    save_discovery_cache,
-)
-from .evidence_verification import verify_evidence_records
-
-__all__ = [
-    "DISCOVERY_CACHE_DIR",
-    "discovery_cache_enabled",
-    "load_discovery_cache",
-    "save_discovery_cache",
-    "verify_evidence_records",
-]
