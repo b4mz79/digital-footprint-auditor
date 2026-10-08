@@ -157,6 +157,7 @@ def run_scan(
                 on_event(event)
 
     def dispatch_addon_event(
+        owner: str,
         event_name: str,
         data: Mapping[str, Any] | None = None,
     ) -> None:
@@ -168,6 +169,8 @@ def run_scan(
                 {
                     "data": dict(data or {}),
                 },
+            ,
+                owner=owner,
             )
         except Exception as exc:
             logger.warning(
@@ -212,6 +215,7 @@ def run_scan(
                 if result_key
                 else {"addon": addon_id, "result": addon_output}
             )
+            live_payload["owner"] = str(addon.get("owner", ""))
             logger.info(
                 "[Pipeline] Add-on live payload: id=%s result_present=%s payload_keys=%s",
                 addon_id,
@@ -250,7 +254,8 @@ def run_scan(
                 state["services"].extend(found)
                 emit(_event("success", "success_imap", stage="imap", count=len(found)), {"services": found})
                 dispatch_addon_event(
-                    "discovery.imap.completed",
+                    "imap",
+"discovery.imap.completed",
                     {"services": list(found)},
                 )
 
@@ -274,7 +279,8 @@ def run_scan(
             state["services"].extend(found)
             emit(_event("success", "success_osint", stage="osint", count=len(found)), {"services": found})
             dispatch_addon_event(
-                "discovery.osint.completed",
+                "osint",
+"discovery.osint.completed",
                 {"services": list(found)},
             )
 
@@ -307,7 +313,8 @@ def run_scan(
                 {"breach": dict(state["breach"])},
             )
             dispatch_addon_event(
-                "breach.scan.completed",
+                "breach",
+"breach.scan.completed",
                 {"breach": dict(state["breach"])},
             )
         except Exception as exc:
@@ -373,7 +380,8 @@ def run_scan(
 
         state["evidence"] = evidence_to_dicts(verified_evidence)
         dispatch_addon_event(
-            "evidence.verified",
+            "evidence",
+"evidence.verified",
             {"evidence": list(state["evidence"])},
         )
         contextual_count = sum(
