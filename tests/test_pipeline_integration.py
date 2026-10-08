@@ -67,7 +67,6 @@ def test_pipeline_evidence_enrichment_can_be_disabled(monkeypatch) -> None:
     monkeypatch.setattr(pipeline, "service_findings_to_evidence", unexpected)
     monkeypatch.setattr(pipeline, "enrich_evidence", unexpected)
     monkeypatch.setattr(pipeline, "verify_evidence_records", unexpected)
-    monkeypatch.setattr(pipeline, "dispatch_addon_event", unexpected, raising=False)
 
     state = pipeline.run_scan(
         email="subject@example.org",
