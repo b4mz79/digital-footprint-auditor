@@ -637,6 +637,27 @@ def _sanitize_evidence_records(evidence_records: list | None) -> list[dict[str, 
     if not isinstance(evidence_records, list):
         raise TypeError("evidence_records harus berupa list.")
 
+    def is_base_scanner_mirror(raw: object) -> bool:
+        """Identify EvidenceRecords that only mirror scanner findings.
+
+        The pipeline keeps these records for provenance, verification, and
+        future deterministic scoring. They must not be sent again under the
+        evidence block because the original scanner finding is already present
+        in UNTRUSTED_SCAN_DATA. The check is deliberately tied to the
+        normalizer provenance, not merely to relation/directness, so future
+        direct enrichment evidence is not silently discarded.
+        """
+        if not isinstance(raw, dict):
+            return False
+        metadata = raw.get("metadata")
+        provenance = raw.get("provenance")
+        return (
+            isinstance(metadata, dict)
+            and metadata.get("finding_type") == "service_discovery"
+            and isinstance(provenance, dict)
+            and provenance.get("normalizer") == "service_findings_to_evidence"
+        )
+
     def priority(raw: object) -> tuple[int, int]:
         if not isinstance(raw, dict):
             return (2, 0)
@@ -645,12 +666,14 @@ def _sanitize_evidence_records(evidence_records: list | None) -> list[dict[str, 
         relation = str(raw.get("relation", "") or "")
         if finding_type == "security_context" or relation == "security_publication":
             return (0, 0)
-        if finding_type == "service_discovery":
-            return (1, 0)
-        return (2, 0)
+        return (1, 0)
 
     records = sorted(
-        enumerate(evidence_records[:MAX_EVIDENCE_RECORDS]),
+        (
+            pair
+            for pair in enumerate(evidence_records[:MAX_EVIDENCE_RECORDS])
+            if not is_base_scanner_mirror(pair[1])
+        ),
         key=lambda pair: (priority(pair[1]), pair[0]),
     )
 
