@@ -3,9 +3,16 @@ from __future__ import annotations
 import io
 import json
 import zipfile
+
+import pytest
 from pathlib import Path
 
 from services.addon_manager import AddonManager
+
+
+@pytest.fixture(autouse=True)
+def _enable_legacy_runtime_for_addon_contract_tests(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ADDON_RUNTIME_MODE", "in_process")
 
 
 def _package_zip() -> bytes:
