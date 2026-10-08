@@ -194,7 +194,7 @@ def safe_filename_identity(email_addr: str, phone: str = "") -> str:
     """Create an HMAC-based cache identity without a hard-coded fallback key."""
     normalized_email = email_addr.strip().lower()
     normalized_phone = re.sub(r"\D", "", phone.strip())
-    return _hmac_identity(f"{normalized_email}_{normalized_phone}")
+    return hmac_identity(f"{normalized_email}_{normalized_phone}")
 
 def safe_tenant_identity(tenant_id: str) -> str:
     tenant_id = tenant_id.strip()
