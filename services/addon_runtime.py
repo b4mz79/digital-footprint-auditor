@@ -21,8 +21,6 @@ _AC_NAME_MAX = 64
 _CREATE_NO_WINDOW = 0x08000000
 _CREATE_UNICODE_ENVIRONMENT = 0x00000400
 _EXTENDED_STARTUPINFO_PRESENT = 0x00080000
-_STARTF_USESTDHANDLES = 0x00000100
-_PROC_THREAD_ATTRIBUTE_HANDLE_LIST = 0x00020002
 _PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES = 0x00020009
 
 _WAIT_OBJECT_0 = 0x00000000
@@ -373,6 +371,7 @@ def _python_command(
     executable: Path,
     worker_path: Path,
     request_path: Path,
+    response_path: Path,
 ) -> str:
     if executable.suffix.lower() != ".exe":
         raise ValueError(
@@ -385,6 +384,7 @@ def _python_command(
             "-B",
             str(worker_path),
             str(request_path),
+            str(response_path),
         ]
     )
 
@@ -530,7 +530,6 @@ def _launch_process(
     executable: Path,
     command_line: str,
     cwd: Path,
-    response_path: Path,
     sid_text: str,
     environment: Mapping[str, str],
     timeout_seconds: float,
@@ -538,24 +537,14 @@ def _launch_process(
     _configure_win32()
     kernel32 = _kernel32()
 
-    import msvcrt
-
-    response_file = open(response_path, "w", encoding="utf-8")
-    response_fd = response_file.fileno()
-    os.set_handle_inheritable(response_fd, True)
-    response_handle = ctypes.c_void_p(
-        msvcrt.get_osfhandle(response_fd)
-    )
-
     attribute_size = ctypes.c_size_t(0)
     kernel32.InitializeProcThreadAttributeList(
         None,
-        2,
+        1,
         0,
         ctypes.byref(attribute_size),
     )
     if attribute_size.value == 0:
-        response_file.close()
         raise _win_error(
             "InitializeProcThreadAttributeList sizing failed"
         )
@@ -567,11 +556,10 @@ def _launch_process(
     )
     if not kernel32.InitializeProcThreadAttributeList(
         attribute_ptr,
-        2,
+        1,
         0,
         ctypes.byref(attribute_size),
     ):
-        response_file.close()
         raise _win_error("InitializeProcThreadAttributeList failed")
 
     sid_buffer = _sid_from_string(sid_text)
@@ -581,7 +569,6 @@ def _launch_process(
         CapabilityCount=0,
         Reserved=0,
     )
-    handle_list = (ctypes.c_void_p * 1)(response_handle.value)
     environment_block = _environment_block(environment)
 
     try:
@@ -596,23 +583,9 @@ def _launch_process(
         ):
             raise _win_error("UpdateProcThreadAttribute(security) failed")
 
-        if not kernel32.UpdateProcThreadAttribute(
-            attribute_ptr,
-            0,
-            _PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
-            ctypes.cast(handle_list, ctypes.c_void_p),
-            ctypes.sizeof(handle_list),
-            None,
-            None,
-        ):
-            raise _win_error("UpdateProcThreadAttribute(handles) failed")
-
         startup = _STARTUPINFOEX()
         startup.StartupInfo.cb = ctypes.sizeof(_STARTUPINFOEX)
         startup.lpAttributeList = attribute_ptr
-        startup.StartupInfo.dwFlags = _STARTF_USESTDHANDLES
-        startup.StartupInfo.hStdOutput = response_handle
-        startup.StartupInfo.hStdError = response_handle
 
         process_info = _PROCESS_INFORMATION()
         command_buffer = ctypes.create_unicode_buffer(command_line)
@@ -621,7 +594,7 @@ def _launch_process(
             command_buffer,
             None,
             None,
-            True,
+            False,
             _EXTENDED_STARTUPINFO_PRESENT
             | _CREATE_NO_WINDOW
             | _CREATE_UNICODE_ENVIRONMENT,
@@ -662,9 +635,7 @@ def _launch_process(
             kernel32.CloseHandle(process_info.hProcess)
     finally:
         kernel32.DeleteProcThreadAttributeList(attribute_ptr)
-        response_file.close()
         _free_sid(sid_buffer)
-
 
 def _sid_from_string(sid_text: str) -> _SID_TYPE:
     sid = _SID_TYPE()
@@ -750,12 +721,12 @@ def execute_addon(
             executable,
             profile_dir / "PrivacyAuditorRuntime" / "addon_runtime_worker.py",
             request_path,
+            response_path,
         )
         exit_code = _launch_process(
             executable,
             command_line,
             profile_dir / "PrivacyAuditorRuntime",
-            response_path,
             sid_text,
             _safe_environment(profile_dir),
             _runtime_timeout(),
