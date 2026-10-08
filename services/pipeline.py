@@ -99,6 +99,7 @@ def run_scan(
     enable_imap: bool = True,
     enable_osint: bool = True,
     enable_breach: bool = True,
+    enable_evidence_enrichment: bool = True,
     force_refresh: bool = False,
     lang: str = "id",
     tenant_id: str | None = None,
@@ -309,74 +310,81 @@ def run_scan(
             state["breach"]["error"] = str(exc)
             emit(_event("error", text=f"Error Breach Scan: {exc}", stage="breach"))
 
-    # Evidence Enrichment is an optional downstream layer. When disabled for
-    # forensic comparison, do not normalize/verify or dispatch evidence events at all.
-    # This preserves the pre-enrichment AI input path: scanner services + breach findings.
-    if env_bool("EVIDENCE_ENRICHMENT_ENABLED", True):
-            # Normalize scanner output into stable evidence records after all discovery stages.
-    # This is lineage only: it does not calculate risk and does not alter findings.
-    local_evidence = service_findings_to_evidence(state["services"])
+    # Step 4: Evidence Enrichment
+    #
+    # This is a first-class built-in pipeline stage, controlled by the same
+    # runtime execution flag pattern as IMAP, OSINT, and Breach.
+    #
+    # When disabled, do not normalize, enrich, verify, or dispatch any
+    # evidence-stage events. The downstream AI therefore receives the
+    # pre-enrichment input path: scanner services + breach findings.
+    if enable_evidence_enrichment:
+        # Normalize scanner output into stable evidence records after all
+        # discovery stages. This is lineage only; it does not calculate risk
+        # and does not alter scanner findings.
+        local_evidence = service_findings_to_evidence(state["services"])
 
-    # Enrichment is downstream of normalization and upstream of AI.
-    # It only augments evidence; it never changes scanner findings or calculates risk.
-    emit(
-        _event(
-            "info",
-            text=(
-                "Memulai Evidence & Enrichment..."
-                if os.getenv("FIRECRAWL_API_KEY", "").strip()
-                else "Evidence & Enrichment dilewati: Firecrawl API tidak dikonfigurasi."
+        emit(
+            _event(
+                "info",
+                text=(
+                    "Memulai Evidence & Enrichment..."
+                    if os.getenv("FIRECRAWL_API_KEY", "").strip()
+                    else "Evidence & Enrichment dilewati: Firecrawl API tidak dikonfigurasi."
+                ),
+                stage="evidence_start",
             ),
-            stage="evidence_start",
-        ),
-    )
+        )
 
-    try:
-        enriched_evidence = asyncio.run(enrich_evidence(local_evidence))
-    except Exception as exc:
-        # Preserve normalized evidence if optional enrichment is unavailable.
-        logger.warning("[Pipeline] Evidence enrichment failed: %s", exc)
-        enriched_evidence = local_evidence
+        try:
+            enriched_evidence = asyncio.run(enrich_evidence(local_evidence))
+        except Exception as exc:
+            # Preserve normalized evidence if optional enrichment is unavailable.
+            logger.warning("[Pipeline] Evidence enrichment failed: %s", exc)
+            enriched_evidence = local_evidence
 
-    dispatch_addon_event(
-        "evidence.enriched",
-        {"evidence": list(evidence_to_dicts(enriched_evidence))},
-    )
+        dispatch_addon_event(
+            "evidence.enriched",
+            {"evidence": list(evidence_to_dicts(enriched_evidence))},
+        )
 
-    try:
-        verified_evidence = asyncio.run(verify_evidence_records(enriched_evidence))
-    except Exception as exc:
-        # Verification is a quality/provenance signal only. If the verifier
-        # itself is unavailable, preserve the enriched evidence unchanged.
-        logger.warning("[Pipeline] Evidence URL verification failed: %s", exc)
-        verified_evidence = enriched_evidence
+        try:
+            verified_evidence = asyncio.run(
+                verify_evidence_records(enriched_evidence)
+            )
+        except Exception as exc:
+            # Verification is a quality/provenance signal only. If the verifier
+            # itself is unavailable, preserve the enriched evidence unchanged.
+            logger.warning(
+                "[Pipeline] Evidence URL verification failed: %s",
+                exc,
+            )
+            verified_evidence = enriched_evidence
 
-    state["evidence"] = evidence_to_dicts(verified_evidence)
-    dispatch_addon_event(
-        "evidence.verified",
-        {"evidence": list(state["evidence"])},
-    )
-    contextual_count = sum(
-        1
-        for item in state["evidence"]
-        if item.get("relation") == "security_publication"
-    )
-    emit(
-        _event(
-            "success",
-            text=(
-                "Evidence normalization & enrichment selesai. "
-                f"Total={len(state['evidence'])}; "
-                f"contextual={contextual_count}."
+        state["evidence"] = evidence_to_dicts(verified_evidence)
+        dispatch_addon_event(
+            "evidence.verified",
+            {"evidence": list(state["evidence"])},
+        )
+        contextual_count = sum(
+            1
+            for item in state["evidence"]
+            if item.get("relation") == "security_publication"
+        )
+        emit(
+            _event(
+                "success",
+                text=(
+                    "Evidence normalization & enrichment selesai. "
+                    f"Total={len(state['evidence'])}; "
+                    f"contextual={contextual_count}."
+                ),
+                stage="evidence",
+                count=len(state["evidence"]),
+                contextual_count=contextual_count,
             ),
-            stage="evidence",
-            count=len(state["evidence"]),
-            contextual_count=contextual_count,
-        ),
-        {"evidence": list(state["evidence"])},
-    )
-
-
+            {"evidence": list(state["evidence"])},
+        )
     else:
         logger.info(
             "[Pipeline] Evidence Enrichment disabled; preserving pre-enrichment AI input path. "
