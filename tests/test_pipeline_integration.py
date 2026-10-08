@@ -121,10 +121,10 @@ def test_pipeline_forwards_evidence_to_ai(monkeypatch) -> None:
         with_ai=True,
     )
 
-    # The normalized EvidenceRecord remains in pipeline state for provenance,
-    # but it is a scanner mirror and must not be sent twice to the AI.
+    # Pipeline forwards the complete evidence ledger. Deduplication is an AI
+    # payload concern and is exercised through build_user_prompt tests.
     assert len(state["evidence"]) == 1
-    assert captured["evidence_records"] == []
+    assert len(captured["evidence_records"]) == 1
 
 
 def test_pipeline_passes_enriched_evidence_to_ai(monkeypatch) -> None:
@@ -196,12 +196,14 @@ def test_pipeline_passes_enriched_evidence_to_ai(monkeypatch) -> None:
         with_ai=True,
     )
 
-    # Pipeline retains both the scanner mirror and the enrichment record,
-    # while AI receives only the new enrichment evidence.
+    # Pipeline retains both the scanner mirror and the enrichment record and
+    # forwards the complete ledger. AI payload filtering is tested separately.
     assert len(state["evidence"]) == 2
-    assert len(captured["evidence_records"]) == 1
-    contextual = captured["evidence_records"][0]
-    assert contextual["relation"] == "security_publication"
+    assert len(captured["evidence_records"]) == 2
+    contextual = next(
+        item for item in captured["evidence_records"]
+        if item["relation"] == "security_publication"
+    )
     assert contextual["directness"] == "contextual"
     assert contextual["assertion_scope"] == "security_publication_context_only"
     assert contextual["provenance"]["assertion_scope"] == "security_publication_context_only"
