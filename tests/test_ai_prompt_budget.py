@@ -118,9 +118,9 @@ def test_build_user_prompt_excludes_scanner_mirror_but_keeps_new_evidence() -> N
         scan_status={"breach_scan_complete": True, "failed_engines": []},
     )
 
-    marker = "<UNTRUSTED_EVIDENCE>\\n"
+    marker = "<UNTRUSTED_EVIDENCE>\n"
     evidence_start = prompt.index(marker) + len(marker)
-    evidence_end = prompt.index("\\n</UNTRUSTED_EVIDENCE>", evidence_start)
+    evidence_end = prompt.index("\n</UNTRUSTED_EVIDENCE>", evidence_start)
     evidence_payload = prompt[evidence_start:evidence_end]
 
     assert "scanner-mirror" not in evidence_payload
