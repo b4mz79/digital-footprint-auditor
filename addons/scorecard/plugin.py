@@ -23,7 +23,7 @@ def run(context: Mapping[str, Any]) -> dict[str, Any]:
     data = context.get("data")
     if not isinstance(data, Mapping):
         raise TypeError("scorecard add-on requires context['data']")
-    state = dict(data)
+    state = {"evidence": list(data.get("evidence", []))}
 
     # Package configuration is the add-on default. The host may supply an
     # explicit definition/policy when invoking the legacy scorecard bridge or
