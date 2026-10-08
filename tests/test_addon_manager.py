@@ -371,7 +371,7 @@ def test_dispatch_event_invokes_matching_active_addon(tmp_path: Path) -> None:
         return_required=False,
         plugin_body=(
             "def run(context):\n"
-            "    return {'event': context['event'], 'value': context['value']}\n"
+            "    return {'event': context['event'], 'value': context['data']['value']}\n"
         ),
     )
     manager.install_zip(payload)
