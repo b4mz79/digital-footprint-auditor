@@ -4,7 +4,7 @@
 
 This guide documents the public Add-On architecture of Privacy Auditor.
 
-The Add-On system allows independently packaged extensions to be installed, discovered, activated, invoked, deactivated, and uninstalled without turning every optional capability into a built-in service.
+The Add-On system allows independently packaged extensions to be installed, discovered, activated, invoked, deactivated, and uninstalled without turning every optional capability into a built-in service. Security-sensitive host data is exposed only through declared capabilities.
 
 The guide describes the host contract and the reference Add-On `just-sample`.
 
@@ -184,8 +184,31 @@ Reference structure:
 | `result_key` | Optional key used by the host to select a UI result |
 | `ai_context` | Whether the result may be supplied to AI context |
 | `default_active` | Initial activation state |
+| `capabilities` | Explicit host data/resources the Add-On may receive |
 
 The current backend invocation function is `run`. This is a contract, not an arbitrary function name selected at runtime.
+
+### 6.2 Capability contract
+
+Add-On execution uses an explicit capability allow-list. The host may hold substantially more state than an Add-On needs, so undeclared host state is not forwarded to the Add-On.
+
+Supported capability names are:
+
+- `event` — canonical event name
+- `event.data` — canonical event payload
+- `scan.state` — sanitized scan snapshot used by integrations such as Scorecard
+- `scan.services` — discovered service findings
+- `scan.evidence` — structured evidence records
+- `scan.breach` — breach findings and scan metadata
+- `scan.ai` — AI result and AI language
+- `scan.identity` — email and phone supplied to the scan
+- `scan.lang` — scan language
+- `scan.tenant` — tenant identifier
+- `addon.context` — explicit per-Add-On context supplied by the host
+
+Capability names are deny-by-default. A manifest must declare a capability before the corresponding data is exposed. The host never forwards the raw pipeline `state`, the global `addon_contexts` mapping, event history, or unrelated Add-On results as an implicit capability.
+
+The capability contract is a data boundary, not an OS process sandbox. Python Add-On code must still execute outside the Privacy Auditor host process before untrusted packages are enabled for production use.
 
 ## 7. Add-On Types
 
@@ -431,7 +454,7 @@ Its responsibilities include:
 10. invoking UI entrypoints
 11. isolating Add-On failures
 
-The Add-On should not bypass the manager to alter host registration or lifecycle state.
+The Add-On should not bypass the manager to alter host registration or lifecycle state. Capability data is copied through a JSON-compatible boundary before execution so an Add-On cannot mutate the host objects by reference.
 
 ## 16. Registration and State
 
