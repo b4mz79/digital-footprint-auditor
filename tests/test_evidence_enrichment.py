@@ -71,7 +71,7 @@ def test_evidence_record_rejects_unscoped_verification_state() -> None:
 
 
 def test_service_finding_declares_narrow_assertion_scope() -> None:
-    from services.evidence.normalizer import service_findings_to_evidence
+    from services.enrichment.evidence.normalizer import service_findings_to_evidence
 
     records = service_findings_to_evidence([{
         "name": "Example Service",
