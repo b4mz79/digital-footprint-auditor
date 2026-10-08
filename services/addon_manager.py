@@ -162,7 +162,13 @@ class AddonManager:
             staging = self.root / f".install-{manifest.addon_id}-{uuid4().hex}"
             try:
                 shutil.copytree(package_root, staging)
-                shutil.copytree(staging, target)
+                try:
+                    shutil.copytree(staging, target)
+                except Exception:
+                    # Never leave a partially copied target behind when the
+                    # final install copy fails.
+                    shutil.rmtree(target, ignore_errors=True)
+                    raise
             finally:
                 if staging.exists():
                     shutil.rmtree(staging, ignore_errors=True)
