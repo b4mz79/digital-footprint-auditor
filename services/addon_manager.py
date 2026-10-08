@@ -53,6 +53,7 @@ class AddonManifest:
     invocation_function: str
     invocation_mode: str
     input_required: bool
+    input_fields: tuple[str, ...]
     return_type: str
     return_required: bool
     events: tuple[dict[str, Any], ...] = ()
@@ -74,7 +75,10 @@ class AddonManifest:
             "invocation": {
                 "function": self.invocation_function,
                 "mode": self.invocation_mode,
-                "input": {"required": self.input_required},
+                "input": {
+                    "required": self.input_required,
+                    "fields": list(self.input_fields),
+                },
                 "return": {
                     "type": self.return_type,
                     "required": self.return_required,
@@ -240,7 +244,12 @@ class AddonManager:
             )
 
         logger.info("[Add-On] invoke: id=%s mode=on_demand function=%s", addon_id, addon["invocation"]["function"])
-        return self._execute(addon, context)
+        invocation_context = self._build_invocation_context(
+            addon,
+            context,
+            invocation=addon["invocation"],
+        )
+        return self._execute(addon, invocation_context)
 
     def invoke_ui(
         self,
@@ -289,18 +298,13 @@ class AddonManager:
                 if event.get("name") == event_name
             )
             logger.info("[Add-On] event hook matched: id=%s event=%s function=%s", addon["id"], event_name, addon["invocation"]["function"])
-            addon_payload = dict(payload)
-            addon_contexts = payload.get("addon_contexts")
-            if isinstance(addon_contexts, Mapping):
-                extra_context = addon_contexts.get(str(addon["id"]))
-                if extra_context is not None:
-                    if not isinstance(extra_context, Mapping):
-                        raise TypeError(
-                            f"context add-on {addon['id']!r} harus berupa mapping"
-                        )
-                    addon_payload.update(dict(extra_context))
-            addon_payload.pop("addon_contexts", None)
             try:
+                addon_payload = self._build_invocation_context(
+                    addon,
+                    payload,
+                    invocation=event_spec,
+                    event_name=event_name,
+                )
                 result = self._execute(
                     addon,
                     addon_payload,
@@ -371,6 +375,60 @@ class AddonManager:
                     module_name + "."
                 ):
                     sys.modules.pop(loaded_name, None)
+
+    @staticmethod
+    def _build_invocation_context(
+        addon: Mapping[str, Any],
+        payload: Mapping[str, Any],
+        *,
+        invocation: Mapping[str, Any],
+        event_name: str | None = None,
+    ) -> dict[str, Any]:
+        """Build the only context visible to an add-on runner."""
+        addon_id = str(addon["id"])
+        if not isinstance(payload, Mapping):
+            raise TypeError(f"add-on {addon_id} requires mapping input")
+
+        input_spec = invocation.get("input")
+        if not isinstance(input_spec, Mapping):
+            raise ValueError(f"add-on {addon_id} input contract is invalid")
+
+        required = bool(input_spec.get("required"))
+        fields = input_spec.get("fields", ())
+        if not isinstance(fields, (list, tuple)):
+            raise ValueError(f"add-on {addon_id} input.fields must be an array")
+
+        context: dict[str, Any] = {}
+        if event_name is not None:
+            context["event"] = event_name
+
+        if not fields:
+            if required:
+                raise ValueError(f"add-on {addon_id} requires input fields")
+            return context
+
+        source = payload.get("data")
+        if not isinstance(source, Mapping):
+            if required:
+                raise TypeError(
+                    f"add-on {addon_id} requires event data as a mapping"
+                )
+            return context
+
+        data: dict[str, Any] = {}
+        for field in fields:
+            if field in source:
+                data[str(field)] = source[field]
+
+        if required and any(field not in data for field in fields):
+            missing = [field for field in fields if field not in data]
+            raise ValueError(
+                f"add-on {addon_id} missing declared input field(s): "
+                + ", ".join(missing)
+            )
+
+        context["data"] = data
+        return context
 
     def _execute(
         self,
@@ -622,6 +680,10 @@ class AddonManager:
             raise ValueError(
                 "add-on invocation.input.required must be a boolean"
             )
+        input_fields = self._parse_input_fields(
+            input_spec,
+            "add-on invocation.input.fields",
+        )
 
         return_spec = invocation.get("return")
         if not isinstance(return_spec, dict):
@@ -646,7 +708,13 @@ class AddonManager:
             event_name = str(item.get("name", "")).strip()
             if not event_name:
                 raise ValueError("add-on event name is required")
-            event_input = item.get("input", {"required": input_spec["required"]})
+            event_input = item.get(
+                "input",
+                {
+                    "required": input_spec["required"],
+                    "fields": list(input_fields),
+                },
+            )
             event_return = item.get(
                 "return",
                 {
@@ -660,6 +728,10 @@ class AddonManager:
                 raise ValueError(
                     f"add-on event input.required must be a boolean: {event_name}"
                 )
+            event_fields = self._parse_input_fields(
+                event_input,
+                f"add-on event input.fields: {event_name}",
+            )
             if not isinstance(event_return, dict):
                 raise ValueError(
                     f"add-on event return must be an object: {event_name}"
@@ -676,7 +748,10 @@ class AddonManager:
             events.append(
                 {
                     "name": event_name,
-                    "input": {"required": event_input["required"]},
+                    "input": {
+                        "required": event_input["required"],
+                        "fields": list(event_fields),
+                    },
                     "return": {
                         "type": event_return_type,
                         "required": event_return["required"],
@@ -747,6 +822,7 @@ class AddonManager:
             invocation_function=function_name,
             invocation_mode=mode,
             input_required=input_spec["required"],
+            input_fields=tuple(input_fields),
             return_type=return_type,
             return_required=return_spec["required"],
             events=tuple(events),
@@ -808,6 +884,29 @@ class AddonManager:
         if not candidate.is_file():
             raise ValueError(f"add-on entrypoint not found: {relative}")
         return candidate
+
+    @staticmethod
+    def _parse_input_fields(
+        input_spec: Mapping[str, Any],
+        label: str,
+    ) -> tuple[str, ...]:
+        fields = input_spec.get("fields", [])
+        if not isinstance(fields, list):
+            raise ValueError(f"{label} must be an array")
+        normalized: list[str] = []
+        for field in fields:
+            if not isinstance(field, str):
+                raise ValueError(f"{label} entries must be strings")
+            name = field.strip()
+            if not name or not re.fullmatch(r"[a-zA-Z][a-zA-Z0-9_-]{0,63}", name):
+                raise ValueError(f"{label} entries must be simple field names")
+            if name not in normalized:
+                normalized.append(name)
+        if input_spec.get("required") and not normalized:
+            raise ValueError(
+                f"{label} must declare at least one field when required"
+            )
+        return tuple(normalized)
 
     @staticmethod
     def _parse_result_key(value: Any) -> str | None:
