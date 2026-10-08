@@ -129,3 +129,28 @@ def test_worker_response_is_json_serializable(tmp_path: Path) -> None:
     )
 
     json.dumps(response, ensure_ascii=False)
+
+
+def test_worker_supports_package_relative_imports(tmp_path: Path) -> None:
+    root = _package(
+        tmp_path,
+        "from .helper import add_one\n"
+        "def run(context): return {'value': add_one(context['value'])}\n",
+    )
+    (root / "helper.py").write_text(
+        "def add_one(value): return value + 1\n",
+        encoding="utf-8",
+    )
+
+    response = execute_request(
+        {
+            "protocol_version": 1,
+            "package_root": str(root),
+            "entrypoint": "plugin.py",
+            "function": "run",
+            "context": {"value": 41},
+        }
+    )
+
+    assert response["ok"] is True
+    assert response["result"] == {"value": 42}
