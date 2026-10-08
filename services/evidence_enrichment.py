@@ -12,12 +12,18 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import os
 from typing import Iterable
 
 import httpx
 
 from services.enrichment.evidence.models import EvidenceRecord, EvidenceRelation
+from services.enrichment_cache import (
+    enrichment_cache_enabled,
+    load_enrichment_cache,
+    save_enrichment_cache,
+)
 from services.enrichment.evidence.security_publications import (
     FirecrawlSecurityPublicationProvider,
 )
@@ -40,6 +46,8 @@ async def enrich_evidence(
     *,
     firecrawl_api_key: str | None = None,
     firecrawl_max_results: int = 5,
+    force_refresh: bool = False,
+    tenant_id: str = "default",
 ) -> list[EvidenceRecord]:
     """Return base evidence plus optional contextual enrichment.
 
@@ -48,6 +56,8 @@ async def enrich_evidence(
     """
     base = list(records)
     logger.info("[Evidence Enrichment] Starting; base_records=%d", len(base))
+
+    force_refresh = bool(force_refresh)
 
     api_key = (
         firecrawl_api_key
@@ -101,6 +111,30 @@ async def enrich_evidence(
         3600.0,
     )
 
+    cache_material = {
+        "schema": 1,
+        "domains": domains,
+        "base_records": [record.to_dict() for record in base],
+        "provider": "firecrawl_security_publication",
+        "max_results": max_results,
+        "timeout_seconds": timeout_seconds,
+        "domain_concurrency": domain_concurrency,
+        "request_concurrency": request_concurrency,
+        "requests_per_minute": requests_per_minute,
+        "cooldown_seconds": cooldown_seconds,
+        "max_contextual_records": max_contextual_records,
+        "max_contextual_per_domain": max_contextual_per_domain,
+    }
+    cache_payload = hashlib.sha256(
+        json.dumps(
+            cache_material,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+
+
     domains = sorted(
         {
             record.domain.strip().lower()
@@ -111,6 +145,43 @@ async def enrich_evidence(
     if not domains:
         logger.info("[Evidence Enrichment] No normalized domains available; skipping.")
         return base
+
+    if enrichment_cache_enabled() and not force_refresh:
+        cached_records = load_enrichment_cache(cache_payload, tenant_id=tenant_id)
+        if cached_records is not None:
+            try:
+                cached = [
+                    EvidenceRecord(
+                        evidence_id=item["evidence_id"],
+                        source=item["source"],
+                        source_type=item["source_type"],
+                        relation=EvidenceRelation(item["relation"]),
+                        directness=item["directness"],
+                        confidence=item["confidence"],
+                        observed_at=item["observed_at"],
+                        published_at=item.get("published_at"),
+                        domain=item["domain"],
+                        url=item["url"],
+                        title=item["title"],
+                        summary=item["summary"],
+                        provenance=item.get("provenance") or {},
+                        metadata=item.get("metadata") or {},
+                        assertion_scope=item.get("assertion_scope", "unknown"),
+                        verification_scope=item.get("verification_scope", "url_accessibility"),
+                        verification_state=item.get("verification_state", "unknown"),
+                        verification_observed_at=item.get("verification_observed_at"),
+                    )
+                    for item in cached_records
+                ]
+            except (KeyError, TypeError, ValueError):
+                logger.warning("[Evidence Enrichment] Cache payload invalid; treating as miss.")
+            else:
+                logger.info(
+                    "[Evidence Enrichment] Cache HIT; records=%d domains=%d",
+                    len(cached),
+                    len(domains),
+                )
+                return cached
 
     logger.info(
         "[Evidence Enrichment] Input fingerprint; domains=%d domains_sha256=%s",
@@ -239,6 +310,19 @@ async def enrich_evidence(
         )
 
     output = list(merged.values())
+
+    if (
+        enrichment_cache_enabled()
+        and failed == 0
+        and len(results) == len(domains)
+        and not provider.cooldown_active
+    ):
+        save_enrichment_cache(
+            cache_payload,
+            [record.to_dict() for record in output],
+            tenant_id=tenant_id,
+        )
+
     logger.info(
         "[Evidence Enrichment] Completed; base=%d contextual_added=%d failed_domains=%d total=%d",
         len(base),
