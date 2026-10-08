@@ -20,9 +20,10 @@ def _load_json(name: str) -> dict[str, Any]:
 
 
 def run(context: Mapping[str, Any]) -> dict[str, Any]:
-    state = context.get("state")
-    if not isinstance(state, Mapping):
-        raise TypeError("scorecard add-on requires context['state']")
+    data = context.get("data")
+    if not isinstance(data, Mapping):
+        raise TypeError("scorecard add-on requires context['data']")
+    state = dict(data)
 
     # Package configuration is the add-on default. The host may supply an
     # explicit definition/policy when invoking the legacy scorecard bridge or
