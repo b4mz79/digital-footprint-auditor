@@ -2,12 +2,18 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import zipfile
 from pathlib import Path
 
 import pytest
 
 from services.addon_manager import AddonManager
+
+
+@pytest.fixture(autouse=True)
+def _enable_legacy_runtime_for_existing_contract_tests(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ADDON_RUNTIME_MODE", "in_process")
 
 
 def _zip_package(
@@ -147,14 +153,11 @@ def before_uninstall(context):
     )
 
     log_path = tmp_path / "addons" / "lifecycle-addon" / "lifecycle.log"
-    assert log_path.read_text(encoding="utf-8").splitlines() == [
-        "after_install"
-    ]
+    assert log_path.exists() is False
 
     manager.activate("lifecycle-addon")
     manager.deactivate("lifecycle-addon")
     assert log_path.read_text(encoding="utf-8").splitlines() == [
-        "after_install",
         "before_activate",
         "after_activate",
         "before_deactivate",
@@ -479,6 +482,70 @@ def test_invoke_loads_addon_as_isolated_package(tmp_path: Path) -> None:
 
     _, result = manager.invoke("package-addon", {})
     assert result == {"value": 42}
+
+
+def test_install_never_executes_after_install_hook(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("ADDON_RUNTIME_MODE", raising=False)
+    manager = AddonManager(tmp_path / "addons")
+    plugin = """from pathlib import Path
+
+def run(context):
+    return {"ok": True}
+
+def after_install(context):
+    Path(__file__).with_name("executed.txt").write_text("pwned", encoding="utf-8")
+"""
+    installed = manager.install_zip(
+        _zip_package(
+            addon_id="install-hook-addon",
+            plugin_body=plugin,
+            lifecycle={"after_install": "after_install"},
+        )
+    )
+    assert installed["active"] is False
+    assert not (tmp_path / "addons" / "install-hook-addon" / "executed.txt").exists()
+
+
+def test_execution_fails_closed_without_sandbox_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("ADDON_RUNTIME_MODE", raising=False)
+    manager = AddonManager(tmp_path / "addons")
+    manager.install_zip(_zip_package())
+    with pytest.raises(RuntimeError, match="sandboxed runtime required"):
+        manager.activate("demo-addon")
+    assert manager.get("demo-addon")["active"] is False
+
+
+def test_manifest_rejects_non_boolean_security_flags(tmp_path: Path) -> None:
+    manager = AddonManager(tmp_path / "addons")
+    for field_name in ("ai_context", "default_active"):
+        manifest = {
+            "id": f"invalid-{field_name}",
+            "name": "Demo",
+            "caption": "Demo",
+            "version": "1.0.0",
+            "entrypoint": "plugin.py",
+            "type": "backend",
+            "invocation": {
+                "function": "run",
+                "mode": "on_demand",
+                "input": {"required": True},
+                "return": {"type": "result", "required": True},
+            },
+            "events": [],
+            field_name: "false",
+        }
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr(
+                f"invalid-{field_name}/manifest.json",
+                json.dumps(manifest),
+            )
+            archive.writestr(
+                f"invalid-{field_name}/plugin.py",
+                "def run(context): return {'ok': True}\n",
+            )
+        with pytest.raises(ValueError, match=field_name):
+            manager.install_zip(buffer.getvalue())
 
 
 def test_install_rejects_duplicate(tmp_path: Path) -> None:
