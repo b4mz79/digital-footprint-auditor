@@ -67,6 +67,7 @@ IMAP_TIMEOUT_SECONDS = 30
 # the mailbox has more matches than this; raise it (max 2000) for a deeper, slower scan.
 DEFAULT_MAX_EMAILS = env_non_negative_int("IMAP_MAX_EMAILS", 500, 2000) or 500
 IMAP_FETCH_BATCH_SIZE = env_non_negative_int("IMAP_FETCH_BATCH_SIZE", 50, 200) or 50
+IMAP_MAX_HEADER_BYTES = 1024 * 1024
 MIN_SUBJECT_SCORE = env_non_negative_int("IMAP_MIN_SUBJECT_SCORE", 50, 100) or 50
 
 # Read-only fetch: BODY.PEEK never sets \\Seen, and the mailbox is opened with EXAMINE.
@@ -170,6 +171,9 @@ def _iter_fetched_messages(msg_data: list) -> list[email.message.Message]:
             continue
         payload = response_part[1]
         if isinstance(payload, bytes):
+            if len(payload) > IMAP_MAX_HEADER_BYTES:
+                logger.warning("[IMAP] Skipping oversized header response: %d bytes.", len(payload))
+                continue
             messages.append(email.message_from_bytes(payload))
     return messages
 
