@@ -45,6 +45,17 @@ def test_runtime_acl_targets_include_venv_and_base_python(tmp_path: Path) -> Non
     assert targets[tmp_path] is False
 
 
+def test_safe_environment_exposes_appcontainer_local_appdata(tmp_path: Path) -> None:
+    profile_dir = tmp_path / "AppContainer" / "AC"
+    profile_dir.mkdir(parents=True)
+
+    environment = addon_runtime._safe_environment(profile_dir)
+
+    assert environment["LOCALAPPDATA"] == str(profile_dir)
+    assert environment["TEMP"] == str(profile_dir / "Temp")
+    assert environment["TMP"] == str(profile_dir / "Temp")
+
+
 def test_runtime_rejects_non_windows(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(addon_runtime.os, "name", "posix")
     with pytest.raises(RuntimeError, match="requires Windows"):
