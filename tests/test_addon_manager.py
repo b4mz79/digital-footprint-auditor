@@ -344,7 +344,7 @@ def test_result_contract_rejects_non_mapping_output(tmp_path: Path) -> None:
     manager.activate("bad-result-addon")
 
     with pytest.raises(TypeError, match="result must be a mapping"):
-        manager.invoke("bad-result-addon", {}, owner="test")
+        manager.invoke("bad-result-addon", {"data": {"value": 1}}, owner="test")
 
 
 def test_dispatch_event_invokes_matching_active_addon(tmp_path: Path) -> None:
@@ -447,7 +447,7 @@ def test_dispatch_event_isolates_one_broken_addon_from_others(tmp_path: Path) ->
     manager.activate("failing-addon")
     manager.activate("healthy-addon")
 
-    results = manager.dispatch_event("evidence.enriched", {}, owner="test")
+    results = manager.dispatch_event("evidence.enriched", {"data": {}}, owner="test")
 
     assert len(results) == 1
     assert results[0][0]["id"] == "healthy-addon"
