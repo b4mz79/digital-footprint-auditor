@@ -379,7 +379,10 @@ def test_dispatch_event_invokes_matching_active_addon(tmp_path: Path) -> None:
 
     results = manager.dispatch_event(
         "evidence.enriched",
-        {"event": "evidence.enriched", "value": 42},
+        {
+            "event": "evidence.enriched",
+            "data": {"value": 42},
+        },
     )
 
     assert len(results) == 1
