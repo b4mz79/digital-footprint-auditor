@@ -22,7 +22,7 @@ def _addon_zip(addon_id: str = "pipeline-addon") -> bytes:
         "invocation": {
             "function": "run",
             "mode": "on_demand",
-            "input": {"required": True},
+            "input": {"required": True, "fields": ["value"]},
             "return": {"type": "result", "required": True},
         },
         "events": [],
