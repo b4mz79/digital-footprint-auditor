@@ -357,7 +357,7 @@ def render_addon_uis(
                 with slot.container():
                     addon_manager.invoke_ui(addon_id, ui_context, owner=str(addon.get("owner", "")))
             else:
-                addon_manager.invoke_ui(addon_id, ui_context)
+                addon_manager.invoke_ui(addon_id, ui_context, owner=str(addon.get("owner", "")))
         except Exception as exc:
             if slot is not None:
                 slot.empty()
@@ -1033,7 +1033,6 @@ if run_scan:
                 continue
             slot = _addon_ui_slot(addon_ui_slots, addon)
             ui_context = {
-                "state": live_state,
                 "result": ui_result,
                 "lang": lang,
             }
