@@ -509,7 +509,7 @@ async def test_enrich_evidence_passes_configured_request_rate(monkeypatch) -> No
         async def search_domain(self, domain):
             return []
 
-    import services.enrichment.orchestration as enrichment
+    import services.evidence_enrichment as enrichment
     monkeypatch.setattr(enrichment, "FirecrawlSecurityPublicationProvider", FakeProvider)
     monkeypatch.setenv("FIRECRAWL_REQUESTS_PER_MINUTE", "7")
 
@@ -586,7 +586,7 @@ async def test_enrich_evidence_merges_contextual_records(monkeypatch) -> None:
                 )
             ]
 
-    import services.enrichment.orchestration as enrichment
+    import services.evidence_enrichment as enrichment
     monkeypatch.setattr(enrichment, "FirecrawlSecurityPublicationProvider", FakeProvider)
 
     result = await enrich_evidence(
@@ -634,7 +634,7 @@ async def test_enrich_evidence_stops_scheduling_domains_after_rate_limit(monkeyp
             self.cooldown_active = True
             return []
 
-    import services.enrichment.orchestration as enrichment
+    import services.evidence_enrichment as enrichment
     monkeypatch.setattr(enrichment, "FirecrawlSecurityPublicationProvider", FakeProvider)
     monkeypatch.setenv("FIRECRAWL_DOMAIN_CONCURRENCY", "2")
 
@@ -693,7 +693,7 @@ async def test_enrich_evidence_applies_contextual_output_budget(monkeypatch) -> 
                 for idx in (1, 2, 3)
             ]
 
-    import services.enrichment.orchestration as enrichment
+    import services.evidence_enrichment as enrichment
     monkeypatch.setattr(enrichment, "FirecrawlSecurityPublicationProvider", FakeProvider)
     monkeypatch.setenv("FIRECRAWL_MAX_CONTEXTUAL_RECORDS", "4")
     monkeypatch.setenv("FIRECRAWL_MAX_CONTEXTUAL_RECORDS_PER_DOMAIN", "1")
