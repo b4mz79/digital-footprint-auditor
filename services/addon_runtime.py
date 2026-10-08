@@ -362,9 +362,9 @@ def _environment_block(environment: Mapping[str, str]) -> ctypes.Array:
     values = [
         f"{key}={value}"
         for key, value in sorted(environment.items())
-        if key and " " not in key and " " not in value
+        if key and "\x00" not in key and "\x00" not in value
     ]
-    return ctypes.create_unicode_buffer(" ".join(values) + "  ")
+    return ctypes.create_unicode_buffer("\x00".join(values) + "\x00\x00")
 
 
 def _python_command(
