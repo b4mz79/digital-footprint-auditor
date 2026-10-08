@@ -1,5 +1,6 @@
 {
   "id": "just-sample",
+  "owner": "imap",
   "name": "just-sample",
   "caption": "Hello World",
   "version": "1.0.0",
