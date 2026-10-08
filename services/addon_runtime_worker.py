@@ -125,16 +125,11 @@ def execute_request(request: Mapping[str, Any]) -> dict[str, Any]:
 
 def main(argv: list[str] | None = None) -> int:
     args = list(argv if argv is not None else sys.argv[1:])
-    if len(args) != 1:
-        print(
-            json.dumps(
-                _error("worker requires exactly one request-file argument"),
-                ensure_ascii=False,
-            )
-        )
+    if len(args) != 2:
         return 2
 
     request_path = Path(args[0]).resolve()
+    response_path = Path(args[1]).resolve()
     try:
         payload = request_path.read_bytes()
         if len(payload) > _MAX_REQUEST_BYTES:
@@ -148,10 +143,23 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as exc:
         response = _error(str(exc), type(exc).__name__)
 
-    sys.stdout.write(
-        json.dumps(response, ensure_ascii=False, separators=(",", ":"))
-    )
-    sys.stdout.flush()
+    encoded = json.dumps(
+        response,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    if len(encoded) > _MAX_RESPONSE_BYTES:
+        response = _error(
+            "sandbox runtime response exceeds IPC limit",
+            "ValueError",
+        )
+        encoded = json.dumps(
+            response,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+
+    response_path.write_bytes(encoded)
     return 0 if response.get("ok") else 1
 
 
