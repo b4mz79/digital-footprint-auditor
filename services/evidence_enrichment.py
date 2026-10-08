@@ -343,9 +343,6 @@ async def enrich_evidence(
                         len(domains),
                     )
                     break
-    
-        finally:
-            pass
     merged: dict[str, EvidenceRecord] = {
         record.evidence_id: record for record in base
     }
