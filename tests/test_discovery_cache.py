@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from cryptography.fernet import Fernet
 
-from services import osint_cache
+from services import imap_cache, osint_cache
 from services import pipeline
 
 
@@ -97,3 +97,19 @@ def test_pipeline_osint_cache_off_runs_and_writes(monkeypatch):
     assert saved == [
         [{"name": "Fresh", "domain": "fresh.example", "source": "OSINT"}]
     ]
+
+
+
+def test_imap_cache_roundtrip(monkeypatch, tmp_path):
+    monkeypatch.setenv("CACHE_SECRET_KEY", Fernet.generate_key().decode("ascii"))
+    monkeypatch.setenv("PII_PEPPER_KEY", "p" * 32)
+    monkeypatch.setattr(
+        imap_cache,
+        "_cache_path",
+        lambda *args: tmp_path / "imap_cache_test.json",
+    )
+    findings = [{"name": "Example", "domain": "example.com"}]
+
+    imap_cache.save_imap_cache("user@example.com", findings)
+
+    assert imap_cache.load_imap_cache("user@example.com") == findings
