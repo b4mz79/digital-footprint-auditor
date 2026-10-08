@@ -13,6 +13,7 @@ from services.addon_manager import AddonManager
 def _addon_zip(addon_id: str = "pipeline-addon") -> bytes:
     manifest = {
         "id": addon_id,
+        "owner": "test",
         "name": "Pipeline Test",
         "caption": "Pipeline",
         "version": "1.0.0",
