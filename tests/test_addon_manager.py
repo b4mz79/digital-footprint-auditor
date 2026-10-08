@@ -343,40 +343,36 @@ def test_dispatch_event_skips_non_matching_or_inactive_addons(
 
 def test_manifest_rejects_result_key_that_can_mutate_host_state(tmp_path: Path) -> None:
     manager = AddonManager(tmp_path / "addons")
-    for result_key in ("services", "evidence", "ai", "tenant_id", "bad-key"):
-        payload = _zip_package(addon_id=f"result-{result_key.replace('-', '_')}")
+
+    for index, result_key in enumerate(("services", "evidence", "ai", "tenant_id", "bad-key")):
+        addon_id = f"result-key-{index}"
+        manifest = {
+            "id": addon_id,
+            "name": "Demo",
+            "caption": "Demo",
+            "version": "1.0.0",
+            "entrypoint": "plugin.py",
+            "type": "backend",
+            "invocation": {
+                "function": "run",
+                "mode": "on_demand",
+                "input": {"required": True},
+                "return": {"type": "result", "required": True},
+            },
+            "events": [],
+            "result_key": result_key,
+        }
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
-            manifest = json.loads(
-                _zip_package(addon_id=f"result-{result_key.replace('-', '_')}").decode("latin1")
-                if False
-                else "{}"
-            )
-            del manifest
-            manifest = {
-                "id": f"result-{result_key.replace('-', '_')}",
-                "name": "Demo",
-                "caption": "Demo",
-                "version": "1.0.0",
-                "entrypoint": "plugin.py",
-                "type": "backend",
-                "invocation": {
-                    "function": "run",
-                    "mode": "on_demand",
-                    "input": {"required": True},
-                    "return": {"type": "result", "required": True},
-                },
-                "events": [],
-                "result_key": result_key,
-            }
             archive.writestr(
-                f"{manifest['id']}/manifest.json",
+                f"{addon_id}/manifest.json",
                 json.dumps(manifest),
             )
             archive.writestr(
-                f"{manifest['id']}/plugin.py",
-                "def run(context): return {'ok': True}\n",
+                f"{addon_id}/plugin.py",
+                "def run(context): return {'ok': True}\\n",
             )
+
         with pytest.raises(ValueError, match="result_key"):
             manager.install_zip(buffer.getvalue())
 
