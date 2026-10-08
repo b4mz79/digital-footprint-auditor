@@ -45,6 +45,7 @@ def _zip_package(
             },
         },
         "events": events if events is not None else [],
+        "capabilities": ["event", "event.data", "addon.context"],
         "default_active": False,
         "lifecycle": lifecycle or {},
     }
@@ -210,6 +211,80 @@ def after_activate(context):
         manager.activate("rollback-addon")
 
     assert manager.get("rollback-addon")["active"] is False
+
+
+def test_event_execution_context_is_capability_scoped(tmp_path: Path) -> None:
+    manager = AddonManager(tmp_path / "addons")
+    payload = _zip_package(
+        addon_id="capability-addon",
+        mode="on_event",
+        events=[{"name": "evidence.enriched"}],
+        plugin_body=(
+            "def run(context):\n"
+            "    return {\n"
+            "        'has_state': 'state' in context,\n"
+            "        'has_event': context.get('event'),\n"
+            "        'data': context.get('data'),\n"
+            "        'extra': context.get('addon_context'),\n"
+            "    }\n"
+        ),
+    )
+    manager.install_zip(payload)
+    manager.activate("capability-addon")
+
+    results = manager.dispatch_event(
+        "evidence.enriched",
+        {
+            "event": "evidence.enriched",
+            "data": {"services": ["example"]},
+            "state": {
+                "email": "user@example.com",
+                "services": ["example"],
+                "evidence": [{"secret": "must-not-leak"}],
+                "events": [{"internal": "must-not-leak"}],
+            },
+            "addon_contexts": {
+                "capability-addon": {"allowed": "yes"},
+            },
+        },
+    )
+
+    assert results[0][1] == {
+        "has_state": False,
+        "has_event": "evidence.enriched",
+        "data": {"services": ["example"]},
+        "extra": {"allowed": "yes"},
+    }
+
+
+def test_manifest_rejects_unknown_capability(tmp_path: Path) -> None:
+    manager = AddonManager(tmp_path / "addons")
+    buffer = io.BytesIO()
+    manifest = {
+        "id": "unknown-capability",
+        "name": "Demo",
+        "caption": "Demo",
+        "version": "1.0.0",
+        "entrypoint": "plugin.py",
+        "type": "backend",
+        "invocation": {
+            "function": "run",
+            "mode": "on_demand",
+            "input": {"required": True},
+            "return": {"type": "result", "required": True},
+        },
+        "events": [],
+        "capabilities": ["host.filesystem"],
+    }
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("unknown-capability/manifest.json", json.dumps(manifest))
+        archive.writestr(
+            "unknown-capability/plugin.py",
+            "def run(context): return {'ok': True}\n",
+        )
+
+    with pytest.raises(ValueError, match="unsupported add-on capability"):
+        manager.install_zip(buffer.getvalue())
 
 
 def test_manifest_rejects_removed_lifecycle_hooks(tmp_path: Path) -> None:
