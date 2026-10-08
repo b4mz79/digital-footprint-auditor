@@ -111,7 +111,6 @@ def test_structural_gate_rejects_missing_entrypoint(
 
 def test_structural_gate_rejects_symlink_after_extraction(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     manager = AddonManager(tmp_path / "addons")
     package_root = tmp_path / "extracted"
@@ -120,7 +119,10 @@ def test_structural_gate_rejects_symlink_after_extraction(
     target = package_root / "target.py"
     target.write_text("def run(context): return {}\n", encoding="utf-8")
     link = package_root / "link.py"
-    link.symlink_to(target)
+    try:
+        link.symlink_to(target)
+    except OSError:
+        pytest.skip("symlink creation is unavailable in this environment")
 
     from services.addonsmgr.structural_validator import (
         validate_package_structure,
