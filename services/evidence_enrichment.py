@@ -17,7 +17,7 @@ from typing import Iterable
 
 import httpx
 
-from services.evidence.models import EvidenceRecord
+from services.evidence.models import EvidenceRecord, EvidenceRelation
 from services.evidence.security_publications import (
     FirecrawlSecurityPublicationProvider,
 )
@@ -25,6 +25,9 @@ from utils.envutil import env_non_negative_int, env_positive_float
 from utils.logging_setup import get_logger
 
 logger = get_logger("EvidenceEnrichment")
+
+DEFAULT_MAX_CONTEXTUAL_RECORDS = 50
+DEFAULT_MAX_CONTEXTUAL_RECORDS_PER_DOMAIN = 2
 
 
 def _fingerprint_domains(domains: list[str]) -> str:
@@ -77,6 +80,16 @@ async def enrich_evidence(
         2,
         16,
     ) or 1
+    max_contextual_records = env_non_negative_int(
+        "FIRECRAWL_MAX_CONTEXTUAL_RECORDS",
+        DEFAULT_MAX_CONTEXTUAL_RECORDS,
+        200,
+    ) or DEFAULT_MAX_CONTEXTUAL_RECORDS
+    max_contextual_per_domain = env_non_negative_int(
+        "FIRECRAWL_MAX_CONTEXTUAL_RECORDS_PER_DOMAIN",
+        DEFAULT_MAX_CONTEXTUAL_RECORDS_PER_DOMAIN,
+        10,
+    ) or DEFAULT_MAX_CONTEXTUAL_RECORDS_PER_DOMAIN
     requests_per_minute = env_non_negative_int(
         "FIRECRAWL_REQUESTS_PER_MINUTE",
         10,
@@ -113,6 +126,8 @@ async def enrich_evidence(
         request_concurrency,
         requests_per_minute,
         cooldown_seconds,
+        max_contextual_records,
+        max_contextual_per_domain,
     )
 
     domain_gate = asyncio.Semaphore(domain_concurrency)
@@ -168,7 +183,7 @@ async def enrich_evidence(
         record.evidence_id: record for record in base
     }
     failed = 0
-    contextual_added = 0
+    contextual_candidates: list[EvidenceRecord] = []
     for result in results:
         if isinstance(result, Exception):
             failed += 1
@@ -178,9 +193,54 @@ async def enrich_evidence(
             )
             continue
         for record in result:
-            if record.evidence_id not in merged:
-                contextual_added += 1
-            merged[record.evidence_id] = record
+            if record.relation is EvidenceRelation.SECURITY_PUBLICATION:
+                contextual_candidates.append(record)
+            else:
+                merged[record.evidence_id] = record
+
+    # Enrichment is an evidence producer, so it must enforce an explicit
+    # output budget before evidence reaches verification and AI payload
+    # construction. Prefer newer source-published evidence, then confidence,
+    # then deterministic identity. This is a quality/budget guard, not a risk
+    # decision and does not discard base scanner evidence.
+    unique_contextual = {
+        record.evidence_id: record for record in contextual_candidates
+    }
+    ordered_contextual = sorted(
+        unique_contextual.values(),
+        key=lambda record: (
+            record.published_at is None,
+            record.published_at or "",
+            -record.confidence,
+            record.evidence_id,
+        ),
+    )
+    selected_contextual: list[EvidenceRecord] = []
+    per_domain_counts: dict[str, int] = {}
+    for record in ordered_contextual:
+        domain = record.domain.strip().lower()
+        if per_domain_counts.get(domain, 0) >= max_contextual_per_domain:
+            continue
+        if len(selected_contextual) >= max_contextual_records:
+            break
+        selected_contextual.append(record)
+        per_domain_counts[domain] = per_domain_counts.get(domain, 0) + 1
+
+    for record in selected_contextual:
+        merged[record.evidence_id] = record
+
+    contextual_added = len(selected_contextual)
+    dropped_contextual = len(unique_contextual) - contextual_added
+    if dropped_contextual:
+        logger.info(
+            "[Evidence Enrichment] Contextual evidence budget applied; "
+            "candidates=%d selected=%d dropped=%d max_total=%d max_per_domain=%d",
+            len(unique_contextual),
+            contextual_added,
+            dropped_contextual,
+            max_contextual_records,
+            max_contextual_per_domain,
+        )
 
     output = list(merged.values())
     logger.info(
