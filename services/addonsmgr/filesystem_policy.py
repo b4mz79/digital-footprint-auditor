@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 def apply_package_permissions(package_root: Path) -> None:
-    """Make installed package content read-only and verify resulting mode bits.
+    """Protect package files while allowing owner-only writes inside the add-on directory.
 
     POSIX mode bits are meaningful on POSIX filesystems. On Windows, Python's
     chmod support is limited to the read-only attribute; this is not an ACL or
@@ -25,7 +25,7 @@ def apply_package_permissions(package_root: Path) -> None:
         if path.is_symlink():
             raise ValueError("installed add-on package symlinks are not allowed")
         if path.is_dir():
-            path.chmod(0o555)
+            path.chmod(0o700)
         elif path.is_file():
             path.chmod(0o444)
         else:
@@ -33,14 +33,14 @@ def apply_package_permissions(package_root: Path) -> None:
                 f"unsupported filesystem object in add-on package: {path.name}"
             )
 
-    root.chmod(0o555)
+    root.chmod(0o700)
     for path in [root, *paths]:
         if path.is_symlink():
             raise ValueError("installed add-on package symlinks are not allowed")
         if path.is_dir():
             mode = path.stat().st_mode
-            if mode & (stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH):
-                raise OSError(f"add-on directory remains writable: {path.name}")
+            if not mode & stat.S_IWUSR or mode & (stat.S_IWGRP | stat.S_IWOTH):
+                raise OSError(f"add-on directory permissions are too broad or not writable: {path.name}")
         elif path.is_file():
             mode = path.stat().st_mode
             if mode & (stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH):
