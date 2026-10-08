@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from services import pipeline
-from services.evidence.models import EvidenceDirectness, EvidenceRelation
+from services.enrichment.evidence.models import EvidenceDirectness, EvidenceRelation
 
 
 def test_pipeline_import() -> None:
