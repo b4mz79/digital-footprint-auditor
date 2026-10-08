@@ -1,5 +1,6 @@
 {
   "id": "scorecard",
+  "owner": "evidence",
   "name": "Scorecard",
   "caption": "Evidence Sufficiency Scorecard",
   "version": "1.0.0",
@@ -10,7 +11,7 @@
     "mode": "on_event",
     "input": {
       "required": true,
-      "fields": ["services", "evidence", "breach"]
+      "fields": ["evidence"]
     },
     "return": {
       "type": "result",
