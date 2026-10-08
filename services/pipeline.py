@@ -409,61 +409,11 @@ def run_scan(
         )
         state["evidence"] = []
 
-    # Optional add-ons. The application supplies only active IDs;
-    # AddonManager owns manifest validation, loading and invocation.
-    addon_ids = list(enabled_addons)
+    # On-demand add-ons are intentionally not invoked from the global
+    # pipeline. An on-demand add-on must be called by its owning built-in
+    # module through an owner-scoped host call; otherwise the global pipeline
+    # would become a cross-owner execution authority.
 
-    if addon_ids:
-        addon_manager = get_addon_manager()
-        for addon_id in dict.fromkeys(
-            str(item) for item in addon_ids if str(item).strip()
-        ):
-            addon = None
-            try:
-                addon_context: dict[str, Any] = {
-                    "data": dict((addon_contexts or {}).get(addon_id, {}))
-                }
-                addon, addon_output = addon_manager.invoke(
-                    addon_id,
-                    addon_context,
-                )
-                if not isinstance(addon_output, dict):
-                    raise TypeError(
-                        f"add-on {addon_id!r} returned an invalid result "
-                        f"({type(addon_output).__name__})"
-                    )
-
-                state["addons"][addon_id] = addon_output
-                result_key = addon.get("result_key") if addon else None
-                if result_key:
-                    state[result_key] = addon_output.get(result_key)
-
-                stage = addon_id
-                live_payload = (
-                    {result_key: state[result_key]}
-                    if result_key
-                    else {"addon": addon_id, "result": addon_output}
-                )
-                emit(
-                    _event(
-                        "success",
-                        text=f"Add-on {addon_id} selesai.",
-                        stage=stage,
-                    ),
-                    live_payload,
-                )
-            except Exception as exc:
-                stage = addon_id
-                logger.warning("[Pipeline] Add-on %s failed: %s", addon_id, exc)
-                if addon and addon.get("result_key"):
-                    state[addon["result_key"]] = None
-                emit(
-                    _event(
-                        "error",
-                        text=f"Error Add-on {addon_id}: {exc}",
-                        stage=stage,
-                    )
-                )
     if with_ai:
         addon_ai_context: dict[str, Any] = {}
         try:
