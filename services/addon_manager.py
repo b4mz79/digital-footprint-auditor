@@ -39,6 +39,13 @@ _STATE_FILENAME = ".addons-state.json"
 
 logger = get_logger("AddonManager")
 
+_ADDON_RUNTIME_MODE_ENV = "ADDON_RUNTIME_MODE"
+_ADDON_RUNTIME_IN_PROCESS = "in_process"
+
+def _in_process_runtime_enabled() -> bool:
+    return os.getenv(_ADDON_RUNTIME_MODE_ENV, "").strip().lower() == _ADDON_RUNTIME_IN_PROCESS
+
+
 
 @dataclass(frozen=True, slots=True)
 class AddonManifest:
@@ -167,25 +174,12 @@ class AddonManager:
         state[manifest.addon_id] = False
         self._save_state(state)
 
-        try:
-            self._run_lifecycle_hook(
-                manifest.addon_id,
-                "after_install",
-                {"event": "after_install"},
-            )
-        except Exception:
-            # Installation is transactional from the host perspective: if
-            # post-install initialization fails, remove the installed package
-            # and its state. There is intentionally no after_uninstall hook.
-            shutil.rmtree(target, ignore_errors=True)
-            state = self._load_state()
-            state.pop(manifest.addon_id, None)
-            self._save_state(state)
-            raise
-
+        # Installation never executes package code. A ZIP upload is an
+        # untrusted input boundary, not an execution boundary.
         return self.get(manifest.addon_id) or {}
 
     def activate(self, addon_id: str) -> dict[str, Any]:
+        self._require_execution_runtime()
         return self._set_active(addon_id, True)
 
     def deactivate(self, addon_id: str) -> dict[str, Any]:
@@ -197,11 +191,17 @@ class AddonManager:
         if not target.is_dir():
             raise ValueError(f"add-on is not installed: {addon_id}")
 
-        self._run_lifecycle_hook(
-            addon_id,
-            "before_uninstall",
-            {"event": "before_uninstall"},
-        )
+        if _in_process_runtime_enabled():
+            self._run_lifecycle_hook(
+                addon_id,
+                "before_uninstall",
+                {"event": "before_uninstall"},
+            )
+        else:
+            logger.info(
+                "[Add-On] skipping before_uninstall because execution runtime is disabled: id=%s",
+                addon_id,
+            )
 
         shutil.rmtree(target)
         state = self._load_state()
@@ -312,6 +312,7 @@ class AddonManager:
         context: Mapping[str, Any],
         ui_spec: Mapping[str, Any],
     ) -> tuple[dict[str, Any], Any]:
+        self._require_execution_runtime()
         package_root = self.root / str(addon["id"])
         entrypoint = self._safe_entrypoint(
             package_root,
@@ -363,6 +364,7 @@ class AddonManager:
         *,
         invocation: Mapping[str, Any] | None = None,
     ) -> tuple[dict[str, Any], Any]:
+        self._require_execution_runtime()
         package_root = self.root / str(addon["id"])
         entrypoint = self._safe_entrypoint(
             package_root,
@@ -478,6 +480,13 @@ class AddonManager:
                     module_name + "."
                 ):
                     sys.modules.pop(loaded_name, None)
+
+    def _require_execution_runtime(self) -> None:
+        if not _in_process_runtime_enabled():
+            raise RuntimeError(
+                "add-on execution is disabled: sandboxed runtime required; "
+                "in-process execution is legacy/developer-only"
+            )
 
     def _run_lifecycle_hook(
         self,
@@ -735,12 +744,25 @@ class AddonManager:
             return_required=return_spec["required"],
             events=tuple(events),
             result_key=self._parse_result_key(payload.get("result_key")),
-            ai_context=bool(payload.get("ai_context", False)),
-            default_active=bool(payload.get("default_active", False)),
+            ai_context=self._strict_bool_field(payload, "ai_context", False),
+            default_active=self._strict_bool_field(payload, "default_active", False),
             ui_entrypoint=ui_entrypoint,
             ui_function=ui_function,
             lifecycle=tuple(lifecycle),
         )
+
+    @staticmethod
+    def _strict_bool_field(
+        payload: Mapping[str, Any],
+        field_name: str,
+        default: bool,
+    ) -> bool:
+        value = payload.get(field_name, default)
+        if not isinstance(value, bool):
+            raise ValueError(
+                f"add-on manifest field {field_name!r} must be a boolean"
+            )
+        return value
 
     def _safe_extract(self, archive_path: Path, destination: Path) -> None:
         with zipfile.ZipFile(archive_path) as archive:
