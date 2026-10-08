@@ -121,13 +121,10 @@ def test_pipeline_forwards_evidence_to_ai(monkeypatch) -> None:
         with_ai=True,
     )
 
+    # The normalized EvidenceRecord remains in pipeline state for provenance,
+    # but it is a scanner mirror and must not be sent twice to the AI.
     assert len(state["evidence"]) == 1
-    assert captured["evidence_records"][0]["domain"] == "example.com"
-    assert captured["evidence_records"][0]["relation"] == "target_resource"
-    assert captured["evidence_records"][0]["assertion_scope"] == "service_association_only"
-    assert captured["evidence_records"][0]["provenance"]["assertion_scope"] == "service_association_only"
-    assert captured["evidence_records"][0]["verification_scope"] == "url_accessibility"
-    assert captured["evidence_records"][0]["verification_state"] == "unknown"
+    assert captured["evidence_records"] == []
 
 
 def test_pipeline_passes_enriched_evidence_to_ai(monkeypatch) -> None:
@@ -199,11 +196,12 @@ def test_pipeline_passes_enriched_evidence_to_ai(monkeypatch) -> None:
         with_ai=True,
     )
 
+    # Pipeline retains both the scanner mirror and the enrichment record,
+    # while AI receives only the new enrichment evidence.
     assert len(state["evidence"]) == 2
-    contextual = next(
-        item for item in captured["evidence_records"]
-        if item["relation"] == "security_publication"
-    )
+    assert len(captured["evidence_records"]) == 1
+    contextual = captured["evidence_records"][0]
+    assert contextual["relation"] == "security_publication"
     assert contextual["directness"] == "contextual"
     assert contextual["assertion_scope"] == "security_publication_context_only"
     assert contextual["provenance"]["assertion_scope"] == "security_publication_context_only"
