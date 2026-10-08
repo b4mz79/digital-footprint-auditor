@@ -109,3 +109,24 @@ def test_authority_gate_rejects_invalid_python_in_helper_file(tmp_path: Path) ->
 
     with pytest.raises(ValueError, match="cannot be parsed"):
         validate_package_authority(root)
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "import streamlit.runtime\n",
+        "def run(context): return st.secrets\n",
+        "def run(context): return object.__subclasses__()\n",
+    ],
+)
+def test_authority_gate_rejects_host_internals_and_reflection(
+    tmp_path: Path,
+    source: str,
+) -> None:
+    root = _package(
+        tmp_path / "package",
+        **{"plugin.py": "import streamlit as st\n" + source},
+    )
+
+    with pytest.raises(ValueError, match="static authority gate"):
+        validate_package_authority(root)
