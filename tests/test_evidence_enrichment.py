@@ -494,6 +494,36 @@ async def test_firecrawl_provider_applies_configured_request_spacing() -> None:
 
 
 @pytest.mark.asyncio
+async def test_enrich_evidence_can_be_disabled(monkeypatch) -> None:
+    base = EvidenceRecord(
+        evidence_id="base-disabled",
+        source="OSINT / Holehe",
+        source_type="osint",
+        relation=EvidenceRelation.TARGET_RESOURCE,
+        directness=EvidenceDirectness.DIRECT,
+        confidence=0.80,
+        observed_at="2026-01-01T00:00:00+00:00",
+        published_at=None,
+        domain="example.com",
+        url="",
+        title="Example",
+        summary="Observed service association.",
+    )
+
+    class UnexpectedProvider:
+        def __init__(self, **kwargs):
+            raise AssertionError("Firecrawl provider must not be created when enrichment is disabled")
+
+    import services.evidence_enrichment as enrichment
+    monkeypatch.setattr(enrichment, "FirecrawlSecurityPublicationProvider", UnexpectedProvider)
+    monkeypatch.setenv("EVIDENCE_ENRICHMENT_ENABLED", "false")
+
+    result = await enrich_evidence([base], firecrawl_api_key="test-key")
+
+    assert result == [base]
+
+
+@pytest.mark.asyncio
 async def test_enrich_evidence_passes_configured_request_rate(monkeypatch) -> None:
     captured: dict[str, int] = {}
 
