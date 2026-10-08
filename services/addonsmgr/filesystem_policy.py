@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import shutil
 import stat
 from pathlib import Path
@@ -40,12 +39,12 @@ def apply_package_permissions(package_root: Path) -> None:
             raise ValueError("installed add-on package symlinks are not allowed")
         if path.is_dir():
             mode = path.stat().st_mode
-            if mode & stat.S_IWUSR:
-                raise OSError(f"add-on directory remains user-writable: {path.name}")
+            if mode & (stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH):
+                raise OSError(f"add-on directory remains writable: {path.name}")
         elif path.is_file():
             mode = path.stat().st_mode
-            if mode & stat.S_IWUSR:
-                raise OSError(f"add-on file remains user-writable: {path.name}")
+            if mode & (stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH):
+                raise OSError(f"add-on file remains writable: {path.name}")
 
 
 def remove_package_tree(package_root: Path) -> None:
