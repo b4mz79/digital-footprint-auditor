@@ -101,6 +101,52 @@ def test_install_discover_activate_invoke_uninstall(tmp_path: Path) -> None:
     assert manager.get("demo-addon") is None
 
 
+def test_invocation_context_exposes_only_declared_data(tmp_path: Path) -> None:
+    manager = AddonManager(tmp_path / "addons")
+    manager.install_zip(
+        _zip_package(
+            addon_id="invocation-context-addon",
+            plugin_body=(
+                "def run(context):\n"
+                "    return {\n"
+                "        'keys': sorted(context),\n"
+                "        'data_keys': sorted(context.get('data', {})),\n"
+                "        'has_state': 'state' in context,\n"
+                "        'has_owner': 'owner' in context,\n"
+                "        'has_manager': 'manager' in context,\n"
+                "        'has_pipeline': 'pipeline' in context,\n"
+                "    }\n"
+            ),
+            input_fields=["value"],
+        )
+    )
+    manager.activate("invocation-context-addon")
+
+    _, result = manager.invoke(
+        "invocation-context-addon",
+        {
+            "data": {
+                "value": 42,
+                "secret": "must-not-reach-addon",
+            },
+            "state": {"email": "must-not-reach-addon"},
+            "owner": "test",
+            "manager": object(),
+            "pipeline": object(),
+        },
+        owner="test",
+    )
+
+    assert result == {
+        "keys": ["data"],
+        "data_keys": ["value"],
+        "has_state": False,
+        "has_owner": False,
+        "has_manager": False,
+        "has_pipeline": False,
+    }
+
+
 def test_manifest_driven_lifecycle_hooks_run_in_order(tmp_path: Path) -> None:
     manager = AddonManager(tmp_path / "addons")
     plugin = """from pathlib import Path
@@ -172,6 +218,52 @@ def before_uninstall(context):
 
     manager.uninstall("lifecycle-addon")
     assert log_path.exists() is False
+
+
+def test_lifecycle_hook_receives_only_event_context(tmp_path: Path) -> None:
+    manager = AddonManager(tmp_path / "addons")
+    plugin = """from pathlib import Path
+
+_LOG = Path(__file__).with_name("lifecycle-context.json")
+
+
+def run(context):
+    return {"ok": True}
+
+
+def after_install(context):
+    import json
+    _LOG.write_text(json.dumps({
+        "keys": sorted(context),
+        "event": context.get("event"),
+        "has_state": "state" in context,
+        "has_manager": "manager" in context,
+        "has_pipeline": "pipeline" in context,
+    }), encoding="utf-8")
+"""
+    manager.install_zip(
+        _zip_package(
+            addon_id="lifecycle-context-addon",
+            plugin_body=plugin,
+            lifecycle={"after_install": "after_install"},
+        )
+    )
+
+    log_path = (
+        tmp_path
+        / "addons"
+        / "lifecycle-context-addon"
+        / "lifecycle-context.json"
+    )
+    import json as json_module
+
+    assert json_module.loads(log_path.read_text(encoding="utf-8")) == {
+        "keys": ["event"],
+        "event": "after_install",
+        "has_state": False,
+        "has_manager": False,
+        "has_pipeline": False,
+    }
 
 
 def test_lifecycle_before_hook_can_veto_state_change(tmp_path: Path) -> None:
