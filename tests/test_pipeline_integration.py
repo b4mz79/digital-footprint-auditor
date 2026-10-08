@@ -101,16 +101,18 @@ def test_pipeline_forwards_evidence_to_ai(monkeypatch) -> None:
             }
         ],
     )
+    async def fake_analyze_smart_cache(**kwargs):
+        captured.update(kwargs)
+        return {
+            "provider_used": "test",
+            "analysis": [],
+            "exposures": [],
+        }
+
     monkeypatch.setattr(
         pipeline,
         "analyze_smart_cache",
-        lambda **kwargs: (
-            captured.update(kwargs) or {
-                "provider_used": "test",
-                "analysis": [],
-                "exposures": [],
-            }
-        ),
+        fake_analyze_smart_cache,
     )
 
     state = pipeline.run_scan(
@@ -176,16 +178,18 @@ def test_pipeline_passes_enriched_evidence_to_ai(monkeypatch) -> None:
         return list(records)
 
     monkeypatch.setattr(pipeline, "verify_evidence_records", fake_verify)
+    async def fake_analyze_smart_cache(**kwargs):
+        captured.update(kwargs)
+        return {
+            "provider_used": "test",
+            "analysis": [],
+            "exposures": [],
+        }
+
     monkeypatch.setattr(
         pipeline,
         "analyze_smart_cache",
-        lambda **kwargs: (
-            captured.update(kwargs) or {
-                "provider_used": "test",
-                "analysis": [],
-                "exposures": [],
-            }
-        ),
+        fake_analyze_smart_cache,
     )
 
     state = pipeline.run_scan(
