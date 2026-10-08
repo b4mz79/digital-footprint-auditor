@@ -8,7 +8,7 @@ import pytest
 
 from utils.privacy import clean_web_snippet, clean_web_title
 
-from services.enrichment.orchestration import enrich_evidence
+from services.evidence_enrichment import enrich_evidence
 
 from services.enrichment.evidence.models import (
     EvidenceDirectness,
