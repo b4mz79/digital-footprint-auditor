@@ -352,7 +352,13 @@ def run_scan(
         )
 
         try:
-            enriched_evidence = asyncio.run(\n                enrich_evidence(\n                    local_evidence,\n                    force_refresh=force_refresh,\n                    tenant_id=tenant_id,\n                )\n            )
+            enriched_evidence = asyncio.run(
+                enrich_evidence(
+                    local_evidence,
+                    force_refresh=force_refresh,
+                    tenant_id=tenant_id,
+                )
+            )
         except Exception as exc:
             # Preserve normalized evidence if optional enrichment is unavailable.
             logger.warning("[Pipeline] Evidence enrichment failed: %s", exc)
