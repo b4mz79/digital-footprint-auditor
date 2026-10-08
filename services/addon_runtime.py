@@ -352,6 +352,7 @@ def _safe_environment(profile_dir: Path) -> dict[str, str]:
     return {
         "SystemRoot": system_root,
         "WINDIR": os.getenv("WINDIR", system_root),
+        "LOCALAPPDATA": str(profile_dir),
         "PATH": os.getenv("PATH", ""),
         "TEMP": str(profile_dir / "Temp"),
         "TMP": str(profile_dir / "Temp"),
