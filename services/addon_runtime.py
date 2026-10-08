@@ -388,11 +388,16 @@ def _python_command(
     )
 
 
-def _grant_read_execute(path: Path, sid_text: str) -> None:
+def _grant_read_execute(
+    path: Path,
+    sid_text: str,
+    *,
+    recursive: bool = False,
+) -> None:
     if not path.exists():
         raise FileNotFoundError(path)
 
-    if path.is_dir():
+    if path.is_dir() and recursive:
         permissions = "(OI)(CI)RX"
         args = [
             "icacls",
@@ -425,7 +430,12 @@ def _grant_read_execute(path: Path, sid_text: str) -> None:
         )
 
 
-def _remove_access(path: Path, sid_text: str) -> None:
+def _remove_access(
+    path: Path,
+    sid_text: str,
+    *,
+    recursive: bool = False,
+) -> None:
     if not path.exists():
         return
 
@@ -434,9 +444,12 @@ def _remove_access(path: Path, sid_text: str) -> None:
         str(path),
         "/remove",
         f"*{sid_text}",
-        "/T",
-        "/C",
     ]
+    if recursive:
+        args.extend(["/T", "/C"])
+    else:
+        args.append("/C")
+
     completed = subprocess.run(
         args,
         capture_output=True,
@@ -449,6 +462,64 @@ def _remove_access(path: Path, sid_text: str) -> None:
             "icacls remove failed: "
             + (completed.stderr.strip() or completed.stdout.strip())
         )
+
+
+def _runtime_acl_targets(executable: Path) -> tuple[tuple[Path, bool], ...]:
+    """Return the minimal Python runtime paths the AppContainer must read."""
+    targets: list[tuple[Path, bool]] = []
+
+    executable_dir = executable.parent
+    targets.append((executable_dir, True))
+
+    # A Windows venv's python.exe relies on pyvenv.cfg and the base
+    # installation referenced by its "home" key.  The current implementation
+    # previously ACLed only Scripts, leaving those runtime resources outside
+    # the AppContainer's DACL.
+    venv_root = executable_dir.parent
+    pyvenv_cfg = venv_root / "pyvenv.cfg"
+    base_root: Path | None = None
+
+    if pyvenv_cfg.is_file():
+        try:
+            for line in pyvenv_cfg.read_text(
+                encoding="utf-8",
+                errors="strict",
+            ).splitlines():
+                key, separator, value = line.partition("=")
+                if separator and key.strip().lower() == "home":
+                    candidate = Path(value.strip())
+                    if candidate.is_absolute():
+                        base_root = candidate.resolve()
+                    break
+        except (OSError, UnicodeError):
+            base_root = None
+
+    if base_root is None:
+        candidate = Path(sys.base_prefix)
+        if candidate.is_dir():
+            base_root = candidate.resolve()
+
+    if base_root is not None and base_root.is_dir():
+        targets.append((base_root, True))
+
+    traversal: list[tuple[Path, bool]] = []
+    seen: set[Path] = set()
+
+    for target, recursive in targets:
+        target = target.resolve()
+        if target not in seen:
+            traversal.append((target, recursive))
+            seen.add(target)
+
+        parent = target.parent
+        while parent != parent.parent:
+            parent = parent.resolve()
+            if parent not in seen:
+                traversal.append((parent, False))
+                seen.add(parent)
+            parent = parent.parent
+
+    return tuple(traversal)
 
 
 def _launch_process(
@@ -662,12 +733,15 @@ def execute_addon(
         request,
     )
 
-    runtime_root = executable.parent
-    needs_runtime_acl = executable.name.lower().startswith("python")
-    acl_target = runtime_root if needs_runtime_acl else executable
+    acl_targets = _runtime_acl_targets(executable)
 
     try:
-        _grant_read_execute(acl_target, sid_text)
+        for acl_target, recursive in acl_targets:
+            _grant_read_execute(
+                acl_target,
+                sid_text,
+                recursive=recursive,
+            )
         command_line = _python_command(
             executable,
             profile_dir / "PrivacyAuditorRuntime" / "addon_runtime_worker.py",
@@ -700,7 +774,12 @@ def execute_addon(
             )
         return response.get("result")
     finally:
-        _remove_access(acl_target, sid_text)
+        for acl_target, recursive in reversed(acl_targets):
+            _remove_access(
+                acl_target,
+                sid_text,
+                recursive=recursive,
+            )
         shutil.rmtree(
             profile_dir / "PrivacyAuditorRuntime",
             ignore_errors=True,
