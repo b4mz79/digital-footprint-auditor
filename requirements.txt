@@ -14,3 +14,4 @@ phonenumbers>=8.13
 requests
 googlesearch-python
 beautifulsoup4>=4.12
+bandit>=1.9,<2
