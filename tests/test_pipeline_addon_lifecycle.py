@@ -88,3 +88,68 @@ def test_pipeline_dispatches_owned_evidence_events(monkeypatch) -> None:
         event.get("stage") != "addon:event-addon"
         for event in emitted
     )
+
+
+def test_pipeline_real_addon_manager_invokes_just_sample(monkeypatch, tmp_path) -> None:
+    """Exercise the production pipeline against the repository's real sample add-on."""
+    import io
+    import zipfile
+    from pathlib import Path
+
+    from services.addon_manager import AddonManager
+
+    addon_root = Path(__file__).resolve().parents[1] / "addons" / "just-sample"
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as package:
+        for path in addon_root.iterdir():
+            if path.is_file():
+                package.write(path, arcname=path.name)
+
+    manager = AddonManager(tmp_path / "addons")
+    installed = manager.install_zip(archive.getvalue())
+    assert installed["id"] == "just-sample"
+    assert installed["owner"] == "imap"
+    manager.activate("just-sample")
+
+    monkeypatch.setattr(pipeline, "get_addon_manager", lambda: manager)
+    monkeypatch.setattr(pipeline, "imap_cache_enabled", lambda: False)
+
+    def _scan_gmail_inbox(*args, **kwargs):
+        return [
+            {
+                "name": "Example Service",
+                "domain": "example.com",
+                "source": "imap",
+                "subject": "Welcome",
+            }
+        ]
+
+    monkeypatch.setattr(pipeline, "scan_gmail_inbox", _scan_gmail_inbox)
+
+    emitted: list[dict[str, Any]] = []
+    state = pipeline.run_scan(
+        email="user@example.com",
+        gmail_app_password="test-password",
+        enable_imap=True,
+        enable_osint=False,
+        enable_breach=False,
+        enable_evidence_enrichment=False,
+        with_ai=False,
+        on_event=emitted.append,
+    )
+
+    assert state["services"][0]["domain"] == "example.com"
+    assert state["addon_events"]["discovery.imap.completed"]["just-sample"] == {
+        "jumlah_email": 1,
+    }
+    assert state["addons"]["just-sample"] == {"jumlah_email": 1}
+    assert state["addon_owners"]["just-sample"] == "imap"
+
+    addon_events = [
+        event
+        for event in emitted
+        if event.get("stage") == "just-sample"
+    ]
+    assert len(addon_events) == 1
+    assert addon_events[0]["_live"]["result"] == {"jumlah_email": 1}
+    assert addon_events[0]["_live"]["owner"] == "imap"
