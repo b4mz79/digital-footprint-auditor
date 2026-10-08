@@ -45,6 +45,47 @@ def test_pipeline_exposes_normalized_evidence(monkeypatch) -> None:
     assert evidence["metadata"]["finding_type"] == "service_discovery"
 
 
+def test_pipeline_evidence_enrichment_can_be_disabled(monkeypatch) -> None:
+    monkeypatch.setenv("FIRECRAWL_API_KEY", "test-key")
+
+    monkeypatch.setattr(
+        pipeline,
+        "scan_osint_footprint",
+        lambda email, lang="id": [
+            {
+                "name": "Example",
+                "domain": "example.com",
+                "source": "OSINT / Holehe",
+                "subject": "Active account detected",
+            }
+        ],
+    )
+
+    def unexpected(*args, **kwargs):
+        raise AssertionError("Evidence stage must not execute when disabled")
+
+    monkeypatch.setattr(pipeline, "service_findings_to_evidence", unexpected)
+    monkeypatch.setattr(pipeline, "enrich_evidence", unexpected)
+    monkeypatch.setattr(pipeline, "verify_evidence_records", unexpected)
+    monkeypatch.setattr(pipeline, "dispatch_addon_event", unexpected, raising=False)
+
+    state = pipeline.run_scan(
+        email="subject@example.org",
+        enable_imap=False,
+        enable_osint=True,
+        enable_breach=False,
+        enable_evidence_enrichment=False,
+        with_ai=False,
+    )
+
+    assert len(state["services"]) == 1
+    assert state["evidence"] == []
+    assert not any(
+        event.get("stage") in {"evidence_start", "evidence"}
+        for event in state["events"]
+    )
+
+
 def test_pipeline_forwards_evidence_to_ai(monkeypatch) -> None:
     monkeypatch.setenv("FIRECRAWL_API_KEY", "")
     captured: dict = {}
