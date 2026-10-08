@@ -29,7 +29,7 @@ def _zip_with_manifest(
         "invocation": {
             "function": "run",
             "mode": "on_demand",
-            "input": {"required": True},
+            "input": {"required": True, "fields": ["value"]},
             "return": {"type": "result", "required": True},
         },
         "events": [],
@@ -92,7 +92,7 @@ def test_structural_gate_rejects_missing_entrypoint(
         "invocation": {
             "function": "run",
             "mode": "on_demand",
-            "input": {"required": True},
+            "input": {"required": True, "fields": ["value"]},
             "return": {"type": "result", "required": True},
         },
         "events": [],
@@ -133,6 +133,7 @@ def test_structural_gate_rejects_symlink_after_extraction(
 
     manifest = AddonManifest(
         addon_id="structural-addon",
+        owner="test",
         name="Structural",
         caption="Structural",
         version="1.0.0",
@@ -141,6 +142,7 @@ def test_structural_gate_rejects_symlink_after_extraction(
         invocation_function="run",
         invocation_mode="on_demand",
         input_required=True,
+        input_fields=("value",),
         return_type="result",
         return_required=True,
     )
