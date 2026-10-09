@@ -1010,13 +1010,23 @@ if run_scan:
                             slot.empty()
                             with slot.container():
                                 st.error(
-                                    f"UI Add-On {addon_id} gagal: "
-                                    f"{type(exc).__name__}: {exc}"
+                                    t(
+                                    "addon_ui_failed",
+                                    lang=lang,
+                                    addon_id=addon_id,
+                                    error_type=type(exc).__name__,
+                                    error=str(exc),
+                                )
                                 )
                         else:
                             st.error(
-                                f"UI Add-On {addon_id} gagal: "
-                                f"{type(exc).__name__}: {exc}"
+                                t(
+                                    "addon_ui_failed",
+                                    lang=lang,
+                                    addon_id=addon_id,
+                                    error_type=type(exc).__name__,
+                                    error=str(exc),
+                                )
                             )
                 else:
                     _show_status(addon_id, event)
