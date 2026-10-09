@@ -5,6 +5,76 @@ import pytest
 from services import ai_agent
 
 
+@pytest.mark.asyncio
+async def test_timed_provider_call_logs_elapsed_time_and_preserves_result(caplog) -> None:
+    async def fake_call(value: str) -> str:
+        return value
+
+    with caplog.at_level("INFO"):
+        result = await ai_agent._timed_provider_call(
+            "Gemini",
+            "Key #2",
+            fake_call,
+            "response",
+        )
+
+    assert result == "response"
+    assert any(
+        "[AI Timing] provider=Gemini attempt=Key #2 phase=api_call elapsed_seconds="
+        in record.message
+        for record in caplog.records
+    )
+
+
+@pytest.mark.asyncio
+async def test_timed_provider_call_logs_elapsed_time_and_preserves_exception(caplog) -> None:
+    async def fake_call() -> str:
+        raise RuntimeError("provider failed")
+
+    with caplog.at_level("INFO"):
+        with pytest.raises(RuntimeError, match="provider failed"):
+            await ai_agent._timed_provider_call(
+                "Groq Cloud",
+                "single attempt",
+                fake_call,
+            )
+
+    assert any(
+        "[AI Timing] provider=Groq Cloud attempt=single attempt phase=api_call elapsed_seconds="
+        in record.message
+        for record in caplog.records
+    )
+
+
+def test_timed_response_validation_logs_elapsed_time_and_preserves_validation(caplog) -> None:
+    valid = {
+        "analysis": [
+            {
+                "service": "Example",
+                "risk_level": "Unknown",
+                "reason": "Insufficient evidence.",
+                "delete_url": "",
+            }
+        ]
+    }
+    raw = __import__("json").dumps(valid)
+
+    with caplog.at_level("INFO"):
+        result = ai_agent._timed_response_validation(
+            "OpenAI",
+            "single attempt",
+            raw,
+            "en",
+        )
+
+    assert result["analysis"][0]["service"] == "Example"
+    assert any(
+        "[AI Timing] provider=OpenAI attempt=single attempt phase=response_validation elapsed_seconds="
+        in record.message
+        for record in caplog.records
+    )
+
+
 def test_provider_fallback_contract():
     providers = ["Gemini", "Groq"]
     assert providers[-1] == "Groq"
