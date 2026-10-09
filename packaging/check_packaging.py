@@ -43,7 +43,7 @@ def validate_lock(path: Path, expected_python: str) -> None:
         packages[normalized] = version
 
     required_packages = {
-        "streamlit", "httpx", "holehe", "trio", "python-dotenv",
+        "streamlit", "httpx", "holehe", "trio", "python-dotenv", "bandit",
         "cryptography", "google-genai", "groq", "openai",
         "phonenumbers", "requests", "googlesearch-python",
         "beautifulsoup4", "pyinstaller", "pyinstaller-hooks-contrib",
