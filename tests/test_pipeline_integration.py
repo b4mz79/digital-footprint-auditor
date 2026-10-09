@@ -276,7 +276,9 @@ def test_pipeline_ai_failure_is_observable(monkeypatch) -> None:
     assert any(
         event.get("stage") == "ai"
         and event.get("level") == "error"
-        and "RuntimeError" in (event.get("text") or "")
+        and event.get("key") == "ai_failed"
+        and event.get("args", {}).get("error_type") == "RuntimeError"
+        and "synthetic AI failure" in event.get("args", {}).get("error", "")
         for event in state["events"]
     )
 
