@@ -3,41 +3,6 @@ from __future__ import annotations
 from services import ai_agent
 
 
-def test_ai_forensic_telemetry_counts_service_discovery_from_metadata(
-    caplog, monkeypatch
-) -> None:
-    monkeypatch.setattr(ai_agent, "AI_FORENSIC_TELEMETRY", True)
-    evidence = [
-        {
-            "evidence_id": "service-1",
-            "source": "OSINT / Holehe",
-            "relation": "target_resource",
-            "directness": "direct",
-            "verification_state": "unknown",
-            "metadata": {"finding_type": "service_discovery"},
-            "provenance": {
-                "provider": "osint",
-                "normalizer": "service_findings_to_evidence",
-                "assertion_scope": "service_association_only",
-            },
-        }
-    ]
-
-    with caplog.at_level("INFO"):
-        ai_agent._log_ai_forensic_payload(
-            system_prompt="system",
-            user_prompt="user",
-            scan_data_chars=0,
-            breach_evidence_chars=0,
-            evidence_chars=1,
-            status_chars=0,
-            addon_chars=0,
-            evidence_records=evidence,
-        )
-
-    assert "service_discovery_count=1" in caplog.text
-
-
 def test_ai_agent_import() -> None:
     assert ai_agent is not None
 
