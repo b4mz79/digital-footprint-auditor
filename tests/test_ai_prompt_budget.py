@@ -183,9 +183,9 @@ def test_contextual_evidence_after_scanner_mirror_cap_reaches_prompt() -> None:
         evidence_records=scanner_mirrors + [contextual],
     )
 
-    marker = "<UNTRUSTED_EVIDENCE>\\n"
+    marker = "<UNTRUSTED_EVIDENCE>\n"
     evidence_start = prompt.index(marker) + len(marker)
-    evidence_end = prompt.index("\\n</UNTRUSTED_EVIDENCE>", evidence_start)
+    evidence_end = prompt.index("\n</UNTRUSTED_EVIDENCE>", evidence_start)
     evidence_payload = prompt[evidence_start:evidence_end]
 
     assert "context-after-scanner-cap" in evidence_payload
