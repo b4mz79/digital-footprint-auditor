@@ -24,9 +24,14 @@ def test_ai_forensic_telemetry_counts_service_discovery_from_metadata(
     ]
 
     with caplog.at_level("INFO"):
-        ai_agent.build_user_prompt(
-            "user@example.org",
-            [],
+        ai_agent._log_ai_forensic_payload(
+            system_prompt="system",
+            user_prompt="user",
+            scan_data_chars=0,
+            breach_evidence_chars=0,
+            evidence_chars=1,
+            status_chars=0,
+            addon_chars=0,
             evidence_records=evidence,
         )
 
