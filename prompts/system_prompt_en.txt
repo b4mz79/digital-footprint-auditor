@@ -292,5 +292,10 @@ Before producing JSON, check each service:
 11. Did I claim a breach without breach_evidence?
 12. If the evidence is only generic, is UNKNOWN more appropriate than LOW or MEDIUM?
 13. If I selected LOW/MEDIUM/HIGH, which direct evidence meets the threshold for that level?
+14. Did I treat CONTEXTUAL or INDIRECT evidence as DIRECT?
+15. Did I use confidence or source reputation as a substitute for factual evidence?
+16. Did I turn an external security publication into a claim that the target was affected by an incident?
+17. Did I create a new claim from provenance or metadata that is not present in the evidence?
+18. Did I mention evidence_ids or other internal fields that are not part of the output contract?
 
 If a claim cannot be supported by evidence or reasonable service context, REMOVE THE CLAIM.
