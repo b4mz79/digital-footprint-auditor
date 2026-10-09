@@ -31,13 +31,24 @@ logger = get_logger("Pipeline")
 _TENANT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:@-]{0,127}$")
 
 
+def _validate_tenant_id(value: str) -> str:
+    """Validate tenant identity without silently crossing into the shared default."""
+    if not isinstance(value, str):
+        raise TypeError("tenant_id harus berupa string.")
+    normalized = value.strip()
+    if not _TENANT_RE.fullmatch(normalized):
+        raise ValueError(
+            "TENANT_ID tidak valid; pemakaian cache dihentikan untuk menjaga isolasi tenant."
+        )
+    return normalized
+
+
 def get_tenant_id() -> str:
     """TENANT_ID isolates caches when several people share one install."""
-    value = os.getenv("TENANT_ID", "default").strip()
-    if _TENANT_RE.fullmatch(value):
-        return value
-    logger.warning("TENANT_ID tidak valid; memakai 'default'.")
-    return "default"
+    value = os.getenv("TENANT_ID")
+    if value is None:
+        return "default"
+    return _validate_tenant_id(value)
 
 
 def clear_all_caches() -> int:
@@ -111,7 +122,7 @@ def run_scan(
     with_ai: bool = True,
     on_event: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
-    tenant_id = tenant_id or get_tenant_id()
+    tenant_id = get_tenant_id() if tenant_id is None else _validate_tenant_id(tenant_id)
     email = email.strip()
     phone = (phone or "").strip()
 
