@@ -280,5 +280,10 @@ Prima di produrre il JSON, verifica ogni servizio:
 11. Ho affermato una violazione senza breach_evidence?
 12. Se l'evidenza è solo generica, UNKNOWN è più appropriato di LOW o MEDIUM?
 13. Se ho scelto LOW/MEDIUM/HIGH, quale evidenza diretta soddisfa la soglia di quel livello?
+14. Ho trattato prove CONTESTUALI o INDIRETTE come prove DIRETTE?
+15. Ho usato il livello di confidenza o la reputazione della fonte al posto di prove fattuali?
+16. Ho trasformato una pubblicazione esterna sulla sicurezza nell'affermazione che il target sia stato colpito da un incidente?
+17. Ho creato una nuova affermazione da provenienza o metadati non presenti nelle prove?
+18. Ho menzionato evidence_ids o altri campi interni che non fanno parte del contratto di output?
 
 Se un'affermazione non può essere supportata dall'evidenza o da un contesto del servizio ragionevole, RIMUOVILA.
