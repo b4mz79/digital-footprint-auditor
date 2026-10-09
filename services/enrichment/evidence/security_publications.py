@@ -130,9 +130,19 @@ class _RequestRateGate:
             self._next_allowed = max(now, self._next_allowed) + self.interval_seconds
 
 
+def _is_ip_literal(hostname: str) -> bool:
+    """Return whether a host string is any IPv4 or IPv6 literal."""
+    try:
+        ipaddress.ip_address(hostname.strip().strip("[]"))
+        return True
+    except ValueError:
+        return False
+
+
 def _is_private_ip(hostname: str) -> bool:
     try:
-        return ipaddress.ip_address(hostname).is_private or ipaddress.ip_address(hostname).is_loopback
+        address = ipaddress.ip_address(hostname)
+        return address.is_private or address.is_loopback
     except ValueError:
         return False
 
@@ -147,11 +157,20 @@ def normalize_domain(value: str) -> str:
     if "@" in value or re.search(r"\+?\d[\d\s().-]{6,}", value):
         raise ValueError("Security-publication lookup accepts domain-only input.")
 
+    # Reject bare IPv6 literals before URL parsing: without URL brackets,
+    # urlsplit can interpret part of an address as a hostname and the rest as
+    # a port. Domain enrichment is intentionally domain-only, not IP-based.
+    if "://" not in value and _is_ip_literal(value):
+        raise ValueError("Security-publication lookup accepts domain names, not IP literals.")
+
     candidate = value if "://" in value else f"https://{value}"
-    parsed = urlsplit(candidate)
-    hostname = (parsed.hostname or "").strip().lower().rstrip(".")
-    if not hostname or _is_private_ip(hostname):
-        raise ValueError("Domain is invalid or resolves to an IP literal that is not suitable.")
+    try:
+        parsed = urlsplit(candidate)
+        hostname = (parsed.hostname or "").strip().lower().rstrip(".")
+    except ValueError as exc:
+        raise ValueError("Domain is invalid.") from exc
+    if not hostname or _is_ip_literal(hostname):
+        raise ValueError("Security-publication lookup accepts domain names, not IP literals.")
 
     try:
         hostname.encode("idna").decode("ascii")
