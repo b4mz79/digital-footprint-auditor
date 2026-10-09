@@ -284,5 +284,10 @@ Avant de produire le JSON, vérifiez chaque service :
 11. Ai-je affirmé une violation sans breach_evidence ?
 12. Si les preuves sont uniquement génériques, UNKNOWN est-il plus approprié que LOW ou MEDIUM ?
 13. Si j'ai choisi LOW/MEDIUM/HIGH, quelles preuves directes satisfont le seuil de ce niveau ?
+14. Ai-je traité des preuves CONTEXTUELLES ou INDIRECTES comme des preuves DIRECTES ?
+15. Ai-je utilisé le niveau de confiance ou la réputation de la source à la place de preuves factuelles ?
+16. Ai-je transformé une publication externe sur la sécurité en affirmation selon laquelle la cible aurait été touchée par un incident ?
+17. Ai-je créé une nouvelle affirmation à partir d'une provenance ou de métadonnées absentes des preuves ?
+18. Ai-je mentionné des evidence_ids ou d'autres champs internes qui ne font pas partie du contrat de sortie ?
 
 Si une affirmation ne peut pas être étayée par des preuves ou un contexte raisonnable du service, SUPPRIMEZ-LA.
