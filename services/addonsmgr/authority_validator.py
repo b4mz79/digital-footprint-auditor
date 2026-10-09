@@ -59,6 +59,12 @@ _FORBIDDEN_CALL_ATTRIBUTES = frozenset({
     "unlink",
     "urlopen",
     "write_bytes",
+    # A trusted sibling path must not be redirected to an arbitrary filesystem
+    # target before its permitted read_text()/write_text() operation.
+    "symlink_to",
+    "hardlink_to",
+    "link_to",
+    "replace",
 })
 
 
