@@ -288,9 +288,7 @@ async def enrich_evidence(
                     or record.provenance.get("query_scope") != "domain_only"
                     or record.provenance.get("relevance_filter") != CONTEXTUAL_FILTER_NAME
                     or record.provenance.get("publisher_domain")
-                    not in {domain for _, domain in DEFAULT_SECURITY_PUBLISHERS}
-                    or record.source
-                    not in {name for name, _ in DEFAULT_SECURITY_PUBLISHERS}
+                    != dict(DEFAULT_SECURITY_PUBLISHERS).get(record.source)
                     for record in cached
                 ):
                     raise ValueError("Cache contains records outside the contextual evidence contract")
