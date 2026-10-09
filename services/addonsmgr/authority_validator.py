@@ -110,6 +110,7 @@ def _validate_python_tree(tree: ast.AST, relative_path: str) -> None:
     # add-on-local lifecycle logs/state. This is a static screening rule, not
     # runtime filesystem confinement.
     local_path_names: set[str] = set()
+    approved_path_bindings: set[int] = set()
     for node in ast.walk(tree):
         if isinstance(node, (ast.Assign, ast.AnnAssign)):
             value = node.value
@@ -118,6 +119,72 @@ def _validate_python_tree(tree: ast.AST, relative_path: str) -> None:
                 for target in targets:
                     if isinstance(target, ast.Name):
                         local_path_names.add(target.id)
+                        approved_path_bindings.add(id(target))
+
+    # A name that was once bound to a safe sibling path must not be rebound
+    # to an arbitrary object or shadowed by a function parameter. Otherwise
+    # the later receiver check would trust the name rather than its value.
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Name)
+            and node.id in local_path_names
+            and isinstance(node.ctx, ast.Store)
+            and id(node) not in approved_path_bindings
+        ):
+            _reject(
+                relative_path,
+                node.lineno,
+                f"local path variable may not be rebound: {node.id}",
+            )
+        if isinstance(node, ast.arg) and node.arg in local_path_names:
+            _reject(
+                relative_path,
+                node.lineno,
+                f"local path variable may not be shadowed: {node.arg}",
+            )
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            if node.name in local_path_names:
+                _reject(
+                    relative_path,
+                    node.lineno,
+                    f"local path variable may not be shadowed: {node.name}",
+                )
+        if isinstance(node, ast.ExceptHandler) and node.name in local_path_names:
+            _reject(
+                relative_path,
+                node.lineno,
+                f"local path variable may not be shadowed: {node.name}",
+            )
+        if isinstance(node, ast.alias):
+            bound_name = node.asname or node.name.split(".", 1)[0]
+            if bound_name in local_path_names:
+                _reject(
+                    relative_path,
+                    node.lineno if hasattr(node, "lineno") else 1,
+                    f"local path variable may not be shadowed: {bound_name}",
+                )
+        match_as_type = getattr(ast, "MatchAs", None)
+        match_star_type = getattr(ast, "MatchStar", None)
+        if (
+            (match_as_type is not None and isinstance(node, match_as_type))
+            or (match_star_type is not None and isinstance(node, match_star_type))
+        ) and node.name in local_path_names:
+            _reject(
+                relative_path,
+                node.lineno if hasattr(node, "lineno") else 1,
+                f"local path variable may not be shadowed: {node.name}",
+            )
+        match_mapping_type = getattr(ast, "MatchMapping", None)
+        if (
+            match_mapping_type is not None
+            and isinstance(node, match_mapping_type)
+            and node.rest in local_path_names
+        ):
+            _reject(
+                relative_path,
+                node.lineno if hasattr(node, "lineno") else 1,
+                f"local path variable may not be shadowed: {node.rest}",
+            )
 
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
