@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import re
 from pathlib import Path
 
@@ -8,12 +9,32 @@ from utils.translations import TRANSLATIONS
 
 
 ROOT = Path(__file__).resolve().parents[1]
-LANGUAGES = ("id", "en", "de", "ru", "es", "ar", "zh", "fr", "it", "nl", "ja")
+LANGUAGES = ("id", "en", "de", "ru", "es", "ar", "fr", "zh", "it", "nl", "ja")
 EXPECTED_DSR_FIELDS = {"email", "phone_str", "services_str"}
 
 
 def _placeholders(value: str) -> set[str]:
     return set(re.findall(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}", value))
+
+
+def _static_translation_keys(source: str) -> set[str]:
+    """Return literal keys passed to t(), ignoring comments and string contents."""
+    tree = ast.parse(source)
+    keys: set[str] = set()
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if not isinstance(node.func, ast.Name) or node.func.id != "t":
+            continue
+        if not node.args:
+            continue
+
+        first_arg = node.args[0]
+        if isinstance(first_arg, ast.Constant) and isinstance(first_arg.value, str):
+            keys.add(first_arg.value)
+
+    return keys
 
 
 def test_translation_import() -> None:
@@ -41,13 +62,24 @@ def test_ui_translation_placeholders_are_aligned() -> None:
             ), f"Placeholder mismatch: lang={lang}, key={key}"
 
 
+def test_static_translation_key_extraction_ignores_non_code_text() -> None:
+    source = '''
+# t("comment_key")
+example = 't("string_key")'
+def render():
+    """Example: t("docstring_key")"""
+    t("actual_key")
+    t(key_from_runtime)
+'''
+    assert _static_translation_keys(source) == {"actual_key"}
+
+
 def test_python_translation_calls_resolve_to_known_keys() -> None:
     static_keys: set[str] = set()
     for source_path in ROOT.rglob("*.py"):
         source = source_path.read_text(encoding="utf-8")
-        static_keys.update(
-            re.findall(r"""\bt\(\s*["']([^"']+)["']""", source)
-        )
+        static_keys.update(_static_translation_keys(source))
+
     dynamic_key_families = {
         "engine_status_ok",
         "engine_status_partial",
