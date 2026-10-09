@@ -1,106 +1,86 @@
-#!bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-# Menghentikan skrip jika terjadi error
-set -e
+# Jalankan dari root repository, terlepas dari direktori pemanggil.
+ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT_DIR"
 
-# Pindah ke direktori utama proyek (naik satu tingkat dari folder tempat skrip ini berada)
-cd $(dirname $0)..
+echo "=============================================="
+echo "Privacy Auditor - Linux Packaging"
+echo "=============================================="
 
-echo ==============================================
-echo Privacy Auditor - Linux Packaging
-echo ==============================================
-echo 
-
-# 1. Validasi Lingkungan Virtual (Venv)
-if [ ! -f venv/bin/python ]; then
-    echo [ERROR] venv tidak ditemukan.
-    echo Jalankan build dari project yang sudah memiliki venv.
+# 1. Validasi lingkungan virtual.
+if [[ ! -x "venv/bin/python" ]]; then
+    echo "[ERROR] venv tidak ditemukan."
+    echo "Jalankan build dari project yang sudah memiliki venv."
     exit 1
 fi
 
-# Mengaktifkan virtual environment Linux
+# Aktifkan virtual environment Linux.
 source venv/bin/activate
 
-# Jalankan pengecekan pra-build
+# Pemeriksaan pra-build.
 python packaging/check_packaging.py
 
-# Memastikan PyInstaller versi yang tepat terpasang
-python -m pip install --upgrade pyinstaller=6.20,7
+# Samakan batas versi PyInstaller dengan build Windows.
+python -m pip install --upgrade "pyinstaller>=6.20,<7"
 
-# Verifikasi dependensi internal
-if ! python -c import holehe, trio, httpx, bs4; print('[OK] Embedded Holehe + HTTPHTML dependencies available.'); then
-    echo [ERROR] Package yang diperlukan tidak terpasang di venv build.
-    exit 1
-fi
+# Verifikasi dependency yang dibutuhkan pada jalur packaging.
+python -c "import holehe, trio, httpx, bs4; print('[OK] Embedded Holehe + HTTP/HTML dependencies available.')"
 
-echo 
-echo [14] Cleaning previous build...
+echo
+echo "[1/4] Cleaning previous build..."
 rm -rf dist/PrivacyAuditor
-rm -f dist/holehe
-rm -f dist/LICENSE
-rm -f dist/README_EN.docx
-rm -f dist/README_ID.docx
+rm -f dist/holehe dist/LICENSE dist/README_EN.docx dist/README_ID.docx dist/THIRD_PARTY_NOTICES.docx
 
-echo 
-echo [12] Building PrivacyAuditor...
-# Menjalankan PyInstaller dengan file spec Linux yang sudah diperbaiki sebelumnya
-python -m PyInstaller PrivacyAuditor.spec --noconfirm
+echo
+echo "[2/4] Building PrivacyAuditor..."
+python -m PyInstaller packaging/PrivacyAuditor.spec --noconfirm
 
-echo 
-echo [22] Build verification...
-# Di Linux, hasil build tidak menggunakan ekstensi .exe
-if [ ! -f dist/PrivacyAuditor ]; then
-    echo [ERROR] Executable PrivacyAuditor tidak ditemukan.
+echo
+echo "[3/4] Build verification..."
+if [[ ! -f "dist/PrivacyAuditor" ]]; then
+    echo "[ERROR] Executable dist/PrivacyAuditor tidak ditemukan."
     exit 1
 fi
 
-# Salin berkas lisensi
-cp LICENSE dist
+# Salin berkas lisensi.
+cp LICENSE dist/PrivacyAuditor.LICENSE.tmp
+mv dist/PrivacyAuditor.LICENSE.tmp dist/LICENSE
 
-# Periksa apakah Pandoc terinstal di sistem Ubuntu untuk konversi dokumen
-if command -v pandoc & devnull; then
-    echo [INFO] Mengonversi dokumentasi menggunakan Pandoc sistem...
-    pandoc packaging/THIRD_PARTY_NOTICES.md -o dist/THIRD_PARTY_NOTICES.docx --quiet  true
-    pandoc README.md -o dist/README_EN.docx --quiet  true
-    pandoc README_ID.md -o dist/README_ID.docx --quiet  true
+# Buat dokumentasi jika Pandoc tersedia.
+if command -v pandoc >/dev/null 2>&1; then
+    echo "[INFO] Mengonversi dokumentasi menggunakan Pandoc sistem..."
+    pandoc packaging/THIRD_PARTY_NOTICES.md -o dist/THIRD_PARTY_NOTICES.docx --quiet
+    pandoc README.md -o dist/README_EN.docx --quiet
+    pandoc README_ID.md -o dist/README_ID.docx --quiet
 else
-    echo [WARNING] Pandoc tidak ditemukan. Dokumen .docx tidak dapat dibuat.
-    echo Anda bisa menginstalnya lewat sudo apt install pandoc
+    echo "[WARNING] Pandoc tidak ditemukan. Dokumen .docx tidak dapat dibuat."
+    echo "Anda bisa menginstalnya lewat package manager distribusi Linux."
 fi
 
-# 2. Validasi Akhir Struktur Output setelah Build
-if [ ! -f dist/PrivacyAuditor ]; then
-    echo [ERROR] Executable PrivacyAuditor tidak ditemukan.
+# Validasi akhir.
+if [[ ! -f "dist/PrivacyAuditor" || ! -f "dist/LICENSE" ]]; then
+    echo "[ERROR] Executable atau LICENSE tidak ditemukan setelah build."
     exit 1
 fi
 
-if [ ! -f dist/LICENSE ]; then
-    echo [ERROR] LICENSE tidak ditemukan.
+if [[ -f "dist/holehe" ]]; then
+    echo "[ERROR] holehe masih terbawa ke distribution."
     exit 1
 fi
 
-# Validasi modul yang harus dibersihkan (slimming check)
-if [ -f dist/holehe ]; then
-    echo [ERROR] holehe masih terbawa ke distribution.
+if find dist -type f -name 'primp.so' -print -quit | grep -q .; then
+    echo "[ERROR] primp.so masih terbawa ke distribution."
     exit 1
 fi
 
-# Di Linux, ekstensinya adalah .so bukan .pyd
-if find dist -name primp.so  grep -q .; then
-    echo [ERROR] primp.so masih terbawa ke distribution.
-    exit 1
-fi
+echo
+echo "=============================================="
+echo "[OK] Linux Packaging build selesai."
+echo "=============================================="
+echo "Catatan: executable berada di dist/PrivacyAuditor"
 
-echo 
-echo ==============================================
-echo [OK] Linux Packaging build selesai.
-echo ==============================================
-echo Catatan File binary tunggal berada di dist/PrivacyAuditor
-
-# Menghitung total ukuran bundle file output dalam Megabytes (MB)
-if command -v du & devnull; then
-    SIZE_MB=$(du -sm dist/PrivacyAuditor  cut -f1)
-    echo Bundle size ${SIZE_MB}.00 MB
-fi
-
-echo 
+SIZE_MB="$(du -sm dist/PrivacyAuditor | cut -f1)"
+echo "Bundle size: ${SIZE_MB} MB"
+echo
