@@ -119,3 +119,42 @@ def test_rate_limited_engine_is_not_clean_result():
     assert result.status != EngineStatus.SUCCESS
 
     assert result.findings == []
+
+def test_cached_success_with_no_findings_is_distinct_from_cache_miss():
+    from services.breach_scanner import _cached_engine_findings
+
+    cache = {"user@example.com": {"Bing Scraper": []}}
+
+    found, findings = _cached_engine_findings(cache, "user@example.com", "Bing Scraper")
+
+    assert found is True
+    assert findings == []
+
+
+def test_missing_engine_result_remains_a_cache_miss_for_retry():
+    from services.breach_scanner import _cached_engine_findings
+
+    cache = {"user@example.com": {"Bing Scraper": []}}
+
+    found, findings = _cached_engine_findings(cache, "user@example.com", "BreachDirectory")
+
+    assert found is False
+    assert findings == []
+
+
+def test_successful_engine_findings_are_stored_per_target_and_engine():
+    from services.breach_scanner import _store_engine_findings
+
+    cache = {}
+    finding = {"title": "Exposure", "url": "https://example.com/result"}
+
+    _store_engine_findings(cache, "user@example.com", "Bing Scraper", [finding])
+    _store_engine_findings(cache, "user@example.com", "Tavily", [])
+
+    assert cache == {
+        "user@example.com": {
+            "Bing Scraper": [finding],
+            "Tavily": [],
+        }
+    }
+
