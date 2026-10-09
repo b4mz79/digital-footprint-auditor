@@ -276,7 +276,11 @@ async def verify_public_url(
                 content_type = response.headers.get("content-type", "")
                 title = ""
 
-                if fetch_title and response.request.method == "HEAD":
+                if (
+                    fetch_title
+                    and response.request.method == "HEAD"
+                    and not response.is_redirect
+                ):
                     get_response: httpx.Response | None = None
                     try:
                         get_response = await _send_pinned_request(
