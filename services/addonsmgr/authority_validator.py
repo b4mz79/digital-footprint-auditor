@@ -142,6 +142,39 @@ def _validate_python_tree(tree: ast.AST, relative_path: str) -> None:
                 node.lineno,
                 f"local path variable may not be shadowed: {node.arg}",
             )
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            if node.name in local_path_names:
+                _reject(
+                    relative_path,
+                    node.lineno,
+                    f"local path variable may not be shadowed: {node.name}",
+                )
+        if isinstance(node, ast.ExceptHandler) and node.name in local_path_names:
+            _reject(
+                relative_path,
+                node.lineno,
+                f"local path variable may not be shadowed: {node.name}",
+            )
+        if isinstance(node, ast.alias):
+            bound_name = node.asname or node.name.split(".", 1)[0]
+            if bound_name in local_path_names:
+                _reject(
+                    relative_path,
+                    node.lineno if hasattr(node, "lineno") else 1,
+                    f"local path variable may not be shadowed: {bound_name}",
+                )
+        if isinstance(node, (ast.MatchAs, ast.MatchStar)) and node.name in local_path_names:
+            _reject(
+                relative_path,
+                node.lineno if hasattr(node, "lineno") else 1,
+                f"local path variable may not be shadowed: {node.name}",
+            )
+        if isinstance(node, ast.MatchMapping) and node.rest in local_path_names:
+            _reject(
+                relative_path,
+                node.lineno if hasattr(node, "lineno") else 1,
+                f"local path variable may not be shadowed: {node.rest}",
+            )
 
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
