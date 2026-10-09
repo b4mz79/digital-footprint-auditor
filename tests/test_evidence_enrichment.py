@@ -125,6 +125,11 @@ def test_normalize_domain(value: str, expected: str) -> None:
         "user@example.com",
         "+628123456789",
         "127.0.0.1",
+        "8.8.8.8",
+        "https://8.8.8.8/",
+        "[2001:4860:4860::8888]",
+        "https://[2001:4860:4860::8888]/",
+        "2001:4860:4860::8888",
         "https://example.com/path?email=user@example.com",
     ],
 )
