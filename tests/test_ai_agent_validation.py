@@ -145,6 +145,46 @@ def test_evidence_lineage_is_attached_deterministically() -> None:
     assert linked[0]["evidence_ids"] == ["direct-1", "context-1"]
 
 
+def test_cached_analysis_rebuild_rejects_forged_evidence_lineage() -> None:
+    services = [{"name": "Example", "domain": "sub.example.com"}]
+    findings: list[dict] = []
+    evidence = [
+        {
+            "evidence_id": "real-evidence",
+            "domain": "example.com",
+            "provenance": {"service_name": "Example"},
+        },
+        {
+            "evidence_id": "unrelated-evidence",
+            "domain": "unrelated.example.net",
+            "provenance": {"service_name": "Unrelated"},
+        },
+    ]
+    cached_analysis = [
+        {
+            "service": "Example",
+            "risk_level": "Low",
+            "reason": "Cached reason",
+            "delete_url": "-",
+            "evidence_ids": ["forged-evidence", "unrelated-evidence"],
+            "risk_guarded": False,
+        }
+    ]
+
+    rebuilt, exposures = ai_agent._rebuild_cached_analysis(
+        cached_analysis,
+        services,
+        findings,
+        evidence,
+        "id",
+    )
+
+    assert exposures == []
+    assert rebuilt[0]["evidence_ids"] == ["real-evidence"]
+    assert "forged-evidence" not in rebuilt[0]["evidence_ids"]
+    assert "unrelated-evidence" not in rebuilt[0]["evidence_ids"]
+
+
 def test_build_user_prompt_marks_incomplete_breach_scan() -> None:
     prompt = ai_agent.build_user_prompt(
         "user@example.org",
