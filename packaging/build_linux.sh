@@ -19,6 +19,22 @@ fi
 # Aktifkan virtual environment Linux.
 source venv/bin/activate
 
+# Pastikan interpreter cocok dengan lockfile yang sudah tervalidasi.
+if ! python -c "import sys; assert sys.version_info[:2] == (3, 14), f'Requires Python 3.14.x, found {sys.version.split()[0]}'"; then
+    echo "[ERROR] Build Linux dikunci ke Python 3.14.x. Buat ulang venv dengan Python 3.14."
+    exit 1
+fi
+
+echo "[1/5] Installing pinned Linux build environment..."
+if ! python -m pip install -r packaging/locks/linux-py314.lock.txt; then
+    echo "[ERROR] Instalasi dependency lock Linux gagal."
+    exit 1
+fi
+if ! python -m pip check; then
+    echo "[ERROR] Dependency conflict terdeteksi setelah instalasi lock Linux."
+    exit 1
+fi
+
 # Pemeriksaan pra-build.
 python packaging/check_packaging.py
 
@@ -34,11 +50,9 @@ if ! python -c "import tkinter, _tkinter; tcl = tkinter.Tcl(); print('[OK] Tkint
     exit 1
 fi
 
-# Samakan batas versi PyInstaller dengan build Windows.
-python -m pip install --upgrade "pyinstaller>=6.20,<7"
-
-# Verifikasi dependency yang dibutuhkan pada jalur packaging.
-python -c "import holehe, trio, httpx, bs4; print('[OK] Embedded Holehe + HTTP/HTML dependencies available.')"
+# PyInstaller dan seluruh dependency build sudah dipasang dari lockfile.
+# Jangan melakukan upgrade dinamis di sini; itu akan mengubah baseline build.
+python -c "import holehe, trio, httpx, bs4, PyInstaller; print('[OK] Embedded Holehe + HTTP/HTML dependencies available; PyInstaller', PyInstaller.__version__)"
 
 echo
 echo "[1/4] Cleaning previous build..."
