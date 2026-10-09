@@ -283,6 +283,14 @@ async def enrich_evidence(
                     or record.assertion_scope != "security_publication_context_only"
                     or not isinstance(record.domain, str)
                     or record.domain.strip().lower() not in domains
+                    or not isinstance(record.provenance, dict)
+                    or record.provenance.get("provider") != "firecrawl_search"
+                    or record.provenance.get("query_scope") != "domain_only"
+                    or record.provenance.get("relevance_filter") != CONTEXTUAL_FILTER_NAME
+                    or record.provenance.get("publisher_domain")
+                    not in {domain for _, domain in DEFAULT_SECURITY_PUBLISHERS}
+                    or record.source
+                    not in {name for name, _ in DEFAULT_SECURITY_PUBLISHERS}
                     for record in cached
                 ):
                     raise ValueError("Cache contains records outside the contextual evidence contract")
