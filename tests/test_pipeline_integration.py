@@ -335,3 +335,48 @@ def test_pipeline_verification_failure_clears_stale_url_state(monkeypatch) -> No
     assert "url_verification" not in evidence["metadata"]
     assert evidence["metadata"]["keep"] == "unrelated metadata"
 
+
+
+def test_pipeline_normalization_failure_does_not_abort_scan_or_ai(monkeypatch) -> None:
+    monkeypatch.setenv("FIRECRAWL_API_KEY", "")
+    captured: dict = {}
+
+    monkeypatch.setattr(
+        pipeline,
+        "scan_osint_footprint",
+        lambda email, lang="id": [
+            {
+                "name": "Example",
+                "domain": "example.com",
+                "source": "OSINT / Holehe",
+                "subject": "Observed service association",
+            }
+        ],
+    )
+
+    def fail_normalization(*args, **kwargs):
+        raise RuntimeError("synthetic normalizer failure")
+
+    async def fake_analyze_smart_cache(**kwargs):
+        captured.update(kwargs)
+        return {"provider_used": "test", "analysis": [], "exposures": []}
+
+    monkeypatch.setattr(pipeline, "service_findings_to_evidence", fail_normalization)
+    monkeypatch.setattr(pipeline, "analyze_smart_cache", fake_analyze_smart_cache)
+
+    state = pipeline.run_scan(
+        email="subject@example.org",
+        enable_imap=False,
+        enable_osint=True,
+        enable_breach=False,
+        with_ai=True,
+    )
+
+    assert len(state["services"]) == 1
+    assert state["evidence"] == []
+    assert captured["evidence_records"] == []
+    assert any(
+        event.get("key") == "evidence_normalization_failed"
+        and event.get("stage") == "evidence_start"
+        for event in state["events"]
+    )
