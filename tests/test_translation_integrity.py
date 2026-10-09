@@ -76,7 +76,20 @@ def render():
 
 def test_python_translation_calls_resolve_to_known_keys() -> None:
     static_keys: set[str] = set()
+    ignored_dirs = {
+        ".git",
+        ".venv",
+        "venv",
+        "__pycache__",
+        ".pytest_cache",
+        "build",
+        "dist",
+    }
     for source_path in ROOT.rglob("*.py"):
+        # Only inspect first-party source; virtual environments and generated
+        # build/test directories may contain unrelated functions named t().
+        if any(part in ignored_dirs for part in source_path.relative_to(ROOT).parts[:-1]):
+            continue
         source = source_path.read_text(encoding="utf-8")
         static_keys.update(_static_translation_keys(source))
 
