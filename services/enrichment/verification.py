@@ -26,7 +26,7 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _mark_verification_unknown(record: EvidenceRecord) -> None:
+def mark_verification_unknown(record: EvidenceRecord) -> None:
     """Clear stale verification state when the current URL cannot be verified."""
     record.verification_scope = "url_accessibility"
     record.verification_state = "unknown"
@@ -53,7 +53,7 @@ async def verify_evidence_records(
         # A disabled verifier cannot vouch for a previous run's URL state.
         # Keep the evidence itself, but clear the current accessibility signal.
         for record in items:
-            _mark_verification_unknown(record)
+            mark_verification_unknown(record)
         return items
 
     timeout = (
@@ -74,7 +74,7 @@ async def verify_evidence_records(
         else:
             # A previous URL result must not survive if this record no longer
             # has a URL that can be checked in the current verification pass.
-            _mark_verification_unknown(record)
+            mark_verification_unknown(record)
     if not targets:
         return items
 
@@ -103,7 +103,7 @@ async def verify_evidence_records(
                             "[Evidence Verification] URL verification failed: %s",
                             type(exc).__name__,
                         )
-                        _mark_verification_unknown(record)
+                        mark_verification_unknown(record)
                         return
 
                     record.verification_scope = "url_accessibility"
@@ -130,6 +130,6 @@ async def verify_evidence_records(
             type(exc).__name__,
         )
         for record in targets:
-            _mark_verification_unknown(record)
+            mark_verification_unknown(record)
 
     return items

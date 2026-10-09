@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 from services import pipeline
-from services.enrichment.evidence.models import EvidenceDirectness, EvidenceRelation
+from services.enrichment.evidence.models import (
+    EvidenceDirectness,
+    EvidenceRecord,
+    EvidenceRelation,
+)
 
 
 def test_pipeline_import() -> None:
@@ -249,3 +253,57 @@ def test_pipeline_ai_failure_is_observable(monkeypatch) -> None:
         and "RuntimeError" in (event.get("text") or "")
         for event in state["events"]
     )
+
+def test_pipeline_verification_failure_clears_stale_url_state(monkeypatch) -> None:
+    record = EvidenceRecord(
+        evidence_id="stale-verification",
+        source="Example Security",
+        source_type="security_publication",
+        relation=EvidenceRelation.SECURITY_PUBLICATION,
+        directness=EvidenceDirectness.CONTEXTUAL,
+        confidence=0.65,
+        observed_at="2026-10-09T00:00:00+00:00",
+        published_at="2026-10-08T00:00:00+00:00",
+        domain="example.com",
+        url="https://example.com/report",
+        title="Security report",
+        summary="Security context.",
+        assertion_scope="security_publication_context_only",
+        verification_state="reachable",
+        verification_observed_at="2026-10-08T00:00:00+00:00",
+        metadata={
+            "keep": "unrelated metadata",
+            "url_verification": {"status_code": 200, "reachable": True},
+        },
+    )
+
+    monkeypatch.setattr(
+        pipeline,
+        "service_findings_to_evidence",
+        lambda services: [record],
+    )
+
+    async def fake_enrich(records, **kwargs):
+        return list(records)
+
+    async def failed_verification(records):
+        raise RuntimeError("synthetic verifier failure")
+
+    monkeypatch.setattr(pipeline, "enrich_evidence", fake_enrich)
+    monkeypatch.setattr(pipeline, "verify_evidence_records", failed_verification)
+
+    state = pipeline.run_scan(
+        email="subject@example.org",
+        enable_imap=False,
+        enable_osint=False,
+        enable_breach=False,
+        with_ai=False,
+    )
+
+    assert len(state["evidence"]) == 1
+    evidence = state["evidence"][0]
+    assert evidence["verification_state"] == "unknown"
+    assert evidence["verification_observed_at"] is None
+    assert "url_verification" not in evidence["metadata"]
+    assert evidence["metadata"]["keep"] == "unrelated metadata"
+

@@ -16,7 +16,10 @@ from services.ai_agent import (
 import services.ai_agent as ai_agent
 from services.breach_scanner import BREACH_CACHE_DIR, scan_data_breaches
 from services.evidence_enrichment import ENRICHMENT_CACHE_DIR, enrich_evidence
-from services.enrichment.verification import verify_evidence_records
+from services.enrichment.verification import (
+    mark_verification_unknown,
+    verify_evidence_records,
+)
 from services.enrichment.evidence import evidence_to_dicts, service_findings_to_evidence
 from services.imap_scanner import IMAP_CACHE_DIR, imap_cache_enabled, load_imap_cache, save_imap_cache, scan_gmail_inbox
 from services.osint_scanner import OSINT_CACHE_DIR, load_osint_cache, osint_cache_enabled, save_osint_cache, scan_osint_footprint
@@ -379,7 +382,11 @@ def run_scan(
                 "[Pipeline] Evidence URL verification failed: %s",
                 exc,
             )
+            # A failed verification pass cannot preserve URL state from an
+            # earlier run. Keep the evidence, but invalidate its stale signal.
             verified_evidence = enriched_evidence
+            for record in verified_evidence:
+                mark_verification_unknown(record)
 
         state["evidence"] = evidence_to_dicts(verified_evidence)
         dispatch_addon_event(
