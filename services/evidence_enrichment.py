@@ -232,11 +232,14 @@ async def enrich_evidence(
         3600.0,
     )
 
+    # Records can be reconstructed or mutated at integration boundaries.
+    # Keep malformed base evidence, but never let an invalid domain abort
+    # enrichment for otherwise valid records in the same batch.
     domains = sorted(
         {
             record.domain.strip().lower()
             for record in base
-            if record.domain.strip()
+            if isinstance(record.domain, str) and record.domain.strip()
         }
     )
     cache_material = {

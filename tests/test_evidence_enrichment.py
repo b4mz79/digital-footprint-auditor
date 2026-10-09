@@ -1340,3 +1340,52 @@ async def test_enrichment_does_not_replace_base_record_on_evidence_id_collision(
     assert result[0].relation is EvidenceRelation.TARGET_RESOURCE
     assert result[0].title == "Original scanner evidence"
 
+@pytest.mark.asyncio
+async def test_malformed_base_domain_does_not_abort_valid_domain_enrichment(monkeypatch) -> None:
+    import services.evidence_enrichment as module
+
+    def make_record(evidence_id: str, domain: str) -> EvidenceRecord:
+        return EvidenceRecord(
+            evidence_id=evidence_id,
+            source="OSINT",
+            source_type="osint",
+            relation=EvidenceRelation.TARGET_RESOURCE,
+            directness=EvidenceDirectness.DIRECT,
+            confidence=0.8,
+            observed_at="2026-10-09T00:00:00+00:00",
+            published_at=None,
+            domain=domain,
+            url="",
+            title="Observed service",
+            summary="Observed service association.",
+            assertion_scope="service_association_only",
+        )
+
+    malformed = make_record("base-malformed-domain", "invalid.example")
+    malformed.domain = None
+    valid = make_record("base-valid-domain", "example.com")
+    provider_calls: list[str] = []
+
+    class FakeProvider:
+        def __init__(self, **kwargs):
+            self.cooldown_active = False
+            self.had_failures = False
+
+        async def search_domain(self, domain):
+            provider_calls.append(domain)
+            return []
+
+    monkeypatch.setenv("EVIDENCE_ENRICHMENT_CACHE_ENABLED", "false")
+    monkeypatch.setattr(module, "FirecrawlSecurityPublicationProvider", FakeProvider)
+
+    result = await module.enrich_evidence(
+        [malformed, valid],
+        firecrawl_api_key="test-key",
+    )
+
+    assert provider_calls == ["example.com"]
+    assert {record.evidence_id for record in result} == {
+        "base-malformed-domain",
+        "base-valid-domain",
+    }
+
