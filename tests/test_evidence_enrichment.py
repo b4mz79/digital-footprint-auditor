@@ -754,3 +754,84 @@ async def test_enrichment_cache_hit_skips_firecrawl(monkeypatch) -> None:
 
     assert len(result) == 1
     assert result[0].evidence_id == "base-cache"
+
+
+@pytest.mark.asyncio
+async def test_enrichment_cache_hit_preserves_current_base_state(monkeypatch) -> None:
+    import services.evidence_enrichment as module
+
+    stale_base = EvidenceRecord(
+        evidence_id="base-current-state",
+        source="OSINT",
+        source_type="osint",
+        relation=EvidenceRelation.TARGET_RESOURCE,
+        directness=EvidenceDirectness.DIRECT,
+        confidence=0.8,
+        observed_at="2026-10-05T00:00:00+00:00",
+        published_at=None,
+        domain="example.com",
+        url="",
+        title="Target-associated service: Example",
+        summary="Observed service association.",
+        assertion_scope="service_association_only",
+        verification_state="unknown",
+    )
+    contextual = EvidenceRecord(
+        evidence_id="cached-context",
+        source="Kaspersky Securelist",
+        source_type="security_publication",
+        relation=EvidenceRelation.SECURITY_PUBLICATION,
+        directness=EvidenceDirectness.CONTEXTUAL,
+        confidence=0.65,
+        observed_at="2026-10-05T00:00:00+00:00",
+        published_at="2026-10-01",
+        domain="example.com",
+        url="https://securelist.com/example-phishing/",
+        title="Example.com phishing research",
+        summary="Security publication context.",
+        assertion_scope="security_publication_context_only",
+    )
+    current_base = EvidenceRecord(
+        evidence_id="base-current-state",
+        source="OSINT",
+        source_type="osint",
+        relation=EvidenceRelation.TARGET_RESOURCE,
+        directness=EvidenceDirectness.DIRECT,
+        confidence=0.8,
+        observed_at="2026-10-09T00:00:00+00:00",
+        published_at=None,
+        domain="example.com",
+        url="",
+        title="Target-associated service: Example",
+        summary="Observed service association.",
+        provenance={"fresh_scan": True},
+        assertion_scope="service_association_only",
+        verification_state="reachable",
+        verification_observed_at="2026-10-09T00:00:00+00:00",
+    )
+
+    monkeypatch.setenv("FIRECRAWL_API_KEY", "test-key")
+    monkeypatch.setenv("EVIDENCE_ENRICHMENT_CACHE_ENABLED", "true")
+    monkeypatch.setattr(
+        module,
+        "load_enrichment_cache",
+        lambda *args, **kwargs: [stale_base.to_dict(), contextual.to_dict()],
+    )
+    monkeypatch.setattr(
+        module,
+        "FirecrawlSecurityPublicationProvider",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("Firecrawl must be skipped on enrichment cache hit")
+        ),
+    )
+
+    result = await module.enrich_evidence([current_base], tenant_id="tenant-current-state")
+    by_id = {record.evidence_id: record for record in result}
+
+    assert set(by_id) == {"base-current-state", "cached-context"}
+    assert by_id["base-current-state"].observed_at == "2026-10-09T00:00:00+00:00"
+    assert by_id["base-current-state"].verification_state == "reachable"
+    assert by_id["base-current-state"].verification_observed_at == "2026-10-09T00:00:00+00:00"
+    assert by_id["base-current-state"].provenance == {"fresh_scan": True}
+    assert by_id["cached-context"].assertion_scope == "security_publication_context_only"
+

@@ -35,7 +35,7 @@ logger = get_logger("EvidenceEnrichment")
 
 # Module-owned persistent cache.
 ENRICHMENT_CACHE_ENABLED_ENV = "EVIDENCE_ENRICHMENT_CACHE_ENABLED"
-ENRICHMENT_CACHE_SCHEMA_VERSION = 1
+ENRICHMENT_CACHE_SCHEMA_VERSION = 2
 ENRICHMENT_CACHE_MAX_AGE_HOURS = 12.0
 ENRICHMENT_CACHE_DIR = resolve_data_path(
     os.getenv("EVIDENCE_ENRICHMENT_CACHE_DIR"),
@@ -274,12 +274,24 @@ async def enrich_evidence(
             except (KeyError, TypeError, ValueError):
                 logger.warning("[Evidence Enrichment] Cache payload invalid; treating as miss.")
             else:
+                # The cache stores provider-owned enrichment records only.
+                # Always retain the current scan's base evidence so cached
+                # observations/verifications cannot overwrite fresher state.
+                merged_cached: dict[str, EvidenceRecord] = {
+                    record.evidence_id: record for record in base
+                }
+                for record in cached:
+                    if record.evidence_id not in merged_cached:
+                        merged_cached[record.evidence_id] = record
+                output_cached = list(merged_cached.values())
                 logger.info(
-                    "[Evidence Enrichment] Cache HIT; records=%d domains=%d",
+                    "[Evidence Enrichment] Cache HIT; enrichment_records=%d base_records=%d total=%d domains=%d",
                     len(cached),
+                    len(base),
+                    len(output_cached),
                     len(domains),
                 )
-                return cached
+                return output_cached
 
     logger.info(
         "[Evidence Enrichment] Input fingerprint; domains=%d domains_sha256=%s",
@@ -415,7 +427,7 @@ async def enrich_evidence(
     ):
         save_enrichment_cache(
             cache_payload,
-            [record.to_dict() for record in output],
+            [record.to_dict() for record in selected_contextual],
             tenant_id=tenant_id,
         )
 
