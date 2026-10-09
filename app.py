@@ -611,7 +611,7 @@ with st.sidebar:
     )
     enable_evidence_enrichment = st.checkbox(
         t("enable_evidence_enrichment", lang=lang),
-        value=True,
+        value=False,
         help=t("evidence_enrichment_help", lang=lang),
     )
     force_refresh_breach = st.checkbox(
