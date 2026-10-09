@@ -413,7 +413,11 @@ def render_ai(scan_state: dict) -> None:
         t(
             "info_provider_used",
             lang=lang,
-            provider=ai_output.get("provider_used", "Local Cache"),
+            provider=(
+                t("provider_local_cache", lang=lang)
+                if ai_output.get("provider_used") in (None, "Local Cache")
+                else ai_output.get("provider_used")
+            ),
         )
     )
 
@@ -635,7 +639,7 @@ with st.sidebar:
     )
 
     st.caption(
-        f"• **Gemini Keys:** {gemini_count}/6 "
+        f"• **Gemini:** {gemini_count}/6 "
         f"{t('keys_active', lang=lang)}"
     )
     st.caption(f"• **Groq API:** {has_groq}")
