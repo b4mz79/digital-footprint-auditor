@@ -194,6 +194,9 @@ def _safe_url(value: Any) -> str:
         return ""
     try:
         parsed = urlsplit(raw)
+        # Reject malformed/non-numeric/out-of-range ports before accepting
+        # a publisher URL as evidence or exposing it as a clickable source.
+        _ = parsed.port
     except ValueError:
         return ""
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:

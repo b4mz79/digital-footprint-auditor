@@ -335,6 +335,11 @@ async def test_firecrawl_provider_returns_contextual_evidence() -> None:
                     "url": "https://untrusted.example/example",
                 },
                 {
+                    "title": "Example.com phishing incident",
+                    "description": "A phishing incident affected example.com.",
+                    "url": "https://securelist.com:99999/example-phishing/",
+                },
+                {
                     "title": "Example.com product update",
                     "description": "A general company announcement for example.com.",
                     "url": "https://securelist.com/example-product-update/",
