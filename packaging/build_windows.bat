@@ -15,10 +15,29 @@ if not exist "venv\Scripts\python.exe" (
 )
 
 call venv\Scripts\activate.bat
+
+echo [1/5] Validating Python version...
+python -c "import sys; assert sys.version_info[:2] == (3, 12), f'Requires Python 3.12.x, found {sys.version.split()[0]}'"
+if errorlevel 1 (
+    echo [ERROR] Build Windows dikunci ke Python 3.12.x. Buat ulang venv dengan Python 3.12.
+    exit /b 1
+)
+
+echo [2/5] Installing pinned Windows build environment...
+python -m pip install -r packaging\locks\windows-py312.lock.txt
+if errorlevel 1 (
+    echo [ERROR] Instalasi dependency lock Windows gagal.
+    exit /b 1
+)
+python -m pip check
+if errorlevel 1 (
+    echo [ERROR] Dependency conflict terdeteksi setelah instalasi lock Windows.
+    exit /b 1
+)
+
 python packaging\check_packaging.py
 if errorlevel 1 exit /b 1
-python -m pip install --upgrade "pyinstaller>=6.20,<7"
-python -c "import holehe, trio, httpx, bs4; print('[OK] Embedded Holehe + HTTP/HTML dependencies available.')"
+python -c "import holehe, trio, httpx, bs4, PyInstaller; print('[OK] Embedded Holehe + HTTP/HTML dependencies available; PyInstaller', PyInstaller.__version__)"
 if errorlevel 1 (
     echo [ERROR] Package yang diperlukan tidak terpasang di venv build.
     exit /b 1
