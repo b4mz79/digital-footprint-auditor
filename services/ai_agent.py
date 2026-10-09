@@ -373,8 +373,13 @@ def _log_ai_forensic_payload(
         directness = str(item.get("directness", "") or "").strip().lower()
         relation = str(item.get("relation", "") or "").strip().lower()
         provenance = item.get("provenance")
+        metadata = item.get("metadata")
         finding_type = ""
-        if isinstance(provenance, Mapping):
+        # Scanner finding classification is stored in EvidenceRecord.metadata.
+        # Keep provenance as a backward-compatible fallback for older records.
+        if isinstance(metadata, Mapping):
+            finding_type = str(metadata.get("finding_type", "") or "").strip().lower()
+        if not finding_type and isinstance(provenance, Mapping):
             finding_type = str(provenance.get("finding_type", "") or "").strip().lower()
 
         is_security_publication = (
