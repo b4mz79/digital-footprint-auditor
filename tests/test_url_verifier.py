@@ -178,3 +178,103 @@ async def test_verifier_never_follows_redirects_from_injected_client(
         assert result.redirected is True
         assert result.location == private_redirect
     assert result.final_url == url
+
+
+
+class TrackingStream(httpx.AsyncByteStream):
+    def __init__(self, payload: bytes) -> None:
+        self.payload = payload
+        self.bytes_yielded = 0
+        self.closed = False
+
+    async def __aiter__(self):
+        for offset in range(0, len(self.payload), 1024):
+            chunk = self.payload[offset : offset + 1024]
+            self.bytes_yielded += len(chunk)
+            yield chunk
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
+@pytest.mark.asyncio
+async def test_fallback_get_does_not_buffer_body_and_closes_responses(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        url_verifier,
+        "_resolve_public_addresses",
+        lambda hostname, port=None: [PUBLIC_IP],
+    )
+    streams: dict[str, TrackingStream] = {}
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        stream = TrackingStream(b"x" * 200_000)
+        streams[request.method] = stream
+        status = 405 if request.method == "HEAD" else 200
+        return httpx.Response(status, stream=stream, request=request)
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler),
+        follow_redirects=True,
+    ) as client:
+        result = await verify_public_url(
+            "https://public.example/report",
+            client=client,
+        )
+
+    assert result.reachable is True
+    assert result.status_code == 200
+    assert streams["HEAD"].closed is True
+    assert streams["GET"].closed is True
+    # The fallback GET is used for headers/status only; its body is never read.
+    assert streams["GET"].bytes_yielded == 0
+
+
+@pytest.mark.asyncio
+async def test_title_fetch_reads_only_bounded_body_and_closes_responses(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        url_verifier,
+        "_resolve_public_addresses",
+        lambda hostname, port=None: [PUBLIC_IP],
+    )
+    streams: dict[str, TrackingStream] = {}
+    extracted_lengths: list[int] = []
+    original_extract_title = url_verifier._extract_title
+
+    def inspect_extract_title(content: bytes) -> str:
+        extracted_lengths.append(len(content))
+        return original_extract_title(content)
+
+    monkeypatch.setattr(url_verifier, "_extract_title", inspect_extract_title)
+    payload = b"<html><head><title>Bounded</title></head><body>" + b"x" * 200_000
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        stream = TrackingStream(b"" if request.method == "HEAD" else payload)
+        streams[request.method] = stream
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/html"},
+            stream=stream,
+            request=request,
+        )
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler),
+        follow_redirects=True,
+    ) as client:
+        result = await verify_public_url(
+            "https://public.example/report",
+            client=client,
+            fetch_title=True,
+        )
+
+    assert result.title == "Bounded"
+    assert extracted_lengths and extracted_lengths[0] <= url_verifier.MAX_TITLE_BYTES
+    assert streams["HEAD"].closed is True
+    assert streams["GET"].closed is True
+    # Streaming may read at most one additional 8 KiB chunk before truncation;
+    # it must never consume the entire 200 KiB response.
+    assert streams["GET"].bytes_yielded <= url_verifier.MAX_TITLE_BYTES + 8192
