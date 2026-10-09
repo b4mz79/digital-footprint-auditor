@@ -221,7 +221,7 @@ def test_build_user_prompt_marks_incomplete_breach_scan() -> None:
     assert "do not describe the absence of breach findings" in prompt
 
 def test_matching_breach_evidence_repairs_unsupported_reason_without_raising_risk() -> None:
-    services = [{"name": "Example", "domain": "example.com", "subject": "Payment receipt"}]
+    services = [{"name": "Example", "domain": "example.com", "subject": "Welcome! Verify your email address."}]
     findings = [{
         "kind": "breach_db",
         "dataset": "example.com",
