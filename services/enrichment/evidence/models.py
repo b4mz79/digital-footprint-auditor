@@ -135,8 +135,17 @@ class EvidenceRecord:
             raise ValueError(f"Unsupported verification scope: {self.verification_scope}")
         if self.verification_state not in VERIFICATION_STATES:
             raise ValueError(f"Unsupported verification state: {self.verification_state}")
-        if self.verification_state == "unknown":
+        if (
+            self.verification_state == "unknown"
+            or self.verification_observed_at is None
+        ):
+            # A positive/negative reachability state without an observation
+            # timestamp cannot be treated as a current verification result.
+            self.verification_state = "unknown"
             self.verification_observed_at = None
+            metadata = dict(self.metadata) if isinstance(self.metadata, dict) else {}
+            metadata.pop("url_verification", None)
+            self.metadata = metadata
 
     def to_dict(self) -> dict[str, Any]:
         """Return JSON-serializable evidence without losing enum semantics."""

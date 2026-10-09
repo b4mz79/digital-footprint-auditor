@@ -113,3 +113,35 @@ def test_temporal_contract_does_not_infer_event_time() -> None:
 
     assert serialized["published_at"] is None
     assert "event_at" not in serialized
+
+def test_reachability_state_without_timestamp_is_downgraded_to_unknown() -> None:
+    record = _record(
+        verification_state="reachable",
+        verification_observed_at=None,
+        metadata={
+            "keep": "unrelated metadata",
+            "url_verification": {"status_code": 200, "reachable": True},
+        },
+    )
+
+    assert record.verification_state == "unknown"
+    assert record.verification_observed_at is None
+    assert "url_verification" not in record.metadata
+    assert record.metadata["keep"] == "unrelated metadata"
+
+
+def test_unknown_verification_state_clears_stale_reachability_metadata() -> None:
+    record = _record(
+        verification_state="unknown",
+        verification_observed_at="2026-10-05T03:05:00+03:00",
+        metadata={
+            "keep": "unrelated metadata",
+            "url_verification": {"status_code": 200, "reachable": True},
+        },
+    )
+
+    assert record.verification_state == "unknown"
+    assert record.verification_observed_at is None
+    assert "url_verification" not in record.metadata
+    assert record.metadata["keep"] == "unrelated metadata"
+
