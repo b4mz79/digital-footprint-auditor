@@ -51,3 +51,11 @@ jobs:
 
       - name: Run test suite
         run: python -m pytest -q
+
+      - name: Build Windows distribution smoke test
+        if: runner.os == 'Windows'
+        run: |
+          python -m PyInstaller packaging\PrivacyAuditor.spec --noconfirm
+          if (!(Test-Path "dist\PrivacyAuditor\PrivacyAuditor.exe")) {
+            throw "PrivacyAuditor.exe was not created by the pinned Windows environment."
+          }
