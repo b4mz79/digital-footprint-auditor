@@ -2239,6 +2239,29 @@ def _attach_evidence_lineage(
     return enriched
 
 
+def _rebuild_cached_analysis(
+    cached_analysis: Any,
+    services: list[dict],
+    findings: list[dict],
+    evidence_records: list | None,
+    lang: str,
+) -> tuple[list[dict], list[dict]]:
+    """Revalidate cached model fields and rebuild deterministic decisions and lineage.
+
+    Cache encryption/integrity does not replace application-level validation.
+    In particular, cached evidence_ids and risk guard fields are never trusted.
+    """
+    validated = validate_ai_output({"analysis": cached_analysis}, lang)
+    analysis, exposures = _finalize_analysis(
+        validated["analysis"],
+        services,
+        findings,
+        lang,
+        evidence_records=evidence_records,
+    )
+    return _attach_evidence_lineage(analysis, services, evidence_records), exposures
+
+
 def _finalize_analysis(
     analysis: list[dict],
     services: list[dict],
@@ -2577,13 +2600,11 @@ async def analyze_smart_cache(
             and cached_result.get("input_fp") == fingerprint
         ):
             try:
-                cached_analysis = cached_result.get("analysis")
-                # Validate the cached analysis through the same canonical
-                # validator used by provider responses. Keep the original
-                # finalized item fields (evidence lineage/risk guards/etc.)
-                # after validation; the validator is used as a contract check.
-                validate_ai_output(
-                    {"analysis": cached_analysis},
+                cached_analysis, cached_exposures = _rebuild_cached_analysis(
+                    cached_result.get("analysis"),
+                    services,
+                    findings,
+                    evidence,
                     lang,
                 )
 
@@ -2598,6 +2619,10 @@ async def analyze_smart_cache(
                     type(exc).__name__,
                 )
             else:
+                # Cache lineage and deterministic risk guards are rebuilt from
+                # current inputs rather than trusting stored derived fields.
+                cached_result["analysis"] = cached_analysis
+                cached_result["exposures"] = cached_exposures
                 if not cached_result.get("dsr_template"):
                     cached_result["dsr_template"] = load_local_dsr_template(
                         email,
