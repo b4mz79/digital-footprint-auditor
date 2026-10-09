@@ -51,6 +51,25 @@ def test_evidence_record_preserves_directness_and_relation() -> None:
 
 
 
+@pytest.mark.parametrize("confidence", [float("nan"), float("inf"), float("-inf")])
+def test_evidence_record_rejects_non_finite_confidence(confidence: float) -> None:
+    with pytest.raises(ValueError, match="confidence must be finite"):
+        EvidenceRecord(
+            evidence_id="invalid-confidence",
+            source="Example",
+            source_type="test",
+            relation=EvidenceRelation.TARGET_RESOURCE,
+            directness=EvidenceDirectness.DIRECT,
+            confidence=confidence,
+            observed_at="2026-10-05T00:00:00+00:00",
+            published_at=None,
+            domain="example.com",
+            url="",
+            title="Example",
+            summary="Example",
+        )
+
+
 def test_evidence_record_rejects_unscoped_verification_state() -> None:
     with pytest.raises(ValueError, match="Unsupported verification state"):
         EvidenceRecord(

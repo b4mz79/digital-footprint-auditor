@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
+import math
 from enum import Enum
 import hashlib
 from typing import Any
@@ -118,7 +119,10 @@ class EvidenceRecord:
             field_name="verification_observed_at",
             allow_none=True,
         )
-        self.confidence = max(0.0, min(1.0, float(self.confidence)))
+        confidence = float(self.confidence)
+        if not math.isfinite(confidence):
+            raise ValueError("confidence must be finite")
+        self.confidence = max(0.0, min(1.0, confidence))
         self.assertion_scope = str(self.assertion_scope or "unknown").strip() or "unknown"
         self.verification_scope = (
             str(self.verification_scope or "url_accessibility").strip()
