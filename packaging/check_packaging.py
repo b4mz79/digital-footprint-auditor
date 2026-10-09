@@ -44,7 +44,7 @@ def validate_lock(path: Path, expected_python: str) -> None:
 
     required_packages = {
         "streamlit", "httpx", "holehe", "trio", "python-dotenv", "bandit",
-        "cryptography", "google-genai", "groq", "openai",
+        "cryptography", "pydantic", "google-genai", "groq", "openai",
         "phonenumbers", "requests", "googlesearch-python",
         "beautifulsoup4", "pyinstaller", "pyinstaller-hooks-contrib",
         "pytest", "pytest-asyncio", "pytest-cov",
