@@ -67,3 +67,60 @@ def test_verify_public_url_rejects_unresolvable_hostname(monkeypatch, resolved) 
 
     with pytest.raises(ValueError, match="hostname is not public"):
         url_verifier._validate_url("https://unresolvable.example/report")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("head_status", "fetch_title", "expected_methods"),
+    [
+        (302, False, ["HEAD"]),
+        (200, True, ["HEAD", "GET"]),
+        (405, False, ["HEAD", "GET"]),
+    ],
+)
+async def test_verifier_never_follows_redirects_from_injected_client(
+    monkeypatch: pytest.MonkeyPatch,
+    head_status: int,
+    fetch_title: bool,
+    expected_methods: list[str],
+) -> None:
+    url = "https://public.example/report"
+    private_redirect = "http://127.0.0.1/admin"
+    requests: list[httpx.Request] = []
+
+    # Keep this test deterministic and independent of live DNS.
+    monkeypatch.setattr(
+        "services.enrichment.evidence.url_verifier._is_public_hostname",
+        lambda hostname: True,
+    )
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.method == "HEAD":
+            headers = {"location": private_redirect} if head_status == 302 else {}
+            return httpx.Response(head_status, headers=headers, request=request)
+
+        return httpx.Response(
+            302,
+            headers={"location": private_redirect},
+            request=request,
+        )
+
+    # Deliberately use a client configured to follow redirects. The verifier
+    # must enforce its own security policy on each request.
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler),
+        follow_redirects=True,
+    ) as client:
+        result = await verify_public_url(
+            url,
+            client=client,
+            fetch_title=fetch_title,
+        )
+
+    assert [request.method for request in requests] == expected_methods
+    assert all(str(request.url) == url for request in requests)
+    assert result.status_code == 302
+    assert result.final_url == url
+    assert result.redirected is True
+    assert result.location == private_redirect
