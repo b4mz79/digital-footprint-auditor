@@ -13,7 +13,7 @@ EXPECTED_DSR_FIELDS = {"email", "phone_str", "services_str"}
 
 
 def _placeholders(value: str) -> set[str]:
-    return set(re.findall(r"\\{([a-zA-Z_][a-zA-Z0-9_]*)\\}", value))
+    return set(re.findall(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}", value))
 
 
 def test_translation_import() -> None:
@@ -44,7 +44,7 @@ def test_ui_translation_placeholders_are_aligned() -> None:
 def test_app_translation_calls_resolve_to_known_keys() -> None:
     app_source = (ROOT / "app.py").read_text(encoding="utf-8")
     static_keys = set(
-        re.findall(r"""\\bt\\(\\s*["']([^"']+)["']""", app_source)
+        re.findall(r"""\bt\(\s*["']([^"']+)["']""", app_source)
     )
     dynamic_key_families = {
         "engine_status_ok",
@@ -78,7 +78,7 @@ def test_all_system_prompts_have_the_complete_evidence_checklist() -> None:
         numbered_lines = [
             (index, int(match.group(1)))
             for index, line in enumerate(prompt.splitlines())
-            if (match := re.match(r"^\\s*(\\d+)[.)]\\s+", line))
+            if (match := re.match(r"^\s*(\d+)[.)]\s+", line))
         ]
         checklist_start = max(
             index for index, number in numbered_lines if number == 1
@@ -101,7 +101,7 @@ def test_all_dsr_templates_have_matching_runtime_placeholders_and_requests() -> 
             f"DSR placeholder mismatch for language {lang}: "
             f"{_placeholders(template)}"
         )
-        requests = re.findall(r"^\\s*\\d+[.)]\\s+", template, flags=re.MULTILINE)
+        requests = re.findall(r"^\s*\d+[.)]\s+", template, flags=re.MULTILINE)
         assert len(requests) == 3, (
             f"DSR template must contain three request clauses: {lang}"
         )
