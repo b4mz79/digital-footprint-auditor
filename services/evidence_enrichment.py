@@ -281,6 +281,7 @@ async def enrich_evidence(
                     or record.relation is not EvidenceRelation.SECURITY_PUBLICATION
                     or record.directness is not EvidenceDirectness.CONTEXTUAL
                     or record.assertion_scope != "security_publication_context_only"
+                    or not isinstance(record.domain, str)
                     or record.domain.strip().lower() not in domains
                     for record in cached
                 ):
