@@ -189,6 +189,14 @@ async def _read_limited_body(
     if max_bytes <= 0:
         return b""
 
+    # Mock/custom transports can return an already-buffered Response (for
+    # example, httpx.Response(content=...)). Such a response cannot be streamed
+    # again; slice its existing content to preserve the verifier's output cap.
+    # Production requests use client.send(..., stream=True), so their bodies
+    # take the bounded streaming path below.
+    if response.is_stream_consumed:
+        return response.content[:max_bytes]
+
     chunks: list[bytes] = []
     total = 0
     async for chunk in response.aiter_raw(chunk_size=8192):
