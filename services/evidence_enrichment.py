@@ -272,6 +272,19 @@ async def enrich_evidence(
                     )
                     for item in cached_records
                 ]
+                # The cache contract is narrower than the EvidenceRecord schema:
+                # only provider-owned contextual publications may be restored.
+                # Reject the entire entry on semantic mismatch rather than
+                # partially merging stale or scanner-like records into this scan.
+                if any(
+                    record.source_type != "security_publication"
+                    or record.relation is not EvidenceRelation.SECURITY_PUBLICATION
+                    or record.directness is not EvidenceDirectness.CONTEXTUAL
+                    or record.assertion_scope != "security_publication_context_only"
+                    or record.domain.strip().lower() not in domains
+                    for record in cached
+                ):
+                    raise ValueError("Cache contains records outside the contextual evidence contract")
             except (KeyError, TypeError, ValueError):
                 logger.warning("[Evidence Enrichment] Cache payload invalid; treating as miss.")
             else:
