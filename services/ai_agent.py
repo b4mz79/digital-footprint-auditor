@@ -2375,6 +2375,21 @@ def _finalize_analysis(
                     item["reason"] = t("medium_activity_guard_reason", lang=lang)
                 else:
                     item["reason"] = t("fallback_reason", lang=lang)
+
+            # Keep the explanation coherent even when the final risk was already
+            # Unknown and the guard therefore did not change risk_key.
+            elif (
+                risk_key == "unknown"
+                and not matches
+                and _model_reason_is_unsupported(item.get("reason"))
+            ):
+                item["risk_guarded"] = True
+                item["reason"] = (
+                    t("unknown_generic_event_reason", lang=lang)
+                    if _service_evidence_text(svc).strip()
+                    else t("unknown_reason", lang=lang)
+                )
+                item["delete_url"] = "-"
         # END IMPROVE AND AUDITED BY CHATGPT
 
         if matches:
