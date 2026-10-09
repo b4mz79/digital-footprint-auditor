@@ -60,6 +60,7 @@ async def verify_evidence_records(
     gate = asyncio.Semaphore(limit)
     async with httpx.AsyncClient(
         follow_redirects=False,
+        trust_env=False,
         headers={"User-Agent": "PrivacyAuditor/EvidenceVerifier"},
     ) as client:
 
