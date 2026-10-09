@@ -613,8 +613,10 @@ class FirecrawlSecurityPublicationProvider:
             message = str(body.get("error", "unsuccessful response")) if isinstance(body, dict) else "unsuccessful response"
             raise SecurityPublicationError(f"{publisher.name}: {message[:200]}")
 
-        data = body.get("data", {})
-        items = data.get("web", []) if isinstance(data, dict) else []
+        data = body.get("data")
+        if not isinstance(data, dict) or "web" not in data:
+            raise SecurityPublicationError(f"{publisher.name}: invalid result shape.")
+        items = data.get("web")
         if not isinstance(items, list):
             raise SecurityPublicationError(f"{publisher.name}: invalid result shape.")
 
