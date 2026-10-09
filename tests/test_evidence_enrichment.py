@@ -1048,6 +1048,69 @@ def test_contextual_relevance_does_not_treat_generic_domain_token_as_target() ->
     assert accepted is True
     assert signals["reason"] == "target_subject_security_context"
 
+
+@pytest.mark.asyncio
+async def test_enrichment_cache_rejects_non_contextual_records(monkeypatch) -> None:
+    import services.evidence_enrichment as module
+
+    base = EvidenceRecord(
+        evidence_id="base-cache-contract-validation",
+        source="OSINT",
+        source_type="osint",
+        relation=EvidenceRelation.TARGET_RESOURCE,
+        directness=EvidenceDirectness.DIRECT,
+        confidence=0.8,
+        observed_at="2026-10-09T00:00:00+00:00",
+        published_at=None,
+        domain="example.com",
+        url="",
+        title="Target-associated service: Example",
+        summary="Observed service association.",
+        assertion_scope="service_association_only",
+    )
+    invalid_cached_record = EvidenceRecord(
+        evidence_id="cached-scanner-like-record",
+        source="OSINT",
+        source_type="osint",
+        relation=EvidenceRelation.TARGET_RESOURCE,
+        directness=EvidenceDirectness.DIRECT,
+        confidence=0.8,
+        observed_at="2026-10-08T00:00:00+00:00",
+        published_at=None,
+        domain="example.com",
+        url="",
+        title="Stale scanner record",
+        summary="This record must not be restored from the enrichment cache.",
+        assertion_scope="service_association_only",
+    )
+    provider_calls: list[str] = []
+
+    class FakeProvider:
+        def __init__(self, **kwargs):
+            self.cooldown_active = False
+            self.had_failures = False
+
+        async def search_domain(self, domain):
+            provider_calls.append(domain)
+            return []
+
+    monkeypatch.setenv("EVIDENCE_ENRICHMENT_CACHE_ENABLED", "true")
+    monkeypatch.setattr(
+        module,
+        "load_enrichment_cache",
+        lambda *args, **kwargs: [invalid_cached_record.to_dict()],
+    )
+    monkeypatch.setattr(module, "save_enrichment_cache", lambda *args, **kwargs: None)
+    monkeypatch.setattr(module, "FirecrawlSecurityPublicationProvider", FakeProvider)
+
+    result = await module.enrich_evidence([base], firecrawl_api_key="test-key")
+
+    assert provider_calls == ["example.com"]
+    assert [record.evidence_id for record in result] == [
+        "base-cache-contract-validation"
+    ]
+
+
 @pytest.mark.asyncio
 async def test_enrichment_cache_fingerprint_tracks_provider_inputs_not_base_state(monkeypatch) -> None:
     import services.evidence_enrichment as module
