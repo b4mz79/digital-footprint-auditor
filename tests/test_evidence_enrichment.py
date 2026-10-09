@@ -1650,3 +1650,56 @@ async def test_evidence_verification_parent_cancellation_propagates_and_cleans_t
     with pytest.raises(asyncio.CancelledError):
         await task
     assert cancelled.is_set()
+
+
+@pytest.mark.asyncio
+async def test_enrichment_parent_cancellation_cleans_domain_tasks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import asyncio
+    import services.evidence_enrichment as enrichment
+
+    started = asyncio.Event()
+    cancelled = asyncio.Event()
+
+    class SlowProvider:
+        def __init__(self, **kwargs):
+            self.cooldown_active = False
+            self.had_failures = False
+
+        async def search_domain(self, domain: str):
+            started.set()
+            try:
+                await asyncio.sleep(10)
+            except asyncio.CancelledError:
+                cancelled.set()
+                raise
+
+    monkeypatch.setenv("FIRECRAWL_MAX_DOMAINS", "1")
+    monkeypatch.setenv("FIRECRAWL_DOMAIN_CONCURRENCY", "1")
+    monkeypatch.setenv("FIRECRAWL_TOTAL_TIMEOUT_SECONDS", "30")
+    monkeypatch.setenv("EVIDENCE_ENRICHMENT_CACHE_ENABLED", "false")
+    monkeypatch.setattr(enrichment, "FirecrawlSecurityPublicationProvider", SlowProvider)
+
+    base = EvidenceRecord(
+        evidence_id="cancelled-enrichment",
+        source="OSINT",
+        source_type="osint",
+        relation=EvidenceRelation.TARGET_RESOURCE,
+        directness=EvidenceDirectness.DIRECT,
+        confidence=0.5,
+        observed_at="2026-10-09T00:00:00+00:00",
+        published_at=None,
+        domain="example.com",
+        url="",
+        title="Observed service association",
+        summary="Cancellation cleanup test.",
+        assertion_scope="service_association_only",
+    )
+
+    task = asyncio.create_task(enrichment.enrich_evidence([base], firecrawl_api_key="test-key"))
+    await started.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert cancelled.is_set()
