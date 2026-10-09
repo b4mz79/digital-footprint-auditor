@@ -836,7 +836,7 @@ async def scan_bing_scrape_async(client: httpx.AsyncClient, target: str, lang: s
         status_code, response_text = await _request_text_limited(
             client, "GET", "https://www.bing.com/search",
             headers=headers, params={"q": query}, timeout=REQUEST_TIMEOUT,
-            follow_redirects=True, max_bytes=RESPONSE_LIMIT_HTML, raise_for_status=False,
+            follow_redirects=False, max_bytes=RESPONSE_LIMIT_HTML, raise_for_status=False,
         )
         if status_code != 200:
             logger.warning("[Bing Scraper] HTTP status: %s", status_code)
