@@ -1048,3 +1048,102 @@ def test_contextual_relevance_does_not_treat_generic_domain_token_as_target() ->
     assert accepted is True
     assert signals["reason"] == "target_subject_security_context"
 
+@pytest.mark.asyncio
+async def test_enrichment_cache_fingerprint_tracks_contextual_source_contract(monkeypatch) -> None:
+    import services.evidence_enrichment as module
+
+    base = EvidenceRecord(
+        evidence_id="base-cache-contract",
+        source="OSINT",
+        source_type="osint",
+        relation=EvidenceRelation.TARGET_RESOURCE,
+        directness=EvidenceDirectness.DIRECT,
+        confidence=0.8,
+        observed_at="2026-10-09T00:00:00+00:00",
+        published_at=None,
+        domain="example.com",
+        url="",
+        title="Target-associated service: Example",
+        summary="Observed service association.",
+        assertion_scope="service_association_only",
+    )
+    fingerprints: list[str] = []
+
+    class FakeProvider:
+        def __init__(self, **kwargs):
+            self.cooldown_active = False
+            self.had_failures = False
+
+        async def search_domain(self, domain):
+            return []
+
+    def cache_miss(fingerprint, **kwargs):
+        fingerprints.append(fingerprint)
+        return None
+
+    monkeypatch.setenv("EVIDENCE_ENRICHMENT_CACHE_ENABLED", "true")
+    monkeypatch.setattr(module, "load_enrichment_cache", cache_miss)
+    monkeypatch.setattr(module, "save_enrichment_cache", lambda *args, **kwargs: None)
+    monkeypatch.setattr(module, "FirecrawlSecurityPublicationProvider", FakeProvider)
+
+    await module.enrich_evidence([base], firecrawl_api_key="test-key")
+    monkeypatch.setattr(module, "CONTEXTUAL_FILTER_NAME", "test-filter-contract-change")
+    await module.enrich_evidence([base], firecrawl_api_key="test-key")
+
+    assert len(fingerprints) == 2
+    assert fingerprints[0] != fingerprints[1]
+
+
+@pytest.mark.asyncio
+async def test_enrichment_does_not_replace_base_record_on_evidence_id_collision(monkeypatch) -> None:
+    import services.evidence_enrichment as module
+
+    base = EvidenceRecord(
+        evidence_id="shared-evidence-id",
+        source="OSINT",
+        source_type="osint",
+        relation=EvidenceRelation.TARGET_RESOURCE,
+        directness=EvidenceDirectness.DIRECT,
+        confidence=0.8,
+        observed_at="2026-10-09T00:00:00+00:00",
+        published_at=None,
+        domain="example.com",
+        url="",
+        title="Original scanner evidence",
+        summary="Observed service association.",
+        assertion_scope="service_association_only",
+    )
+
+    class FakeProvider:
+        def __init__(self, **kwargs):
+            self.cooldown_active = False
+            self.had_failures = False
+
+        async def search_domain(self, domain):
+            return [
+                EvidenceRecord(
+                    evidence_id="shared-evidence-id",
+                    source="Kaspersky Securelist",
+                    source_type="security_publication",
+                    relation=EvidenceRelation.SECURITY_PUBLICATION,
+                    directness=EvidenceDirectness.CONTEXTUAL,
+                    confidence=0.99,
+                    observed_at="2026-10-09T00:00:00+00:00",
+                    published_at="2026-10-08",
+                    domain=domain,
+                    url="https://securelist.com/example",
+                    title="Conflicting contextual evidence",
+                    summary="Security incident context.",
+                    assertion_scope="security_publication_context_only",
+                )
+            ]
+
+    monkeypatch.setattr(module, "FirecrawlSecurityPublicationProvider", FakeProvider)
+
+    result = await module.enrich_evidence([base], firecrawl_api_key="test-key")
+
+    assert len(result) == 1
+    assert result[0] is base
+    assert result[0].relation is EvidenceRelation.TARGET_RESOURCE
+    assert result[0].title == "Original scanner evidence"
+

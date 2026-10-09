@@ -27,6 +27,8 @@ from utils.cache_identity import hmac_identity, tenant_identity
 from utils.envutil import env_bool
 from utils.paths import resolve_data_path
 from services.enrichment.evidence.security_publications import (
+    CONTEXTUAL_FILTER_NAME,
+    DEFAULT_SECURITY_PUBLISHERS,
     FirecrawlSecurityPublicationProvider,
 )
 from utils.envutil import env_non_negative_int, env_positive_float
@@ -215,6 +217,9 @@ async def enrich_evidence(
     )
     cache_material = {
         "schema": 1,
+        "cache_schema_version": ENRICHMENT_CACHE_SCHEMA_VERSION,
+        "contextual_filter": CONTEXTUAL_FILTER_NAME,
+        "publishers": list(DEFAULT_SECURITY_PUBLISHERS),
         "domains": domains,
         "base_records": [
             {
@@ -383,6 +388,10 @@ async def enrich_evidence(
             )
             continue
         for record in result:
+            # Scanner/base evidence is authoritative for a colliding identity.
+            # Keep provider output from replacing it or consuming contextual budget.
+            if record.evidence_id in merged:
+                continue
             if record.relation is EvidenceRelation.SECURITY_PUBLICATION:
                 contextual_candidates.append(record)
             else:
