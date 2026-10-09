@@ -120,7 +120,14 @@ async def test_verifier_never_follows_redirects_from_injected_client(
 
     assert [request.method for request in requests] == expected_methods
     assert all(str(request.url) == url for request in requests)
-    assert result.status_code == 302
+    if head_status == 200:
+        # The HEAD result remains the reachability result; the optional title
+        # GET must still stop at its redirect instead of reaching the target.
+        assert result.status_code == 200
+        assert result.redirected is False
+        assert result.title == ""
+    else:
+        assert result.status_code == 302
+        assert result.redirected is True
+        assert result.location == private_redirect
     assert result.final_url == url
-    assert result.redirected is True
-    assert result.location == private_redirect
