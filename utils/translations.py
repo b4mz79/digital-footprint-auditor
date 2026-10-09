@@ -125,6 +125,7 @@ TRANSLATIONS = {
         "evidence_enrichment_complete": "Normalisasi dan enrichment evidence selesai. Total={count}; kontekstual={contextual_count}.",
         "ai_completed": "AI Privacy Audit selesai.",
         "ai_failed": "Error AI: {error_type}: {error}",
+        "provider_local_cache": "Cache Lokal",
     },
     "en": {
         "page_title": "Local Digital Footprint & Privacy Auditor",
@@ -250,6 +251,7 @@ TRANSLATIONS = {
         "evidence_enrichment_complete": "Evidence normalization and enrichment completed. Total={count}; contextual={contextual_count}.",
         "ai_completed": "AI Privacy Audit completed.",
         "ai_failed": "AI error: {error_type}: {error}",
+        "provider_local_cache": "Local Cache",
     },
     "de": {
         "page_title": "Lokaler Auditor für digitalen Fußabdruck",
@@ -375,6 +377,7 @@ TRANSLATIONS = {
         "evidence_enrichment_complete": "Normalisierung und Anreicherung der Evidenz abgeschlossen. Gesamt={count}; kontextuell={contextual_count}.",
         "ai_completed": "AI Privacy Audit abgeschlossen.",
         "ai_failed": "KI-Fehler: {error_type}: {error}",
+        "provider_local_cache": "Lokaler Cache",
     },
     "ru": {
         "page_title": "Локальный аудитор цифрового следа",
@@ -500,6 +503,7 @@ TRANSLATIONS = {
         "evidence_enrichment_complete": "Нормализация и обогащение доказательств завершены. Всего={count}; контекстных={contextual_count}.",
         "ai_completed": "AI Privacy Audit завершён.",
         "ai_failed": "Ошибка ИИ: {error_type}: {error}",
+        "provider_local_cache": "Локальный кэш",
     },
     "es": {
         "page_title": "Auditor de Huella Digital Local",
@@ -625,6 +629,7 @@ TRANSLATIONS = {
         "evidence_enrichment_complete": "Finalizaron la normalización y el enriquecimiento de evidencias. Total={count}; contextuales={contextual_count}.",
         "ai_completed": "Finalizó AI Privacy Audit.",
         "ai_failed": "Error de IA: {error_type}: {error}",
+        "provider_local_cache": "Caché local",
     },
     "ar": {
         "page_title": "مُدقق الأثر الرقمي المحلي",
@@ -750,6 +755,7 @@ TRANSLATIONS = {
         "evidence_enrichment_complete": "اكتمل توحيد الأدلة وإثراؤها. الإجمالي={count}؛ السياقية={contextual_count}.",
         "ai_completed": "اكتمل تدقيق الخصوصية بالذكاء الاصطناعي.",
         "ai_failed": "خطأ في الذكاء الاصطناعي: {error_type}: {error}",
+        "provider_local_cache": "ذاكرة التخزين المؤقت المحلية",
     },
     "zh": {
         "page_title": "本地数字足迹审计工具",
@@ -875,6 +881,7 @@ TRANSLATIONS = {
         "evidence_enrichment_complete": "证据规范化与增强已完成。总数={count}；上下文证据={contextual_count}。",
         "ai_completed": "AI 隐私审计已完成。",
         "ai_failed": "AI 错误：{error_type}: {error}",
+        "provider_local_cache": "本地缓存",
     },
     "fr": {
         "page_title": "Auditeur Local d'Empreinte Numérique & Vie Privée",
@@ -1000,6 +1007,7 @@ TRANSLATIONS = {
         "evidence_enrichment_complete": "Normalisation et enrichissement des preuves terminés. Total={count} ; contextuelles={contextual_count}.",
         "ai_completed": "Audit de confidentialité IA terminé.",
         "ai_failed": "Erreur IA : {error_type} : {error}",
+        "provider_local_cache": "Cache local",
     },
     "it": {
         "page_title": "Auditor Locale dell'Impronta Digitale e della Privacy",
@@ -1125,6 +1133,7 @@ TRANSLATIONS = {
         "evidence_enrichment_complete": "Normalizzazione e arricchimento delle evidenze completati. Totale={count}; contestuali={contextual_count}.",
         "ai_completed": "AI Privacy Audit completato.",
         "ai_failed": "Errore AI: {error_type}: {error}",
+        "provider_local_cache": "Cache locale",
     },
     "nl": {
         "page_title": "Lokale Digitale Voetafdruk & Privacy Auditor",
@@ -1250,6 +1259,7 @@ TRANSLATIONS = {
         "evidence_enrichment_complete": "Normalisatie en verrijking van bewijs voltooid. Totaal={count}; contextueel={contextual_count}.",
         "ai_completed": "AI Privacy Audit voltooid.",
         "ai_failed": "AI-fout: {error_type}: {error}",
+        "provider_local_cache": "Lokale cache",
     },
     "ja": {
         "page_title": "ローカルデジタルフットプリント＆プライバシー監査員",
@@ -1375,6 +1385,7 @@ TRANSLATIONS = {
         "evidence_enrichment_complete": "証拠の正規化とエンリッチメントが完了しました。合計={count}、コンテキスト証拠={contextual_count}。",
         "ai_completed": "AI Privacy Audit が完了しました。",
         "ai_failed": "AI エラー: {error_type}: {error}",
+        "provider_local_cache": "ローカルキャッシュ",
     }
 }
 
