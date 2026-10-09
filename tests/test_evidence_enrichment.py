@@ -435,10 +435,6 @@ async def test_firecrawl_provider_is_optional_without_api_key() -> None:
 
 
 @pytest.mark.asyncio
-
-
-
-@pytest.mark.asyncio
 async def test_firecrawl_malformed_success_response_marks_search_incomplete() -> None:
     client = httpx.AsyncClient(
         transport=MockTransport({"success": True}),
@@ -458,6 +454,7 @@ async def test_firecrawl_malformed_success_response_marks_search_incomplete() ->
     assert provider.had_failures is True
 
 
+@pytest.mark.asyncio
 async def test_firecrawl_provider_swallows_provider_failure() -> None:
     class FailingTransport(httpx.AsyncBaseTransport):
         async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
