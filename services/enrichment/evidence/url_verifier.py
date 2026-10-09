@@ -8,6 +8,7 @@ to a private/local destination.
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 import ipaddress
 import socket
@@ -18,6 +19,7 @@ import httpx
 
 
 DEFAULT_TIMEOUT_SECONDS = 12.0
+DNS_TIMEOUT_SECONDS = 5.0
 MAX_TITLE_BYTES = 64_000
 
 
@@ -95,9 +97,10 @@ def _is_public_hostname(hostname: str) -> bool:
         return False
 
 
-def _validated_url_target(
+def _parse_url_target(
     url: str,
-) -> tuple[str, Any, str, str, list[str]]:
+) -> tuple[str, Any, str, str, str, int | None]:
+    """Validate URL syntax and return connection metadata without resolving DNS."""
     value = (url or "").strip()
     if not value or len(value) > 4096:
         raise ValueError("URL is empty or too long.")
@@ -131,9 +134,34 @@ def _validated_url_target(
     if port is not None:
         host_header = f"{host_header}:{port}"
 
+    return value, parsed, host_header, tls_hostname, hostname, port
+
+
+def _validated_url_target(
+    url: str,
+) -> tuple[str, Any, str, str, list[str]]:
+    """Synchronous compatibility wrapper for existing internal callers/tests."""
+    value, parsed, host_header, tls_hostname, hostname, port = _parse_url_target(url)
     addresses = _resolve_public_addresses(hostname, port)
     return value, parsed, host_header, tls_hostname, addresses
 
+
+async def _validated_url_target_async(
+    url: str,
+) -> tuple[str, Any, str, str, list[str]]:
+    """Validate a URL without blocking the event loop on system DNS resolution."""
+    value, parsed, host_header, tls_hostname, hostname, port = _parse_url_target(url)
+    try:
+        # getaddrinfo is a blocking system resolver. Keep it off the event-loop
+        # thread and bound how long verification waits for it. DNS pinning and
+        # public-address validation are still performed by the same resolver.
+        addresses = await asyncio.wait_for(
+            asyncio.to_thread(_resolve_public_addresses, hostname, port),
+            timeout=DNS_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError as exc:
+        raise ValueError("URL hostname resolution timed out.") from exc
+    return value, parsed, host_header, tls_hostname, addresses
 
 def _validate_url(url: str) -> str:
     """Validate URL syntax and destination addresses; kept for existing callers/tests."""
@@ -241,7 +269,7 @@ async def verify_public_url(
     An injected client is caller-controlled infrastructure: its transport must
     honor the pinned IP destination and must not disable TLS certificate checks.
     """
-    value, parsed, host_header, tls_hostname, addresses = _validated_url_target(url)
+    value, parsed, host_header, tls_hostname, addresses = await _validated_url_target_async(url)
     owns_client = client is None
     http = client or httpx.AsyncClient(
         follow_redirects=False,
