@@ -17,6 +17,7 @@ import json
 import os
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 from typing import Iterable
 
 import httpx
@@ -113,6 +114,29 @@ def save_enrichment_cache(
                 pass
     except Exception:
         return
+
+
+def _cache_record_matches_publisher(record: EvidenceRecord) -> bool:
+    """Validate cached URL provenance against the configured publisher contract."""
+    expected_domain = dict(DEFAULT_SECURITY_PUBLISHERS).get(record.source)
+    if not expected_domain or not isinstance(record.url, str) or len(record.url) > 4096:
+        return False
+    try:
+        parsed = urlsplit(record.url)
+        # Accessing .port rejects malformed and out-of-range port values.
+        _ = parsed.port
+        hostname = (parsed.hostname or "").lower().rstrip(".")
+    except ValueError:
+        return False
+    if (
+        parsed.scheme.lower() not in {"http", "https"}
+        or not hostname
+        or parsed.username is not None
+        or parsed.password is not None
+    ):
+        return False
+    expected = expected_domain.lower().lstrip(".")
+    return hostname == expected or hostname.endswith("." + expected)
 
 
 def _publication_datetime_utc(value: str | None) -> datetime:
@@ -287,8 +311,11 @@ async def enrich_evidence(
                     or record.provenance.get("provider") != "firecrawl_search"
                     or record.provenance.get("query_scope") != "domain_only"
                     or record.provenance.get("relevance_filter") != CONTEXTUAL_FILTER_NAME
+                    or record.provenance.get("assertion_scope")
+                    != record.assertion_scope
                     or record.provenance.get("publisher_domain")
                     != dict(DEFAULT_SECURITY_PUBLISHERS).get(record.source)
+                    or not _cache_record_matches_publisher(record)
                     for record in cached
                 ):
                     raise ValueError("Cache contains records outside the contextual evidence contract")
