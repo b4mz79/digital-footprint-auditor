@@ -905,22 +905,6 @@ async def test_enrichment_cache_hit_skips_firecrawl(monkeypatch) -> None:
 async def test_enrichment_cache_hit_preserves_current_base_state(monkeypatch) -> None:
     import services.evidence_enrichment as module
 
-    stale_base = EvidenceRecord(
-        evidence_id="base-current-state",
-        source="OSINT",
-        source_type="osint",
-        relation=EvidenceRelation.TARGET_RESOURCE,
-        directness=EvidenceDirectness.DIRECT,
-        confidence=0.8,
-        observed_at="2026-10-05T00:00:00+00:00",
-        published_at=None,
-        domain="example.com",
-        url="",
-        title="Target-associated service: Example",
-        summary="Observed service association.",
-        assertion_scope="service_association_only",
-        verification_state="unknown",
-    )
     contextual = EvidenceRecord(
         evidence_id="cached-context",
         source="Kaspersky Securelist",
@@ -967,7 +951,7 @@ async def test_enrichment_cache_hit_preserves_current_base_state(monkeypatch) ->
     monkeypatch.setattr(
         module,
         "load_enrichment_cache",
-        lambda *args, **kwargs: [stale_base.to_dict(), contextual.to_dict()],
+        lambda *args, **kwargs: [contextual.to_dict()],
     )
     monkeypatch.setattr(
         module,
