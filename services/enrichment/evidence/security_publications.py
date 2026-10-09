@@ -239,7 +239,11 @@ def _domain_aliases(domain: str) -> tuple[str, ...]:
     # as co.id, com.au, and co.uk do not turn "co"/"com" into target aliases.
     registrable = root_domain(normalized).split(".")[0] or normalized
     aliases = {normalized, registrable}
-    aliases.update(token for token in re.split(r"[-_]+", registrable) if len(token) >= 3)
+    # Keep a compound brand as a phrase; individual words such as "company",
+    # "bank", or "shop" are too generic to identify the target on their own.
+    spaced_registrable = re.sub(r"[-_]+", " ", registrable).strip()
+    if spaced_registrable:
+        aliases.add(spaced_registrable)
     return tuple(sorted(aliases, key=lambda value: (-len(value), value)))
 
 def _contains_term(text: str, terms: Iterable[str]) -> bool:

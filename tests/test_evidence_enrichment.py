@@ -854,3 +854,25 @@ def test_contextual_relevance_does_not_treat_public_suffix_as_target_alias() -> 
     assert accepted is False
     assert signals["reason"] == "target_not_subject"
 
+
+def test_contextual_relevance_does_not_treat_generic_domain_token_as_target() -> None:
+    from services.enrichment.evidence.security_publications import _contextual_relevance
+
+    accepted, signals = _contextual_relevance(
+        "secure-company.com",
+        url="https://securelist.com/company-phishing/",
+        title="Company phishing campaign",
+        summary="Company affected by a phishing incident.",
+    )
+    assert accepted is False
+    assert signals["reason"] == "target_not_subject"
+
+    accepted, signals = _contextual_relevance(
+        "secure-company.com",
+        url="https://securelist.com/secure-company-phishing/",
+        title="Secure Company phishing campaign",
+        summary="Secure Company suffered a phishing incident.",
+    )
+    assert accepted is True
+    assert signals["reason"] == "target_subject_security_context"
+
