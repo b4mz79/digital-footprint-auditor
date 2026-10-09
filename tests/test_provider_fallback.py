@@ -42,6 +42,9 @@ def test_finalize_caps_order_high_without_high_activity() -> None:
 
 @pytest.mark.asyncio
 async def test_ollama_partial_failure_rotates_to_next_provider(monkeypatch) -> None:
+    # The provider chain checks configuration before invoking the mocked SDK call.
+    monkeypatch.setenv("GROQ_API_KEY", "test-groq-key")
+
     async def fake_ollama(*args, **kwargs):
         raise ValueError("Ollama menghasilkan output parsial")
 
@@ -403,6 +406,9 @@ def test_validate_ai_output_rejects_empty_analysis() -> None:
 
 @pytest.mark.asyncio
 async def test_empty_provider_output_rotates_to_next_provider(monkeypatch) -> None:
+    # Keep the fallback test independent of a developer's local .env file.
+    monkeypatch.setenv("GROQ_API_KEY", "test-groq-key")
+
     async def fake_gemini(*args, **kwargs):
         return '{"analysis":[]}'
 
