@@ -56,7 +56,21 @@ def test_app_translation_calls_resolve_to_known_keys() -> None:
         "risk_low",
         "risk_unknown",
     }
-    referenced = static_keys | dynamic_key_families
+    pipeline_event_keys = {
+        "error_addon_event",
+        "addon_event_finished",
+        "error_imap",
+        "error_osint",
+        "breach_scan_complete",
+        "error_breach_scan",
+        "evidence_enrichment_start",
+        "evidence_enrichment_skipped",
+        "evidence_enrichment_complete",
+        "spinner_ai",
+        "ai_completed",
+        "ai_failed",
+    }
+    referenced = static_keys | dynamic_key_families | pipeline_event_keys
 
     for lang in LANGUAGES:
         missing = referenced - set(TRANSLATIONS[lang])
