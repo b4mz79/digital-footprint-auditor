@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import socket
 
 import httpx
@@ -328,3 +329,34 @@ async def test_read_limited_body_handles_already_buffered_response() -> None:
 
     assert body == b"abcd"
 
+
+
+@pytest.mark.asyncio
+async def test_slow_dns_does_not_block_event_loop_and_times_out(monkeypatch) -> None:
+    import time
+
+    monkeypatch.setattr(url_verifier, "DNS_TIMEOUT_SECONDS", 0.03)
+
+    def slow_resolver(hostname: str, port: int | None = None) -> list[str]:
+        time.sleep(0.15)
+        return [PUBLIC_IP]
+
+    monkeypatch.setattr(url_verifier, "_resolve_public_addresses", slow_resolver)
+    ticks = 0
+
+    async def heartbeat() -> None:
+        nonlocal ticks
+        for _ in range(8):
+            ticks += 1
+            await asyncio.sleep(0.005)
+
+    import asyncio
+    result = await asyncio.gather(
+        verify_public_url("https://slow-dns.example/report"),
+        heartbeat(),
+        return_exceptions=True,
+    )
+
+    assert isinstance(result[0], ValueError)
+    assert "resolution timed out" in str(result[0])
+    assert ticks == 8
