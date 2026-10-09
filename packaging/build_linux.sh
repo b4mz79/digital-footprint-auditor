@@ -22,6 +22,18 @@ source venv/bin/activate
 # Pemeriksaan pra-build.
 python packaging/check_packaging.py
 
+# Tkinter adalah dependency wajib launcher GUI. Validasi interpreter venv
+# yang benar-benar dipakai build, bukan hanya keberadaan paket OS.
+if ! python -c "import tkinter, _tkinter; tcl = tkinter.Tcl(); print('[OK] Tkinter available; Tcl', tcl.eval('info patchlevel'))"; then
+    echo "[ERROR] Tkinter tidak tersedia/berfungsi pada venv build."
+    echo "Install paket Tk untuk Python yang sesuai dengan interpreter venv."
+    echo "Ubuntu/Debian: sudo apt install python3-tk"
+    echo "Jika venv memakai Python non-default (mis. Python 3.14), pastikan"
+    echo "paket Tkinter/Tcl-Tk cocok dengan versi Python tersebut, lalu buat"
+    echo "ulang venv bila diperlukan."
+    exit 1
+fi
+
 # Samakan batas versi PyInstaller dengan build Windows.
 python -m pip install --upgrade "pyinstaller>=6.20,<7"
 
@@ -35,7 +47,20 @@ rm -f dist/holehe dist/LICENSE dist/README_EN.docx dist/README_ID.docx dist/THIR
 
 echo
 echo "[2/4] Building PrivacyAuditor..."
-python -m PyInstaller packaging/PrivacyAuditor.spec --noconfirm
+BUILD_LOG="build/linux-pyinstaller.log"
+mkdir -p build
+if ! python -m PyInstaller packaging/PrivacyAuditor.spec --noconfirm 2>&1 | tee "$BUILD_LOG"; then
+    echo "[ERROR] PyInstaller build gagal. Lihat log: $BUILD_LOG"
+    exit 1
+fi
+
+# PyInstaller dapat menyelesaikan build walau hook Tkinter memperingatkan
+# bahwa instalasinya rusak dan GUI dikecualikan dari bundle.
+if grep -Eiq 'tkinter installation is broken|tkinter.*(will be|being) excluded|tkinter.*excluded from the application' "$BUILD_LOG"; then
+    echo "[ERROR] PyInstaller mendeteksi masalah Tkinter; artefak tidak dianggap valid."
+    echo "Periksa $BUILD_LOG, perbaiki instalasi Tcl/Tk untuk interpreter build, lalu build ulang."
+    exit 1
+fi
 
 echo
 echo "[3/4] Build verification..."
