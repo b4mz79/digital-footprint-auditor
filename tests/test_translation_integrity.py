@@ -41,6 +41,28 @@ def test_ui_translation_placeholders_are_aligned() -> None:
             ), f"Placeholder mismatch: lang={lang}, key={key}"
 
 
+def test_app_translation_calls_resolve_to_known_keys() -> None:
+    app_source = (ROOT / "app.py").read_text(encoding="utf-8")
+    static_keys = set(
+        re.findall(r"""\\bt\\(\\s*["']([^"']+)["']""", app_source)
+    )
+    dynamic_key_families = {
+        "engine_status_ok",
+        "engine_status_partial",
+        "engine_status_error",
+        "engine_status_skipped",
+        "risk_high",
+        "risk_medium",
+        "risk_low",
+        "risk_unknown",
+    }
+    referenced = static_keys | dynamic_key_families
+
+    for lang in LANGUAGES:
+        missing = referenced - set(TRANSLATIONS[lang])
+        assert not missing, f"Unknown UI translation keys for {lang}: {sorted(missing)}"
+
+
 def test_all_system_prompts_have_the_complete_evidence_checklist() -> None:
     required_contract_fields = ('"service"', '"risk_level"', '"reason"', '"delete_url"')
 
@@ -82,4 +104,21 @@ def test_all_dsr_templates_have_matching_runtime_placeholders_and_requests() -> 
         requests = re.findall(r"^\\s*\\d+[.)]\\s+", template, flags=re.MULTILINE)
         assert len(requests) == 3, (
             f"DSR template must contain three request clauses: {lang}"
+        )
+
+        reference_line = next(
+            (
+                line for line in template.splitlines()
+                if any(
+                    marker in line.lower()
+                    for marker in ("rujukan:", "reference:", "referenz:", "ссылка:", "основание:", "referencia:", "المرجع:", "参考依据", "référence", "riferimento:", "referentie:", "参照:")
+                )
+            ),
+            "",
+        )
+        assert "27/2022" in reference_line or "27 Tahun 2022" in reference_line, (
+            f"Indonesia PDP Law reference missing from DSR template: {lang}"
+        )
+        assert any(token in reference_line.upper() for token in ("GDPR", "RGPD", "AVG")), (
+            f"GDPR reference scope missing from DSR template: {lang}"
         )
