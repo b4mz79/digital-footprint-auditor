@@ -447,29 +447,39 @@ async def enrich_evidence(
                 asyncio.create_task(enrich_domain(domain))
                 for domain in batch
             ]
-            done, pending = await asyncio.wait(tasks, timeout=remaining)
+            try:
+                done, pending = await asyncio.wait(tasks, timeout=remaining)
 
-            # Retain completed results even when another task in the same batch
-            # reaches the global deadline. Pending provider calls are cancelled;
-            # base evidence is never discarded by an enrichment timeout.
-            for task in done:
-                try:
-                    results.append(task.result())
-                except asyncio.CancelledError:
-                    results.append(RuntimeError("Domain enrichment task was cancelled"))
-                except Exception as exc:
-                    results.append(exc)
+                # Retain completed results even when another task in the same batch
+                # reaches the global deadline. Pending provider calls are cancelled;
+                # base evidence is never discarded by an enrichment timeout.
+                for task in done:
+                    try:
+                        results.append(task.result())
+                    except asyncio.CancelledError:
+                        results.append(RuntimeError("Domain enrichment task was cancelled"))
+                    except Exception as exc:
+                        results.append(exc)
 
-            if pending:
-                for task in pending:
-                    task.cancel()
-                await asyncio.gather(*pending, return_exceptions=True)
-                logger.warning(
-                    "[Evidence Enrichment] Total runtime budget reached; completed_domains=%d/%d. Returning partial enrichment with base evidence intact.",
-                    len(results),
-                    len(domains),
-                )
-                break
+                if pending:
+                    for task in pending:
+                        task.cancel()
+                    await asyncio.gather(*pending, return_exceptions=True)
+                    logger.warning(
+                        "[Evidence Enrichment] Total runtime budget reached; completed_domains=%d/%d. Returning partial enrichment with base evidence intact.",
+                        len(results),
+                        len(domains),
+                    )
+                    break
+            except asyncio.CancelledError:
+                # If the parent scan is cancelled, never leave domain/provider
+                # tasks running against the shared HTTP client after its context
+                # exits. Preserve cancellation semantics for the caller.
+                for task in tasks:
+                    if not task.done():
+                        task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+                raise
 
             if provider.cooldown_active:
                 logger.warning(
