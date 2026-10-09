@@ -189,6 +189,22 @@ def test_authority_gate_rejects_unconfined_path_access(
             "    for _LOG in context:\n"
             "        _LOG.write_text('x')\n"
         ),
+        (
+            "from pathlib import Path\n"
+            "_LOG = Path(__file__).with_name('lifecycle.log')\n"
+            "def run(context):\n"
+            "    try:\n"
+            "        raise RuntimeError()\n"
+            "    except Exception as _LOG:\n"
+            "        _LOG.write_text('x')\n"
+        ),
+        (
+            "from pathlib import Path\n"
+            "_LOG = Path(__file__).with_name('lifecycle.log')\n"
+            "def _LOG(context):\n"
+            "    return None\n"
+            "_LOG.write_text('x')\n"
+        ),
     ],
 )
 def test_authority_gate_rejects_rebinding_or_shadowing_local_path_names(
