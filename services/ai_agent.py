@@ -1605,6 +1605,46 @@ async def call_ollama_async(
 # Provider chain
 # =============================================================================
 
+
+async def _timed_provider_call(
+    provider: str,
+    attempt: str,
+    call: Callable[..., Any],
+    *args: Any,
+    **kwargs: Any,
+) -> Any:
+    """Measure provider-call latency without changing retry/fallback behavior."""
+    started = time.monotonic()
+    try:
+        return await call(*args, **kwargs)
+    finally:
+        logger.info(
+            "[AI Timing] provider=%s attempt=%s phase=api_call elapsed_seconds=%.3f",
+            provider,
+            attempt,
+            time.monotonic() - started,
+        )
+
+
+def _timed_response_validation(
+    provider: str,
+    attempt: str,
+    raw: str,
+    lang: str,
+) -> dict[str, Any]:
+    """Measure local parse/schema-validation time separately from API latency."""
+    started = time.monotonic()
+    try:
+        return _parse_and_validate_provider_response(raw, lang)
+    finally:
+        logger.info(
+            "[AI Timing] provider=%s attempt=%s phase=response_validation elapsed_seconds=%.3f",
+            provider,
+            attempt,
+            time.monotonic() - started,
+        )
+
+
 _KNOWN_PROVIDERS = {"gemini", "groq", "openai", "ollama"}
 _DEFAULT_PROVIDER_ORDER = ["gemini", "groq", "openai", "ollama"]
 
@@ -1657,7 +1697,7 @@ def _parse_and_validate_provider_response(raw: str, lang: str) -> dict[str, Any]
     return validate_ai_output(parsed, lang)
 
 
-async def _run_provider_chain(
+async def _run_provider_chain_impl(
     user_prompt: str,
     sys_prompt: str,
     lang: str,
@@ -1699,6 +1739,7 @@ async def _run_provider_chain(
         # Google Gemini
         # ---------------------------------------------------------------------
         if provider == "gemini":
+            gemini_rotation_started = time.monotonic()
             keys = [
                 os.getenv("GEMINI_API_KEY", "").strip(),
                 os.getenv("GOOGLE_API_KEY", "").strip(),
@@ -1725,10 +1766,9 @@ async def _run_provider_chain(
                         idx,
                     )
 
-                    raw = await call_gemini_async(
-                        user_prompt,
-                        key,
-                        sys_prompt,
+                    raw = await _timed_provider_call(
+                        "Gemini", f"Key #{idx}", call_gemini_async,
+                        user_prompt, key, sys_prompt,
                     )
 
                     if not raw:
@@ -1744,10 +1784,7 @@ async def _run_provider_chain(
                     )
 
                     try:
-                        parsed = _parse_and_validate_provider_response(
-                            raw,
-                            lang,
-                        )
+                        parsed = _timed_response_validation("Gemini", f"Key #{idx}", raw, lang)
                     except Exception as exc:
                         logger.warning(
                             "[Gemini] Key #%d respons ditolak: %s.",
@@ -1762,6 +1799,10 @@ async def _run_provider_chain(
                     logger.info(
                         "[Gemini] Key #%d menghasilkan JSON tervalidasi.",
                         idx,
+                    )
+                    logger.info(
+                        "[AI Timing] provider=Gemini phase=key_rotation elapsed_seconds=%.3f outcome=success",
+                        time.monotonic() - gemini_rotation_started,
                     )
                     return parsed, "Google Gemini"
 
@@ -1783,6 +1824,10 @@ async def _run_provider_chain(
                 "[Gemini] Semua API Key gagal atau menghasilkan output "
                 "yang tidak dapat divalidasi. Rotasi ke provider berikutnya."
             )
+            logger.info(
+                "[AI Timing] provider=Gemini phase=key_rotation elapsed_seconds=%.3f outcome=exhausted",
+                time.monotonic() - gemini_rotation_started,
+            )
 
         # ---------------------------------------------------------------------
         # Groq
@@ -1801,10 +1846,9 @@ async def _run_provider_chain(
                     "[Groq Cloud] Memulai eksekusi via Groq API..."
                 )
 
-                raw = await call_groq_async(
-                    user_prompt,
-                    key,
-                    sys_prompt,
+                raw = await _timed_provider_call(
+                    "Groq Cloud", "single attempt", call_groq_async,
+                    user_prompt, key, sys_prompt,
                 )
 
                 if not raw:
@@ -1818,10 +1862,7 @@ async def _run_provider_chain(
                 )
 
                 try:
-                    parsed = _parse_and_validate_provider_response(
-                        raw,
-                        lang,
-                    )
+                    parsed = _timed_response_validation("Groq Cloud", "single attempt", raw, lang)
                 except Exception as exc:
                     logger.warning(
                         "[Groq Cloud] Respons ditolak: %s. "
@@ -1864,10 +1905,9 @@ async def _run_provider_chain(
                     "[OpenAI] Memulai eksekusi via OpenAI API..."
                 )
 
-                raw = await call_openai_async(
-                    user_prompt,
-                    key,
-                    sys_prompt,
+                raw = await _timed_provider_call(
+                    "OpenAI", "single attempt", call_openai_async,
+                    user_prompt, key, sys_prompt,
                 )
 
                 if not raw:
@@ -1881,10 +1921,7 @@ async def _run_provider_chain(
                 )
 
                 try:
-                    parsed = _parse_and_validate_provider_response(
-                        raw,
-                        lang,
-                    )
+                    parsed = _timed_response_validation("OpenAI", "single attempt", raw, lang)
                 except Exception as exc:
                     logger.warning(
                         "[OpenAI] Respons ditolak: %s. "
@@ -1919,12 +1956,10 @@ async def _run_provider_chain(
                     "[Ollama Local] Memulai eksekusi lokal..."
                 )
 
-                raw = await call_ollama_async(
-                    user_prompt,
-                    sys_prompt,
-                    lang,
-                    on_batch=on_ollama_batch,
-                    on_failure=on_ollama_failure,
+                raw = await _timed_provider_call(
+                    "Ollama Local", "full batch run", call_ollama_async,
+                    user_prompt, sys_prompt, lang,
+                    on_batch=on_ollama_batch, on_failure=on_ollama_failure,
                 )
 
                 if not raw:
@@ -1938,10 +1973,7 @@ async def _run_provider_chain(
                 )
 
                 try:
-                    parsed = _parse_and_validate_provider_response(
-                        raw,
-                        lang,
-                    )
+                    parsed = _timed_response_validation("Ollama Local", "full batch run", raw, lang)
                 except Exception as exc:
                     logger.warning(
                         "[Ollama Local] Respons ditolak: %s.",
@@ -1969,6 +2001,33 @@ async def _run_provider_chain(
         "output yang tidak dapat divalidasi."
     )
     return None, "None"
+
+
+async def _run_provider_chain(
+    user_prompt: str,
+    sys_prompt: str,
+    lang: str,
+    on_ollama_batch: Callable[[list[dict[str, Any]], list[dict[str, Any]]], None] | None = None,
+    on_ollama_failure: Callable[[], None] | None = None,
+) -> tuple[dict[str, Any] | None, str]:
+    """Run the existing provider chain and report its total elapsed time."""
+    started = time.monotonic()
+    result: tuple[dict[str, Any] | None, str] | None = None
+    try:
+        result = await _run_provider_chain_impl(
+            user_prompt,
+            sys_prompt,
+            lang,
+            on_ollama_batch=on_ollama_batch,
+            on_ollama_failure=on_ollama_failure,
+        )
+        return result
+    finally:
+        logger.info(
+            "[AI Timing] phase=provider_chain elapsed_seconds=%.3f outcome=%s",
+            time.monotonic() - started,
+            result[1] if result is not None else "exception",
+        )
 
 
 # =============================================================================
