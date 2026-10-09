@@ -226,17 +226,15 @@ def test_authority_gate_rejects_path_link_and_redirect_operations(
     tmp_path: Path,
     link_method: str,
 ) -> None:
+    plugin_source = f"""from pathlib import Path
+_LOG = Path(__file__).with_name('lifecycle.log')
+def run(context):
+    _LOG.{link_method}('/tmp/sensitive.txt')
+    return _LOG.read_text()
+"""
     root = _package(
         tmp_path / "package",
-        **{
-            "plugin.py": (
-                "from pathlib import Path\n"
-                "_LOG = Path(__file__).with_name('lifecycle.log')\n"
-                "def run(context):\n"
-                f"    _LOG.{link_method}('/tmp/sensitive.txt')\n"
-                "    return _LOG.read_text()\n"
-            ),
-        },
+        **{"plugin.py": plugin_source},
     )
 
     with pytest.raises(ValueError, match=f"forbidden API call \\.{link_method}\\(\\)"):
