@@ -160,16 +160,50 @@ async def _send_pinned_request(
     tls_hostname: str,
     scheme: str,
 ) -> httpx.Response:
-    kwargs: dict[str, Any] = {
-        "timeout": timeout_seconds,
-        "follow_redirects": False,
-        "headers": {"Host": host_header},
-    }
+    """Send one pinned request as a stream; caller must close the response."""
+    extensions: dict[str, Any] = {}
     if scheme == "https":
         # httpcore consumes this extension for TLS SNI and certificate hostname
         # verification while the TCP destination remains the pinned IP literal.
-        kwargs["extensions"] = {"sni_hostname": tls_hostname}
-    return await client.request(method, request_url, **kwargs)
+        extensions["sni_hostname"] = tls_hostname
+
+    request = client.build_request(
+        method,
+        request_url,
+        timeout=timeout_seconds,
+        headers={"Host": host_header},
+        extensions=extensions,
+    )
+    # Enforce redirect policy on the individual request, even for injected
+    # clients configured with follow_redirects=True. Streaming prevents HTTPX
+    # from buffering an arbitrary response body before the caller can bound it.
+    return await client.send(request, stream=True, follow_redirects=False)
+
+
+async def _read_limited_body(
+    response: httpx.Response,
+    *,
+    max_bytes: int,
+) -> bytes:
+    """Read at most max_bytes of decoded response content."""
+    if max_bytes <= 0:
+        return b""
+
+    chunks: list[bytes] = []
+    total = 0
+    async for chunk in response.aiter_bytes(chunk_size=8192):
+        remaining = max_bytes - total
+        if remaining <= 0:
+            break
+        if len(chunk) > remaining:
+            chunks.append(chunk[:remaining])
+            total += remaining
+            break
+        chunks.append(chunk)
+        total += len(chunk)
+        if total >= max_bytes:
+            break
+    return b"".join(chunks)
 
 
 def _extract_title(content: bytes) -> str:
@@ -207,6 +241,7 @@ async def verify_public_url(
     try:
         for address in addresses:
             pinned_url = _pinned_url(parsed, address)
+            response: httpx.Response | None = None
             try:
                 response = await _send_pinned_request(
                     http,
@@ -218,6 +253,9 @@ async def verify_public_url(
                     scheme=parsed.scheme.lower(),
                 )
                 if response.status_code in {405, 501}:
+                    # The HEAD response is no longer needed. Close it before
+                    # opening the fallback GET so connections are not leaked.
+                    await response.aclose()
                     response = await _send_pinned_request(
                         http,
                         "GET",
@@ -228,47 +266,60 @@ async def verify_public_url(
                         scheme=parsed.scheme.lower(),
                     )
             except httpx.HTTPError as exc:
+                if response is not None:
+                    await response.aclose()
                 last_error = exc
                 continue
 
-            location = response.headers.get("location")
-            content_type = response.headers.get("content-type", "")
-            title = ""
+            try:
+                location = response.headers.get("location")
+                content_type = response.headers.get("content-type", "")
+                title = ""
 
-            if fetch_title and response.request.method == "HEAD":
-                try:
-                    get_response = await _send_pinned_request(
-                        http,
-                        "GET",
-                        pinned_url,
-                        timeout_seconds=timeout_seconds,
-                        host_header=host_header,
-                        tls_hostname=tls_hostname,
-                        scheme=parsed.scheme.lower(),
-                    )
-                    if get_response.status_code < 500 and not get_response.is_redirect:
-                        title = _extract_title(get_response.content)
-                except httpx.HTTPError:
-                    pass
+                if fetch_title and response.request.method == "HEAD":
+                    get_response: httpx.Response | None = None
+                    try:
+                        get_response = await _send_pinned_request(
+                            http,
+                            "GET",
+                            pinned_url,
+                            timeout_seconds=timeout_seconds,
+                            host_header=host_header,
+                            tls_hostname=tls_hostname,
+                            scheme=parsed.scheme.lower(),
+                        )
+                        if get_response.status_code < 500 and not get_response.is_redirect:
+                            body = await _read_limited_body(
+                                get_response,
+                                max_bytes=MAX_TITLE_BYTES,
+                            )
+                            title = _extract_title(body)
+                    except httpx.HTTPError:
+                        pass
+                    finally:
+                        if get_response is not None:
+                            await get_response.aclose()
 
-            return URLVerification(
-                url=value,
-                reachable=True,
-                status_code=response.status_code,
-                # The verifier never follows redirects, so the original URL is
-                # the final URL requested regardless of Location's value.
-                final_url=value,
-                content_type=content_type,
-                redirected=bool(location),
-                location=location,
-                title=title,
-                metadata={
-                    "method": response.request.method,
-                    "server": response.headers.get("server", ""),
-                    "resolved_ip": address,
-                    "dns_pinned": True,
-                },
-            )
+                return URLVerification(
+                    url=value,
+                    reachable=True,
+                    status_code=response.status_code,
+                    # The verifier never follows redirects, so the original URL is
+                    # the final URL requested regardless of Location's value.
+                    final_url=value,
+                    content_type=content_type,
+                    redirected=bool(location),
+                    location=location,
+                    title=title,
+                    metadata={
+                        "method": response.request.method,
+                        "server": response.headers.get("server", ""),
+                        "resolved_ip": address,
+                        "dns_pinned": True,
+                    },
+                )
+            finally:
+                await response.aclose()
 
         return URLVerification(
             url=value,
