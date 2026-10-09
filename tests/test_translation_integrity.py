@@ -100,9 +100,9 @@ def test_all_system_prompts_have_the_complete_evidence_checklist() -> None:
         checklist_numbers = [
             number for index, number in numbered_lines if index >= checklist_start
         ]
-        assert checklist_numbers[:18] == list(range(1, 19)), (
-            f"Evidence checklist must contain items 1–18: {lang}; "
-            f"found {checklist_numbers[:18]}"
+        assert checklist_numbers == list(range(1, 19)), (
+            f"Evidence checklist must contain each item 1–18 exactly once: {lang}; "
+            f"found {checklist_numbers}"
         )
 
 
