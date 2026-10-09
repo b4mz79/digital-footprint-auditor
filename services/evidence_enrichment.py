@@ -155,6 +155,8 @@ def _publication_datetime_utc(value: str | None) -> datetime:
 
 DEFAULT_MAX_CONTEXTUAL_RECORDS = 20
 DEFAULT_MAX_CONTEXTUAL_RECORDS_PER_DOMAIN = 1
+DEFAULT_MAX_ENRICHMENT_DOMAINS = 100
+DEFAULT_ENRICHMENT_TIMEOUT_SECONDS = 120.0
 
 
 def _fingerprint_domains(domains: list[str]) -> str:
@@ -231,17 +233,35 @@ async def enrich_evidence(
         60.0,
         3600.0,
     )
+    max_domains = env_non_negative_int(
+        "FIRECRAWL_MAX_DOMAINS",
+        DEFAULT_MAX_ENRICHMENT_DOMAINS,
+        1000,
+    ) or 1
+    total_timeout_seconds = env_positive_float(
+        "FIRECRAWL_TOTAL_TIMEOUT_SECONDS",
+        DEFAULT_ENRICHMENT_TIMEOUT_SECONDS,
+        900.0,
+    )
 
     # Records can be reconstructed or mutated at integration boundaries.
     # Keep malformed base evidence, but never let an invalid domain abort
     # enrichment for otherwise valid records in the same batch.
-    domains = sorted(
+    discovered_domains = sorted(
         {
             record.domain.strip().lower()
             for record in base
             if isinstance(record.domain, str) and record.domain.strip()
         }
     )
+    domains = discovered_domains[:max_domains]
+    if len(discovered_domains) > len(domains):
+        logger.warning(
+            "[Evidence Enrichment] Domain budget applied; discovered=%d selected=%d cap=%d",
+            len(discovered_domains),
+            len(domains),
+            max_domains,
+        )
     cache_material = {
         "schema": 1,
         "cache_schema_version": ENRICHMENT_CACHE_SCHEMA_VERSION,
@@ -255,6 +275,8 @@ async def enrich_evidence(
         "request_concurrency": request_concurrency,
         "requests_per_minute": requests_per_minute,
         "cooldown_seconds": cooldown_seconds,
+        "max_domains": max_domains,
+        "total_timeout_seconds": total_timeout_seconds,
         "max_contextual_records": max_contextual_records,
         "max_contextual_per_domain": max_contextual_per_domain,
     }
@@ -366,8 +388,11 @@ async def enrich_evidence(
         _fingerprint_domains(domains),
     )
     logger.info(
-        "[Evidence Enrichment] Firecrawl enabled; domains=%d max_results=%d timeout=%.1fs domain_concurrency=%d request_concurrency=%d requests_per_minute=%d cooldown=%.1fs max_contextual=%d max_per_domain=%d",
+        "[Evidence Enrichment] Firecrawl enabled; domains=%d discovered_domains=%d domain_cap=%d total_timeout=%.1fs max_results=%d request_timeout=%.1fs domain_concurrency=%d request_concurrency=%d requests_per_minute=%d cooldown=%.1fs max_contextual=%d max_per_domain=%d",
         len(domains),
+        len(discovered_domains),
+        max_domains,
+        total_timeout_seconds,
         max_results,
         timeout_seconds,
         domain_concurrency,
@@ -405,13 +430,46 @@ async def enrich_evidence(
         # task/log storm. Once a provider-wide rate limit is observed, do not
         # schedule another domain batch.
         results: list[list[EvidenceRecord] | Exception] = []
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + total_timeout_seconds
         for start in range(0, len(domains), domain_concurrency):
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                logger.warning(
+                    "[Evidence Enrichment] Total runtime budget exhausted between batches; completed_domains=%d/%d.",
+                    len(results),
+                    len(domains),
+                )
+                break
+
             batch = domains[start : start + domain_concurrency]
-            batch_results = await asyncio.gather(
-                *(enrich_domain(domain) for domain in batch),
-                return_exceptions=True,
-            )
-            results.extend(batch_results)
+            tasks = [
+                asyncio.create_task(enrich_domain(domain))
+                for domain in batch
+            ]
+            done, pending = await asyncio.wait(tasks, timeout=remaining)
+
+            # Retain completed results even when another task in the same batch
+            # reaches the global deadline. Pending provider calls are cancelled;
+            # base evidence is never discarded by an enrichment timeout.
+            for task in done:
+                try:
+                    results.append(task.result())
+                except asyncio.CancelledError:
+                    results.append(RuntimeError("Domain enrichment task was cancelled"))
+                except Exception as exc:
+                    results.append(exc)
+
+            if pending:
+                for task in pending:
+                    task.cancel()
+                await asyncio.gather(*pending, return_exceptions=True)
+                logger.warning(
+                    "[Evidence Enrichment] Total runtime budget reached; completed_domains=%d/%d. Returning partial enrichment with base evidence intact.",
+                    len(results),
+                    len(domains),
+                )
+                break
 
             if provider.cooldown_active:
                 logger.warning(
@@ -421,6 +479,8 @@ async def enrich_evidence(
                     len(domains),
                 )
                 break
+
+
     merged: dict[str, EvidenceRecord] = {
         record.evidence_id: record for record in base
     }
