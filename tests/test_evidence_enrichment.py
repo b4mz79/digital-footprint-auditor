@@ -1202,8 +1202,16 @@ async def test_enrichment_cache_rejects_mismatched_publisher_provenance(monkeypa
     monkeypatch.setattr(module, "save_enrichment_cache", lambda *args, **kwargs: None)
     monkeypatch.setattr(module, "FirecrawlSecurityPublicationProvider", FakeProvider)
 
-    first = await module.enrich_evidence([base], tenant_id="tenant-bad-publisher-url")
-    second = await module.enrich_evidence([base], tenant_id="tenant-bad-assertion-scope")
+    first = await module.enrich_evidence(
+        [base],
+        firecrawl_api_key="test-key",
+        tenant_id="tenant-bad-publisher-url",
+    )
+    second = await module.enrich_evidence(
+        [base],
+        firecrawl_api_key="test-key",
+        tenant_id="tenant-bad-assertion-scope",
+    )
 
     assert provider_calls == ["example.com", "example.com"]
     assert [record.evidence_id for record in first] == ["base-publisher-provenance"]
