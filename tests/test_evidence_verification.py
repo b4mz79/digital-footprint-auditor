@@ -152,6 +152,12 @@ async def test_verify_evidence_records_can_be_disabled() -> None:
         title="Security report",
         summary="Security context.",
         assertion_scope="security_publication_context_only",
+        verification_state="reachable",
+        verification_observed_at="2026-10-05T00:00:00+00:00",
+        metadata={
+            "keep": "unrelated metadata",
+            "url_verification": {"status_code": 200, "reachable": True},
+        },
     )
 
     result = await verify_evidence_records([record], enabled=False)
@@ -159,6 +165,46 @@ async def test_verify_evidence_records_can_be_disabled() -> None:
     assert result[0] is record
     assert result[0].verification_state == "unknown"
     assert result[0].verification_observed_at is None
+    assert "url_verification" not in result[0].metadata
+    assert result[0].metadata["keep"] == "unrelated metadata"
+
+
+@pytest.mark.asyncio
+async def test_verification_client_setup_failure_clears_stale_state(monkeypatch) -> None:
+    def broken_client(**kwargs):
+        raise RuntimeError("synthetic client setup failure")
+
+    monkeypatch.setattr(verification_module.httpx, "AsyncClient", broken_client)
+
+    record = EvidenceRecord(
+        evidence_id="client-setup-failure",
+        source="Example Security",
+        source_type="security_publication",
+        relation=EvidenceRelation.SECURITY_PUBLICATION,
+        directness=EvidenceDirectness.CONTEXTUAL,
+        confidence=0.65,
+        observed_at="2026-10-05T00:00:00+00:00",
+        published_at="2026-10-01T00:00:00+00:00",
+        domain="example.com",
+        url="https://example.com/report",
+        title="Security report",
+        summary="Security context.",
+        assertion_scope="security_publication_context_only",
+        verification_state="reachable",
+        verification_observed_at="2026-10-05T00:00:00+00:00",
+        metadata={
+            "keep": "unrelated metadata",
+            "url_verification": {"status_code": 200, "reachable": True},
+        },
+    )
+
+    result = await verify_evidence_records([record], concurrency=1)
+
+    assert result[0] is record
+    assert result[0].verification_state == "unknown"
+    assert result[0].verification_observed_at is None
+    assert "url_verification" not in result[0].metadata
+    assert result[0].metadata["keep"] == "unrelated metadata"
 
 
 @pytest.mark.asyncio

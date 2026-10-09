@@ -50,6 +50,10 @@ async def verify_evidence_records(
             "1", "true", "yes", "on"
         }
     if not enabled:
+        # A disabled verifier cannot vouch for a previous run's URL state.
+        # Keep the evidence itself, but clear the current accessibility signal.
+        for record in items:
+            _mark_verification_unknown(record)
         return items
 
     timeout = (
@@ -75,47 +79,57 @@ async def verify_evidence_records(
         return items
 
     gate = asyncio.Semaphore(limit)
-    async with httpx.AsyncClient(
-        follow_redirects=False,
-        trust_env=False,
-        headers={"User-Agent": "PrivacyAuditor/EvidenceVerifier"},
-    ) as client:
+    try:
+        async with httpx.AsyncClient(
+            follow_redirects=False,
+            trust_env=False,
+            headers={"User-Agent": "PrivacyAuditor/EvidenceVerifier"},
+        ) as client:
 
-        async def verify_one(record: EvidenceRecord) -> None:
-            async with gate:
-                try:
-                    result = await verify_public_url(
-                        record.url,
-                        timeout_seconds=timeout,
-                        client=client,
+            async def verify_one(record: EvidenceRecord) -> None:
+                async with gate:
+                    try:
+                        result = await verify_public_url(
+                            record.url,
+                            timeout_seconds=timeout,
+                            client=client,
+                        )
+                    except Exception as exc:
+                        # Verification is an optional quality signal. A failure for
+                        # one URL must not cancel verification of unrelated records.
+                        # Keep the record explicitly UNKNOWN rather than inferring
+                        # reachability from the failure.
+                        logger.warning(
+                            "[Evidence Verification] URL verification failed: %s",
+                            type(exc).__name__,
+                        )
+                        _mark_verification_unknown(record)
+                        return
+
+                    record.verification_scope = "url_accessibility"
+                    record.verification_state = (
+                        "reachable" if result.reachable else "unreachable"
                     )
-                except Exception as exc:
-                    # Verification is an optional quality signal. A failure for
-                    # one URL must not cancel verification of unrelated records.
-                    # Keep the record explicitly UNKNOWN rather than inferring
-                    # reachability from the failure.
-                    logger.warning(
-                        "[Evidence Verification] URL verification failed: %s",
-                        type(exc).__name__,
-                    )
-                    _mark_verification_unknown(record)
-                    return
+                    record.verification_observed_at = _utc_now()
+                    record.metadata = {
+                        **record.metadata,
+                        "url_verification": {
+                            "status_code": result.status_code,
+                            "redirected": result.redirected,
+                            "location": result.location,
+                            "content_type": result.content_type,
+                        },
+                    }
 
-                record.verification_scope = "url_accessibility"
-                record.verification_state = (
-                    "reachable" if result.reachable else "unreachable"
-                )
-                record.verification_observed_at = _utc_now()
-                record.metadata = {
-                    **record.metadata,
-                    "url_verification": {
-                        "status_code": result.status_code,
-                        "redirected": result.redirected,
-                        "location": result.location,
-                        "content_type": result.content_type,
-                    },
-                }
-
-        await asyncio.gather(*(verify_one(record) for record in targets))
+            await asyncio.gather(*(verify_one(record) for record in targets))
+    except Exception as exc:
+        # Client construction/setup failures can bypass the per-URL handler.
+        # Do not leak old reachability metadata through the pipeline fallback.
+        logger.warning(
+            "[Evidence Verification] Verifier unavailable: %s",
+            type(exc).__name__,
+        )
+        for record in targets:
+            _mark_verification_unknown(record)
 
     return items
