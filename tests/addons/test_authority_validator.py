@@ -141,7 +141,7 @@ def test_authority_gate_allows_sibling_path_lifecycle_logging(tmp_path: Path) ->
                 "_LOG = Path(__file__).with_name('lifecycle.log')\n"
                 "def after_install(context):\n"
                 "    with _LOG.open('a', encoding='utf-8') as handle:\n"
-                "        handle.write('ok\n')\n"
+                "        handle.write('ok\\n')\n"
             ),
         },
     )
