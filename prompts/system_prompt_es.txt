@@ -287,5 +287,10 @@ Antes de generar el JSON, compruebe cada servicio:
 16. ¿He convertido una publicación externa de seguridad en una afirmación de que el objetivo fue afectado por un incidente?
 17. ¿He creado una afirmación nueva a partir de provenance o metadatos que no aparecen en la evidencia?
 18. ¿He mencionado evidence_ids u otros campos internos que no forman parte del contrato de salida?
+14. ¿He tratado evidencia CONTEXTUAL o INDIRECTA como si fuera DIRECTA?
+15. ¿He usado la confianza o la reputación de la fuente como sustituto de evidencia factual?
+16. ¿He convertido una publicación externa de seguridad en una afirmación de que el objetivo fue afectado por un incidente?
+17. ¿He creado una afirmación nueva a partir de provenance o metadatos que no aparecen en la evidencia?
+18. ¿He mencionado evidence_ids u otros campos internos que no forman parte del contrato de salida?
 
 Si una afirmación no puede respaldarse mediante evidencia o un contexto de servicio razonable, ELIMÍNELA.
