@@ -3,6 +3,33 @@ from __future__ import annotations
 from services import ai_agent
 
 
+
+def test_ai_forensic_telemetry_counts_service_discovery_from_metadata(caplog) -> None:
+    evidence = [
+        {
+            "evidence_id": "service-1",
+            "source": "OSINT / Holehe",
+            "relation": "target_resource",
+            "directness": "direct",
+            "verification_state": "unknown",
+            "metadata": {"finding_type": "service_discovery"},
+            "provenance": {
+                "provider": "osint",
+                "normalizer": "service_findings_to_evidence",
+                "assertion_scope": "service_association_only",
+            },
+        }
+    ]
+
+    with caplog.at_level("INFO"):
+        ai_agent.build_user_prompt(
+            "user@example.org",
+            [],
+            evidence_records=evidence,
+        )
+
+    assert "service_discovery_count=1" in caplog.text
+
 def test_ai_agent_import() -> None:
     assert ai_agent is not None
 
