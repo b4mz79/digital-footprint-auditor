@@ -276,5 +276,10 @@ Controleer vóór het genereren van JSON voor elke dienst:
 11. Heb ik zonder breach_evidence een datalek beweerd?
 12. Als het bewijs alleen generiek is, is UNKNOWN passender dan LOW of MEDIUM?
 13. Als ik LOW/MEDIUM/HIGH koos, welk direct bewijs voldoet aan de drempel voor dat niveau?
+14. Heb ik CONTEXTUEEL of INDIRECT bewijs behandeld als DIRECT bewijs?
+15. Heb ik vertrouwen of de reputatie van de bron gebruikt als vervanging voor feitelijk bewijs?
+16. Heb ik een externe beveiligingspublicatie omgezet in de bewering dat het doelwit door een incident is getroffen?
+17. Heb ik een nieuwe bewering afgeleid uit herkomstgegevens of metadata die niet in het bewijs staan?
+18. Heb ik evidence_ids of andere interne velden genoemd die geen deel uitmaken van het outputcontract?
 
 Als een bewering niet door bewijs of een redelijke servicecontext kan worden ondersteund, VERWIJDER DE BEWERING.
