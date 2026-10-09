@@ -23,7 +23,7 @@ configure_logging()
 logger = get_logger("App")
 addon_manager = get_addon_manager()
 st.set_page_config(
-    page_title="Local Digital Footprint & Privacy Auditor",
+    page_title=t("page_title", lang=st.session_state.get("lang", "id")),
     page_icon="🛡️",
     layout="wide",
 )
