@@ -1498,3 +1498,53 @@ async def test_enrichment_domain_cap_limits_provider_lookups(monkeypatch: pytest
 
     assert len(looked_up) == 3
     assert len(result) == len(base)
+
+
+@pytest.mark.asyncio
+async def test_enrichment_global_deadline_preserves_base_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import asyncio
+    import services.evidence_enrichment as enrichment
+
+    monkeypatch.setenv("FIRECRAWL_MAX_DOMAINS", "10")
+    monkeypatch.setenv("FIRECRAWL_TOTAL_TIMEOUT_SECONDS", "0.03")
+    monkeypatch.setenv("FIRECRAWL_DOMAIN_CONCURRENCY", "2")
+    monkeypatch.setenv("EVIDENCE_ENRICHMENT_CACHE_ENABLED", "false")
+    started: list[str] = []
+
+    class SlowProvider:
+        def __init__(self, **kwargs):
+            self.cooldown_active = False
+            self.had_failures = False
+
+        async def search_domain(self, domain: str):
+            started.append(domain)
+            await asyncio.sleep(0.2)
+            return []
+
+    monkeypatch.setattr(enrichment, "FirecrawlSecurityPublicationProvider", SlowProvider)
+    base = [
+        EvidenceRecord(
+            evidence_id=f"deadline-{index}",
+            source="OSINT / Holehe",
+            source_type="osint",
+            relation=EvidenceRelation.TARGET_RESOURCE,
+            directness=EvidenceDirectness.DIRECT,
+            confidence=0.8,
+            observed_at="2026-01-01T00:00:00+00:00",
+            published_at=None,
+            domain=f"deadline-{index}.example",
+            url="",
+            title=f"Deadline {index}",
+            summary="Observed service association.",
+        )
+        for index in range(6)
+    ]
+
+    result = await enrich_evidence(base, firecrawl_api_key="test-key")
+
+    assert len(started) == 2
+    assert {record.evidence_id for record in result} == {
+        record.evidence_id for record in base
+    }
