@@ -1,8 +1,9 @@
-"""Minimal public-URL verification for already discovered evidence.
+"""Public-URL verification with DNS-pinned outbound requests.
 
-This verifier is deliberately conservative: it verifies an existing public URL,
-does not perform crawling, does not follow redirects automatically, and blocks
-obvious private/local destinations to reduce SSRF risk.
+This verifier checks accessibility only. It is not a source-trust or target-risk
+assessment. Requests are pinned to an IP address resolved and validated for the
+URL so a second DNS resolution by the HTTP stack cannot redirect the connection
+to a private/local destination.
 """
 
 from __future__ import annotations
@@ -11,7 +12,7 @@ from dataclasses import dataclass, field
 import ipaddress
 import socket
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
@@ -48,58 +49,127 @@ class URLVerification:
         }
 
 
-def _is_public_hostname(hostname: str) -> bool:
+def _resolve_public_addresses(hostname: str, port: int | None = None) -> list[str]:
+    """Resolve a host once and return only a fully public, validated address set."""
     host = (hostname or "").strip().lower().rstrip(".")
-    if not host:
-        return False
+    if not host or "%" in host:
+        raise ValueError("URL hostname is not public.")
 
     try:
-        addresses = {
-            item[4][0]
-            for item in socket.getaddrinfo(
+        literal = ipaddress.ip_address(host)
+    except ValueError:
+        try:
+            results = socket.getaddrinfo(
                 host,
-                None,
+                port,
                 type=socket.SOCK_STREAM,
             )
-        }
-    except OSError:
-        # DNS failure is not evidence that a hostname is public. Fail closed
-        # rather than allowing an unresolvable name through the SSRF guard.
-        return False
+        except OSError as exc:
+            raise ValueError("URL hostname is not public.") from exc
+        addresses = list(dict.fromkeys(item[4][0] for item in results))
+    else:
+        addresses = [str(literal)]
 
     if not addresses:
-        return False
+        raise ValueError("URL hostname is not public.")
 
+    normalized: list[str] = []
     for address in addresses:
         try:
             ip = ipaddress.ip_address(address)
-        except ValueError:
-            return False
-        if (
-            ip.is_private
-            or ip.is_loopback
-            or ip.is_link_local
-            or ip.is_multicast
-            or ip.is_reserved
-            or ip.is_unspecified
-        ):
-            return False
-    return True
+        except ValueError as exc:
+            raise ValueError("URL hostname is not public.") from exc
+        # Reject the entire answer if even one A/AAAA result is non-public.
+        # This avoids accepting mixed public/private DNS answers.
+        if not ip.is_global:
+            raise ValueError("URL hostname is not public.")
+        normalized.append(str(ip))
+
+    return list(dict.fromkeys(normalized))
 
 
-def _validate_url(url: str) -> str:
+def _is_public_hostname(hostname: str) -> bool:
+    try:
+        return bool(_resolve_public_addresses(hostname))
+    except (OSError, ValueError):
+        return False
+
+
+def _validated_url_target(
+    url: str,
+) -> tuple[str, Any, str, str, list[str]]:
     value = (url or "").strip()
     if not value or len(value) > 4096:
         raise ValueError("URL is empty or too long.")
 
     parsed = urlsplit(value)
-    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+    if parsed.scheme.lower() not in {"http", "https"} or not parsed.hostname:
         raise ValueError("Only public HTTP(S) URLs are supported.")
     if parsed.username is not None or parsed.password is not None:
         raise ValueError("URLs containing credentials are not supported.")
-    if not _is_public_hostname(parsed.hostname):
-        raise ValueError("URL hostname is not public.")
-    return value
+
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError("URL port is invalid.") from exc
+
+    hostname = parsed.hostname.lower().rstrip(".")
+    try:
+        literal = ipaddress.ip_address(hostname)
+    except ValueError:
+        if "%" in hostname:
+            raise ValueError("URL hostname is not public.")
+        try:
+            tls_hostname = hostname.encode("idna").decode("ascii")
+        except UnicodeError as exc:
+            raise ValueError("URL hostname is invalid.") from exc
+        host_header = tls_hostname
+    else:
+        tls_hostname = str(literal)
+        host_header = f"[{literal}]" if literal.version == 6 else str(literal)
+
+    if port is not None:
+        host_header = f"{host_header}:{port}"
+
+    addresses = _resolve_public_addresses(hostname, port)
+    return value, parsed, host_header, tls_hostname, addresses
+
+
+def _validate_url(url: str) -> str:
+    """Validate URL syntax and destination addresses; kept for existing callers/tests."""
+    return _validated_url_target(url)[0]
+
+
+def _pinned_url(parsed: Any, address: str) -> str:
+    ip = ipaddress.ip_address(address)
+    host = f"[{ip}]" if ip.version == 6 else str(ip)
+    port = parsed.port
+    if port is not None:
+        host = f"{host}:{port}"
+    # Fragments are client-side only and must not be sent in the HTTP request.
+    return urlunsplit((parsed.scheme.lower(), host, parsed.path or "/", parsed.query, ""))
+
+
+async def _send_pinned_request(
+    client: httpx.AsyncClient,
+    method: str,
+    request_url: str,
+    *,
+    timeout_seconds: float,
+    host_header: str,
+    tls_hostname: str,
+    scheme: str,
+) -> httpx.Response:
+    kwargs: dict[str, Any] = {
+        "timeout": timeout_seconds,
+        "follow_redirects": False,
+        "headers": {"Host": host_header},
+    }
+    if scheme == "https":
+        # httpcore consumes this extension for TLS SNI and certificate hostname
+        # verification while the TCP destination remains the pinned IP literal.
+        kwargs["extensions"] = {"sni_hostname": tls_hostname}
+    return await client.request(method, request_url, **kwargs)
 
 
 def _extract_title(content: bytes) -> str:
@@ -124,73 +194,93 @@ async def verify_public_url(
     client: httpx.AsyncClient | None = None,
     fetch_title: bool = False,
 ) -> URLVerification:
-    """Verify reachability without following redirects automatically.
-
-    Redirect behavior is disabled per request, not only at client creation,
-    because callers may inject an AsyncClient configured to follow redirects.
-    """
-    value = _validate_url(url)
+    """Verify URL accessibility using validated IPs; never follow redirects."""
+    value, parsed, host_header, tls_hostname, addresses = _validated_url_target(url)
     owns_client = client is None
     http = client or httpx.AsyncClient(
         follow_redirects=False,
+        trust_env=False,
         headers={"User-Agent": "PrivacyAuditor/EvidenceVerifier"},
     )
 
+    last_error: httpx.HTTPError | None = None
     try:
-        try:
-            response = await http.head(
-                value,
-                timeout=timeout_seconds,
-                follow_redirects=False,
-            )
-            if response.status_code in {405, 501}:
-                response = await http.get(
-                    value,
-                    timeout=timeout_seconds,
-                    follow_redirects=False,
+        for address in addresses:
+            pinned_url = _pinned_url(parsed, address)
+            try:
+                response = await _send_pinned_request(
+                    http,
+                    "HEAD",
+                    pinned_url,
+                    timeout_seconds=timeout_seconds,
+                    host_header=host_header,
+                    tls_hostname=tls_hostname,
+                    scheme=parsed.scheme.lower(),
                 )
-        except httpx.HTTPError as exc:
+                if response.status_code in {405, 501}:
+                    response = await _send_pinned_request(
+                        http,
+                        "GET",
+                        pinned_url,
+                        timeout_seconds=timeout_seconds,
+                        host_header=host_header,
+                        tls_hostname=tls_hostname,
+                        scheme=parsed.scheme.lower(),
+                    )
+            except httpx.HTTPError as exc:
+                last_error = exc
+                continue
+
+            location = response.headers.get("location")
+            content_type = response.headers.get("content-type", "")
+            title = ""
+
+            if fetch_title and response.request.method == "HEAD":
+                try:
+                    get_response = await _send_pinned_request(
+                        http,
+                        "GET",
+                        pinned_url,
+                        timeout_seconds=timeout_seconds,
+                        host_header=host_header,
+                        tls_hostname=tls_hostname,
+                        scheme=parsed.scheme.lower(),
+                    )
+                    if get_response.status_code < 500 and not get_response.is_redirect:
+                        title = _extract_title(get_response.content)
+                except httpx.HTTPError:
+                    pass
+
             return URLVerification(
                 url=value,
-                reachable=False,
-                status_code=None,
+                reachable=True,
+                status_code=response.status_code,
+                # The verifier never follows redirects, so the original URL is
+                # the final URL requested regardless of Location's value.
                 final_url=value,
-                content_type="",
-                redirected=False,
-                location=None,
-                title="",
-                error=type(exc).__name__,
+                content_type=content_type,
+                redirected=bool(location),
+                location=location,
+                title=title,
+                metadata={
+                    "method": response.request.method,
+                    "server": response.headers.get("server", ""),
+                    "resolved_ip": address,
+                    "dns_pinned": True,
+                },
             )
-
-        location = response.headers.get("location")
-        content_type = response.headers.get("content-type", "")
-        title = ""
-
-        if fetch_title and response.request.method == "HEAD":
-            try:
-                get_response = await http.get(
-                    value,
-                    timeout=timeout_seconds,
-                    follow_redirects=False,
-                )
-                if get_response.status_code < 500:
-                    title = _extract_title(get_response.content)
-            except httpx.HTTPError:
-                pass
 
         return URLVerification(
             url=value,
-            reachable=True,
-            status_code=response.status_code,
-            final_url=str(response.url),
-            content_type=content_type,
-            redirected=bool(location),
-            location=location,
-            title=title,
-            metadata={
-                "method": response.request.method,
-                "server": response.headers.get("server", ""),
-            },
+            reachable=False,
+            status_code=None,
+            final_url=value,
+            content_type="",
+            redirected=False,
+            location=None,
+            title="",
+            error=type(last_error).__name__ if last_error else "ConnectionError",
+            metadata={"dns_pinned": True},
         )
     finally:
         if owns_client:
