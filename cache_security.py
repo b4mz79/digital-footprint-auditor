@@ -158,9 +158,9 @@ def _read_existing_key_file(path: Path) -> bytes:
     except (ValueError, TypeError):
         raise RuntimeError("Cache key file does not contain a valid Fernet key")
 
-    if os.name == "posix" and (stat_result.st_mode & 0o077):
-        # Best-effort correction, but do not allow a permission failure silently.
-        os.chmod(path, 0o600)
+    # Existing key files need the same ACL/mode hardening as newly created keys.
+    # This matters on Windows too, where chmod alone does not restrict inherited ACLs.
+    set_secure_file_permissions(path)
 
     return data
 
