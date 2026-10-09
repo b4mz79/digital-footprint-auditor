@@ -170,24 +170,24 @@ def test_authority_gate_rejects_unconfined_path_access(
     "source",
     [
         (
-            "from pathlib import Path\\n"
-            "_LOG = Path(__file__).with_name('lifecycle.log')\\n"
-            "def run(context):\\n"
-            "    _LOG = Path('/tmp/outside.txt')\\n"
-            "    _LOG.write_text('x')\\n"
+            "from pathlib import Path\n"
+            "_LOG = Path(__file__).with_name('lifecycle.log')\n"
+            "def run(context):\n"
+            "    _LOG = Path('/tmp/outside.txt')\n"
+            "    _LOG.write_text('x')\n"
         ),
         (
-            "from pathlib import Path\\n"
-            "_LOG = Path(__file__).with_name('lifecycle.log')\\n"
-            "def run(_LOG):\\n"
-            "    _LOG.write_text('x')\\n"
+            "from pathlib import Path\n"
+            "_LOG = Path(__file__).with_name('lifecycle.log')\n"
+            "def run(_LOG):\n"
+            "    _LOG.write_text('x')\n"
         ),
         (
-            "from pathlib import Path\\n"
-            "_LOG = Path(__file__).with_name('lifecycle.log')\\n"
-            "def run(context):\\n"
-            "    for _LOG in context:\\n"
-            "        _LOG.write_text('x')\\n"
+            "from pathlib import Path\n"
+            "_LOG = Path(__file__).with_name('lifecycle.log')\n"
+            "def run(context):\n"
+            "    for _LOG in context:\n"
+            "        _LOG.write_text('x')\n"
         ),
     ],
 )
