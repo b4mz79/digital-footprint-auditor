@@ -1049,7 +1049,7 @@ def test_contextual_relevance_does_not_treat_generic_domain_token_as_target() ->
     assert signals["reason"] == "target_subject_security_context"
 
 @pytest.mark.asyncio
-async def test_enrichment_cache_fingerprint_tracks_contextual_source_contract(monkeypatch) -> None:
+async def test_enrichment_cache_fingerprint_tracks_provider_inputs_not_base_state(monkeypatch) -> None:
     import services.evidence_enrichment as module
 
     base = EvidenceRecord(
@@ -1068,6 +1068,7 @@ async def test_enrichment_cache_fingerprint_tracks_contextual_source_contract(mo
         assertion_scope="service_association_only",
     )
     fingerprints: list[str] = []
+    searched_domains: list[str] = []
 
     class FakeProvider:
         def __init__(self, **kwargs):
@@ -1075,6 +1076,7 @@ async def test_enrichment_cache_fingerprint_tracks_contextual_source_contract(mo
             self.had_failures = False
 
         async def search_domain(self, domain):
+            searched_domains.append(domain)
             return []
 
     def cache_miss(fingerprint, **kwargs):
@@ -1087,11 +1089,32 @@ async def test_enrichment_cache_fingerprint_tracks_contextual_source_contract(mo
     monkeypatch.setattr(module, "FirecrawlSecurityPublicationProvider", FakeProvider)
 
     await module.enrich_evidence([base], firecrawl_api_key="test-key")
+
+    # A fresh scan can change evidence timestamps and metadata without changing
+    # the provider input: Firecrawl still receives only the normalized domain.
+    base.observed_at = "2026-10-10T12:30:00+00:00"
+    base.metadata = {"fresh_scan": True}
+    base.summary = "Updated scanner-side description."
+    await module.enrich_evidence([base], firecrawl_api_key="test-key")
+
+    # The normalized domain is a real provider input and must invalidate cache.
+    base.domain = "different.example"
+    await module.enrich_evidence([base], firecrawl_api_key="test-key")
+
+    # Changes to the contextual filter contract must also invalidate cache.
     monkeypatch.setattr(module, "CONTEXTUAL_FILTER_NAME", "test-filter-contract-change")
     await module.enrich_evidence([base], firecrawl_api_key="test-key")
 
-    assert len(fingerprints) == 2
-    assert fingerprints[0] != fingerprints[1]
+    assert len(fingerprints) == 4
+    assert fingerprints[0] == fingerprints[1]
+    assert fingerprints[1] != fingerprints[2]
+    assert fingerprints[2] != fingerprints[3]
+    assert searched_domains == [
+        "example.com",
+        "example.com",
+        "different.example",
+        "different.example",
+    ]
 
 
 @pytest.mark.asyncio
