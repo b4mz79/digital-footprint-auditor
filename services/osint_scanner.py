@@ -28,7 +28,7 @@ OSINT_CACHE_MAX_AGE_HOURS = 12.0
 OSINT_CACHE_DIR = resolve_data_path(os.getenv("OSINT_CACHE_DIR"), "cache/osint")
 
 def osint_cache_enabled() -> bool:
-    return env_bool(OSINT_CACHE_ENABLED_ENV, True)
+    return env_bool(OSINT_CACHE_ENABLED_ENV, False)
 
 def _cache_path(email: str, tenant_id: str) -> Path:
     tenant_dir = OSINT_CACHE_DIR / tenant_identity(tenant_id)
