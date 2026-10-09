@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from services import ai_agent
@@ -57,7 +59,7 @@ def test_timed_response_validation_logs_elapsed_time_and_preserves_validation(ca
             }
         ]
     }
-    raw = __import__("json").dumps(valid)
+    raw = json.dumps(valid)
 
     with caplog.at_level("INFO"):
         result = ai_agent._timed_response_validation(
@@ -71,6 +73,24 @@ def test_timed_response_validation_logs_elapsed_time_and_preserves_validation(ca
     assert any(
         "[AI Timing] provider=OpenAI attempt=single attempt phase=response_validation elapsed_seconds="
         in record.message
+        for record in caplog.records
+    )
+
+
+@pytest.mark.asyncio
+async def test_provider_chain_logs_total_elapsed_time(monkeypatch, caplog) -> None:
+    async def fake_impl(*args, **kwargs):
+        return None, "None"
+
+    monkeypatch.setattr(ai_agent, "_run_provider_chain_impl", fake_impl)
+
+    with caplog.at_level("INFO"):
+        result = await ai_agent._run_provider_chain("prompt", "system", "en")
+
+    assert result == (None, "None")
+    assert any(
+        "[AI Timing] phase=provider_chain elapsed_seconds=" in record.message
+        and "outcome=None" in record.message
         for record in caplog.records
     )
 
