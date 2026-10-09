@@ -141,7 +141,7 @@ def test_authority_gate_allows_sibling_path_lifecycle_logging(tmp_path: Path) ->
                 "_LOG = Path(__file__).with_name('lifecycle.log')\n"
                 "def after_install(context):\n"
                 "    with _LOG.open('a', encoding='utf-8') as handle:\n"
-                "        handle.write('ok\\n')\n"
+                "        handle.write('ok\n')\n"
             ),
         },
     )
@@ -230,11 +230,11 @@ def test_authority_gate_rejects_path_link_and_redirect_operations(
         tmp_path / "package",
         **{
             "plugin.py": (
-                "from pathlib import Path\\n"
-                "_LOG = Path(__file__).with_name('lifecycle.log')\\n"
-                "def run(context):\\n"
-                f"    _LOG.{link_method}('/tmp/sensitive.txt')\\n"
-                "    return _LOG.read_text()\\n"
+                "from pathlib import Path\n"
+                "_LOG = Path(__file__).with_name('lifecycle.log')\n"
+                "def run(context):\n"
+                f"    _LOG.{link_method}('/tmp/sensitive.txt')\n"
+                "    return _LOG.read_text()\n"
             ),
         },
     )
