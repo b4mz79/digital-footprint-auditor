@@ -561,7 +561,7 @@ def save_analysis_cache_ext(
     phone: str = "",
     lang: str = "id",
     tenant_id: str = "default",
-) -> None:
+) -> bool:
     try:
         logger.info("[AICache] Menyimpan analysis cache...")
         cache_file = get_cache_filepath_ext(email, phone, lang, tenant_id)
@@ -572,8 +572,10 @@ def save_analysis_cache_ext(
             except OSError:
                 pass
         logger.info("[AICache] Analysis result saved into encrypted tenant cache.")
+        return True
     except Exception as exc:
         logger.error("[AICache] Error saving: %s", type(exc).__name__)
+        return False
 
 
 # Compatibility wrappers. The old implementation is deliberately not retained because
@@ -2941,13 +2943,19 @@ async def analyze_smart_cache(
                             )
                             return
 
-                        save_analysis_cache_ext(
+                        cache_saved = save_analysis_cache_ext(
                             email,
                             parsed_data,
                             phone,
                             lang=lang,
                             tenant_id=tenant_id,
                         )
+                        if cache_saved is False:
+                            logger.warning(
+                                "[AICache] Background cache write gagal: "
+                                "cache save reported failure."
+                            )
+                            return
                     logger.info("[AICache] Background cache write selesai.")
                 except Exception as exc:
                     logger.warning(
