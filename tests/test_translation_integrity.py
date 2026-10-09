@@ -41,11 +41,13 @@ def test_ui_translation_placeholders_are_aligned() -> None:
             ), f"Placeholder mismatch: lang={lang}, key={key}"
 
 
-def test_app_translation_calls_resolve_to_known_keys() -> None:
-    app_source = (ROOT / "app.py").read_text(encoding="utf-8")
-    static_keys = set(
-        re.findall(r"""\bt\(\s*["']([^"']+)["']""", app_source)
-    )
+def test_python_translation_calls_resolve_to_known_keys() -> None:
+    static_keys: set[str] = set()
+    for source_path in ROOT.rglob("*.py"):
+        source = source_path.read_text(encoding="utf-8")
+        static_keys.update(
+            re.findall(r"""\bt\(\s*["']([^"']+)["']""", source)
+        )
     dynamic_key_families = {
         "engine_status_ok",
         "engine_status_partial",
