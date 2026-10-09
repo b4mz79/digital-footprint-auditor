@@ -1125,6 +1125,91 @@ async def test_enrichment_cache_rejects_non_contextual_records(monkeypatch) -> N
     ]
 
 
+
+@pytest.mark.asyncio
+async def test_enrichment_cache_rejects_mismatched_publisher_provenance(monkeypatch) -> None:
+    import services.evidence_enrichment as module
+
+    base = EvidenceRecord(
+        evidence_id="base-publisher-provenance",
+        source="OSINT",
+        source_type="osint",
+        relation=EvidenceRelation.TARGET_RESOURCE,
+        directness=EvidenceDirectness.DIRECT,
+        confidence=0.8,
+        observed_at="2026-10-09T00:00:00+00:00",
+        published_at=None,
+        domain="example.com",
+        url="",
+        title="Target-associated service: Example",
+        summary="Observed service association.",
+        assertion_scope="service_association_only",
+    )
+    common = {
+        "evidence_id": "cached-mismatched-publisher",
+        "source": "Kaspersky Securelist",
+        "source_type": "security_publication",
+        "relation": EvidenceRelation.SECURITY_PUBLICATION,
+        "directness": EvidenceDirectness.CONTEXTUAL,
+        "confidence": 0.65,
+        "observed_at": "2026-10-08T00:00:00+00:00",
+        "published_at": "2026-10-01",
+        "domain": "example.com",
+        "title": "Security publication context",
+        "summary": "Contextual publication evidence.",
+        "provenance": {
+            "provider": "firecrawl_search",
+            "publisher_domain": "securelist.com",
+            "query_scope": "domain_only",
+            "relevance_filter": module.CONTEXTUAL_FILTER_NAME,
+            "assertion_scope": "security_publication_context_only",
+        },
+        "assertion_scope": "security_publication_context_only",
+    }
+    invalid_url = EvidenceRecord(
+        **common,
+        url="https://attacker.example/report",
+    )
+    mismatched_scope_data = dict(common)
+    mismatched_scope_data["evidence_id"] = "cached-mismatched-scope"
+    mismatched_scope_data["url"] = "https://securelist.com/report"
+    mismatched_scope_data["provenance"] = {
+        **common["provenance"],
+        "assertion_scope": "target_compromise_confirmed",
+    }
+    invalid_scope = EvidenceRecord(**mismatched_scope_data)
+    cached_entries = [
+        [invalid_url.to_dict()],
+        [invalid_scope.to_dict()],
+    ]
+    provider_calls: list[str] = []
+
+    class FakeProvider:
+        def __init__(self, **kwargs):
+            self.cooldown_active = False
+            self.had_failures = False
+
+        async def search_domain(self, domain):
+            provider_calls.append(domain)
+            return []
+
+    monkeypatch.setenv("EVIDENCE_ENRICHMENT_CACHE_ENABLED", "true")
+    monkeypatch.setattr(
+        module,
+        "load_enrichment_cache",
+        lambda *args, **kwargs: cached_entries.pop(0),
+    )
+    monkeypatch.setattr(module, "save_enrichment_cache", lambda *args, **kwargs: None)
+    monkeypatch.setattr(module, "FirecrawlSecurityPublicationProvider", FakeProvider)
+
+    first = await module.enrich_evidence([base], tenant_id="tenant-bad-publisher-url")
+    second = await module.enrich_evidence([base], tenant_id="tenant-bad-assertion-scope")
+
+    assert provider_calls == ["example.com", "example.com"]
+    assert [record.evidence_id for record in first] == ["base-publisher-provenance"]
+    assert [record.evidence_id for record in second] == ["base-publisher-provenance"]
+
+
 @pytest.mark.asyncio
 async def test_enrichment_cache_fingerprint_tracks_provider_inputs_not_base_state(monkeypatch) -> None:
     import services.evidence_enrichment as module
