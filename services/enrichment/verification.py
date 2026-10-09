@@ -69,11 +69,11 @@ async def verify_evidence_records(
 
     targets: list[EvidenceRecord] = []
     for record in items:
-        if record.url.strip():
+        if isinstance(record.url, str) and record.url.strip():
             targets.append(record)
         else:
-            # A previous URL result must not survive if this record no longer
-            # has a URL that can be checked in the current verification pass.
+            # Malformed or absent URLs are record-local failures. They must not
+            # abort the batch and invalidate verification for unrelated records.
             mark_verification_unknown(record)
     if not targets:
         return items

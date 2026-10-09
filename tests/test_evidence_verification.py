@@ -310,3 +310,57 @@ async def test_malformed_metadata_does_not_downgrade_other_url_verification(monk
     assert result[1].verification_state == "reachable"
     assert result[1].metadata["existing"] == "preserve"
     assert result[1].metadata["url_verification"]["status_code"] == 200
+
+
+
+@pytest.mark.asyncio
+async def test_malformed_url_does_not_abort_other_url_verification(monkeypatch):
+    async def fake_verify(url, *, timeout_seconds, client):
+        assert url == "https://example.com/valid"
+
+        class Result:
+            reachable = True
+            status_code = 200
+            redirected = False
+            location = None
+            content_type = "text/html"
+
+        return Result()
+
+    monkeypatch.setattr(verification_module, "verify_public_url", fake_verify)
+
+    def make_record(evidence_id: str, url: str) -> EvidenceRecord:
+        return EvidenceRecord(
+            evidence_id=evidence_id,
+            source="Example Security",
+            source_type="security_publication",
+            relation=EvidenceRelation.SECURITY_PUBLICATION,
+            directness=EvidenceDirectness.CONTEXTUAL,
+            confidence=0.65,
+            observed_at="2026-10-09T00:00:00+00:00",
+            published_at="2026-10-01",
+            domain="example.com",
+            url=url,
+            title="Security report",
+            summary="Security context.",
+            assertion_scope="security_publication_context_only",
+            verification_state="reachable",
+            verification_observed_at="2026-10-09T00:00:00+00:00",
+            metadata={
+                "keep": "unrelated metadata",
+                "url_verification": {"status_code": 200, "reachable": True},
+            },
+        )
+
+    malformed = make_record("malformed-url", "https://example.com/old")
+    malformed.url = None
+    valid = make_record("valid-url", "https://example.com/valid")
+
+    result = await verify_evidence_records([malformed, valid], concurrency=2)
+
+    assert result[0].verification_state == "unknown"
+    assert result[0].verification_observed_at is None
+    assert "url_verification" not in result[0].metadata
+    assert result[0].metadata["keep"] == "unrelated metadata"
+    assert result[1].verification_state == "reachable"
+    assert result[1].metadata["url_verification"]["status_code"] == 200
