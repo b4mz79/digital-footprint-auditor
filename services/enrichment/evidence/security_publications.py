@@ -166,6 +166,11 @@ def normalize_domain(value: str) -> str:
     candidate = value if "://" in value else f"https://{value}"
     try:
         parsed = urlsplit(candidate)
+        if parsed.scheme.lower() not in {"http", "https"}:
+            raise ValueError("Only HTTP(S) URLs are accepted.")
+        # Accessing .port validates that an explicitly supplied port is numeric
+        # and within the valid TCP port range, even though lookup uses host only.
+        _ = parsed.port
         hostname = (parsed.hostname or "").strip().lower().rstrip(".")
     except ValueError as exc:
         raise ValueError("Domain is invalid.") from exc
@@ -173,7 +178,7 @@ def normalize_domain(value: str) -> str:
         raise ValueError("Security-publication lookup accepts domain names, not IP literals.")
 
     try:
-        hostname.encode("idna").decode("ascii")
+        hostname = hostname.encode("idna").decode("ascii").lower()
     except UnicodeError as exc:
         raise ValueError("Domain contains invalid hostname characters.") from exc
 

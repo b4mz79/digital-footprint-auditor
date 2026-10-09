@@ -113,6 +113,7 @@ def test_evidence_id_does_not_use_target_pii() -> None:
         ("example.com", "example.com"),
         ("https://sub.example.com/path", "example.com"),
         ("Example.CO.ID", "example.co.id"),
+        ("https://exämple.com/path", "xn--exmple-cua.com"),
     ],
 )
 def test_normalize_domain(value: str, expected: str) -> None:
@@ -131,6 +132,10 @@ def test_normalize_domain(value: str, expected: str) -> None:
         "https://[2001:4860:4860::8888]/",
         "2001:4860:4860::8888",
         "https://example.com/path?email=user@example.com",
+        "ftp://example.com",
+        "file://example.com",
+        "javascript://example.com",
+        "https://example.com:invalid/",
     ],
 )
 def test_normalize_domain_rejects_pii_or_unsafe_input(value: str) -> None:
