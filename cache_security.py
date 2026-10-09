@@ -149,6 +149,8 @@ def _read_existing_key_file(path: Path) -> bytes:
     if not path.is_file():
         raise RuntimeError(f"Cache key path is not a regular file: {path.name}")
 
+    # Restrict access before reading an existing key, not only after it has been loaded.
+    set_secure_file_permissions(path)
     data = path.read_bytes()
     if not data:
         raise RuntimeError("Cache key file is empty; key recovery is not possible")
@@ -157,10 +159,6 @@ def _read_existing_key_file(path: Path) -> bytes:
         Fernet(data)
     except (ValueError, TypeError):
         raise RuntimeError("Cache key file does not contain a valid Fernet key")
-
-    # Existing key files need the same ACL/mode hardening as newly created keys.
-    # This matters on Windows too, where chmod alone does not restrict inherited ACLs.
-    set_secure_file_permissions(path)
 
     return data
 
