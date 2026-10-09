@@ -354,7 +354,25 @@ def run_scan(
         # Normalize scanner output into stable evidence records after all
         # discovery stages. This is lineage only; it does not calculate risk
         # and does not alter scanner findings.
-        local_evidence = service_findings_to_evidence(state["services"])
+        try:
+            local_evidence = service_findings_to_evidence(state["services"])
+        except Exception as exc:
+            # Evidence normalization is additive. A malformed finding or
+            # normalizer regression must not abort the established scan/AI path.
+            # Preserve scanner findings and continue with an empty evidence ledger.
+            logger.warning(
+                "[Pipeline] Evidence normalization failed; continuing without evidence: %s",
+                type(exc).__name__,
+            )
+            local_evidence = []
+            emit(
+                _event(
+                    "warning",
+                    key="evidence_normalization_failed",
+                    stage="evidence_start",
+                    error_type=type(exc).__name__,
+                )
+            )
 
         emit(
             _event(
