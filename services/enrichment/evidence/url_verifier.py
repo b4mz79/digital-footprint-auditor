@@ -124,7 +124,11 @@ async def verify_public_url(
     client: httpx.AsyncClient | None = None,
     fetch_title: bool = False,
 ) -> URLVerification:
-    """Verify reachability without following redirects automatically."""
+    """Verify reachability without following redirects automatically.
+
+    Redirect behavior is disabled per request, not only at client creation,
+    because callers may inject an AsyncClient configured to follow redirects.
+    """
     value = _validate_url(url)
     owns_client = client is None
     http = client or httpx.AsyncClient(
@@ -134,9 +138,17 @@ async def verify_public_url(
 
     try:
         try:
-            response = await http.head(value, timeout=timeout_seconds)
+            response = await http.head(
+                value,
+                timeout=timeout_seconds,
+                follow_redirects=False,
+            )
             if response.status_code in {405, 501}:
-                response = await http.get(value, timeout=timeout_seconds)
+                response = await http.get(
+                    value,
+                    timeout=timeout_seconds,
+                    follow_redirects=False,
+                )
         except httpx.HTTPError as exc:
             return URLVerification(
                 url=value,
@@ -156,7 +168,11 @@ async def verify_public_url(
 
         if fetch_title and response.request.method == "HEAD":
             try:
-                get_response = await http.get(value, timeout=timeout_seconds)
+                get_response = await http.get(
+                    value,
+                    timeout=timeout_seconds,
+                    follow_redirects=False,
+                )
                 if get_response.status_code < 500:
                     title = _extract_title(get_response.content)
             except httpx.HTTPError:
