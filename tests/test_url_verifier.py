@@ -319,3 +319,12 @@ async def test_title_fetch_does_not_decode_untrusted_compressed_body(
     assert result.title == ""
     assert streams["GET"].bytes_yielded == 0
     assert streams["GET"].closed is True
+
+@pytest.mark.asyncio
+async def test_read_limited_body_handles_already_buffered_response() -> None:
+    response = httpx.Response(200, content=b"abcdefgh")
+
+    body = await url_verifier._read_limited_body(response, max_bytes=4)
+
+    assert body == b"abcd"
+
