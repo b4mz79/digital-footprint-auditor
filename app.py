@@ -72,11 +72,11 @@ def _finding_text(item: dict, lang: str) -> tuple[str, str]:
     return str(item.get("title", "")), str(item.get("snippet", ""))
 
 
-def _api_status(*keys: str) -> str:
-    return (
-        "🟢 Loaded"
-        if all(os.getenv(key, "").strip() for key in keys)
-        else "⚪ Off"
+def _api_status(lang: str, *keys: str) -> str:
+    return t(
+        "api_status_loaded" if all(os.getenv(key, "").strip() for key in keys)
+        else "api_status_off",
+        lang=lang,
     )
 
 
@@ -383,13 +383,23 @@ def render_addon_uis(
                 slot.empty()
                 with slot.container():
                     st.error(
-                        f"UI Add-On {addon_id} gagal: "
-                        f"{type(exc).__name__}: {exc}"
+                        t(
+                            "addon_ui_failed",
+                            lang=lang,
+                            addon_id=addon_id,
+                            error_type=type(exc).__name__,
+                            error=str(exc),
+                        )
                     )
             else:
                 st.error(
-                    f"UI Add-On {addon_id} gagal: "
-                    f"{type(exc).__name__}: {exc}"
+                    t(
+                        "addon_ui_failed",
+                        lang=lang,
+                        addon_id=addon_id,
+                        error_type=type(exc).__name__,
+                        error=str(exc),
+                    )
                 )
 
 def render_ai(scan_state: dict) -> None:
@@ -524,7 +534,7 @@ if not st.session_state.get("cache_purged"):
 
 # Sidebar Configuration
 with st.sidebar:
-    st.header("⚙️ Configuration / Konfigurasi")
+    st.header(t("configuration_header", lang=st.session_state.get("lang", "id")))
 
     current_lang_code = st.session_state.get("lang", "id")
     options_list = list(LANG_OPTIONS)
@@ -538,7 +548,7 @@ with st.sidebar:
     )
 
     selected_lang_label = st.selectbox(
-        "🌐 Language / Bahasa",
+        t("language_select", lang=current_lang_code),
         options=options_list,
         index=default_index,
     )
@@ -598,7 +608,7 @@ with st.sidebar:
     enable_evidence_enrichment = st.checkbox(
         t("enable_evidence_enrichment", lang=lang),
         value=True,
-        help="Run the Evidence Enrichment pipeline stage.",
+        help=t("evidence_enrichment_help", lang=lang),
     )
     force_refresh_breach = st.checkbox(
         t("force_refresh", lang=lang),
@@ -612,13 +622,14 @@ with st.sidebar:
         bool(os.getenv(f"GOOGLE_API_KEY_{i}", "").strip())
         for i in range(1, 7)
     )
-    has_groq = _api_status("GROQ_API_KEY")
-    has_openai = _api_status("OPENAI_API_KEY")
-    has_rapidapi = _api_status("RAPIDAPI_KEY")
-    has_hibp = _api_status("HIBP_API_KEY")
-    has_tavily = _api_status("TAVILY_API_KEY")
-    has_firecrawl = _api_status("FIRECRAWL_API_KEY")
+    has_groq = _api_status(lang, "GROQ_API_KEY")
+    has_openai = _api_status(lang, "OPENAI_API_KEY")
+    has_rapidapi = _api_status(lang, "RAPIDAPI_KEY")
+    has_hibp = _api_status(lang, "HIBP_API_KEY")
+    has_tavily = _api_status(lang, "TAVILY_API_KEY")
+    has_firecrawl = _api_status(lang, "FIRECRAWL_API_KEY")
     has_gsearch = _api_status(
+        lang,
         "GOOGLE_SEARCH_API_KEY",
         "GOOGLE_CX_ID",
     )
@@ -634,42 +645,54 @@ with st.sidebar:
     st.caption(f"• **Google Custom Search:** {has_gsearch}")
     st.caption(f"• **Tavily AI Search:** {has_tavily}")
     st.caption(f"• **Firecrawl Evidence Enrichment:** {has_firecrawl}")
-    st.caption("• **SearXNG & DDG:** 🟢 Active (Always Free)")
-    st.subheader("4. Add-On")
+    st.caption(t("searxng_ddg_status", lang=lang))
+    st.subheader(t("addon_section_title", lang=lang))
     uploaded_addon = st.file_uploader(
-        "Install Add-On (.zip)",
+        t("addon_install_label", lang=lang),
         type=["zip"],
         key="addon_zip_upload",
-        help="Install Add-On (.zip)",
+        help=t("addon_install_help", lang=lang),
         label_visibility="collapsed",
     )
     if uploaded_addon is not None and st.button(
-        "Install Add-On",
+        t("addon_install_button", lang=lang),
         width="stretch",
         key="addon_install_button",
     ):
         try:
             installed = addon_manager.install_zip(uploaded_addon.getvalue())
             st.success(
-                f"{installed['name']} {installed['version']} installed."
+                t(
+                    "addon_install_success",
+                    lang=lang,
+                    name=installed["name"],
+                    version=installed["version"],
+                )
             )
             st.rerun()
         except Exception as exc:
-            st.error(f"Install Add-On gagal: {type(exc).__name__}: {exc}")
+            st.error(
+                t(
+                    "addon_install_failed",
+                    lang=lang,
+                    error_type=type(exc).__name__,
+                    error=str(exc),
+                )
+            )
 
     installed_addons = addon_manager.list()
     if not installed_addons:
-        st.caption("Belum ada Add-On terpasang.")
+        st.caption(t("addon_none_installed", lang=lang))
     else:
         for addon in installed_addons:
             addon_label_col, uninstall_col, action_col  = st.columns(3)
             with addon_label_col:
                 st.caption(f"**{addon['name']}**  \n"
-                    f"Version: {addon['version']}"
+                    f"{t('addon_version_label', lang=lang, version=addon['version'])}"
                 )
             with uninstall_col:
                 if st.button(
-                    "Uninstall",
+                    t("addon_uninstall_button", lang=lang),
                     width="stretch",
                     key=f"addon_uninstall_{addon['id']}",
                     type="tertiary",
@@ -679,10 +702,18 @@ with st.sidebar:
                         st.rerun()
                     except Exception as exc:
                         st.error(
-                            f"Uninstall gagal: {type(exc).__name__}: {exc}"
+                            t(
+                                "addon_uninstall_failed",
+                                lang=lang,
+                                error_type=type(exc).__name__,
+                                error=str(exc),
+                            )
                         )
             with action_col:
-                action_label = "🟢 Deactivate" if addon["active"] else "⚪ Activate"
+                action_label = t(
+                    "addon_deactivate_button" if addon["active"] else "addon_activate_button",
+                    lang=lang,
+                )
                 if st.button(
                     action_label,
                     width="stretch",
@@ -697,7 +728,12 @@ with st.sidebar:
                         st.rerun()
                     except Exception as exc:
                         st.error(
-                            f"Add-On action gagal: {type(exc).__name__}: {exc}"
+                            t(
+                                "addon_action_failed",
+                                lang=lang,
+                                error_type=type(exc).__name__,
+                                error=str(exc),
+                            )
                         )
 
     run_scan = st.button(
