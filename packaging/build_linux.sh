@@ -45,8 +45,7 @@ if [[ ! -f "dist/PrivacyAuditor" ]]; then
 fi
 
 # Salin berkas lisensi.
-cp LICENSE dist/PrivacyAuditor.LICENSE.tmp
-mv dist/PrivacyAuditor.LICENSE.tmp dist/LICENSE
+cp LICENSE dist/
 
 # Buat dokumentasi jika Pandoc tersedia.
 if command -v pandoc >/dev/null 2>&1; then
