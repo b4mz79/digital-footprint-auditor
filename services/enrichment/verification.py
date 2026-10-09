@@ -26,6 +26,16 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _mark_verification_unknown(record: EvidenceRecord) -> None:
+    """Clear stale verification state when the current URL cannot be verified."""
+    record.verification_scope = "url_accessibility"
+    record.verification_state = "unknown"
+    record.verification_observed_at = None
+    metadata = dict(record.metadata) if isinstance(record.metadata, dict) else {}
+    metadata.pop("url_verification", None)
+    record.metadata = metadata
+
+
 async def verify_evidence_records(
     records: Iterable[EvidenceRecord],
     *,
@@ -53,7 +63,14 @@ async def verify_evidence_records(
         else env_non_negative_int("EVIDENCE_URL_VERIFICATION_CONCURRENCY", 4, 16) or 1
     )
 
-    targets = [record for record in items if record.url.strip()]
+    targets: list[EvidenceRecord] = []
+    for record in items:
+        if record.url.strip():
+            targets.append(record)
+        else:
+            # A previous URL result must not survive if this record no longer
+            # has a URL that can be checked in the current verification pass.
+            _mark_verification_unknown(record)
     if not targets:
         return items
 
@@ -81,9 +98,7 @@ async def verify_evidence_records(
                         "[Evidence Verification] URL verification failed: %s",
                         type(exc).__name__,
                     )
-                    record.verification_scope = "url_accessibility"
-                    record.verification_state = "unknown"
-                    record.verification_observed_at = None
+                    _mark_verification_unknown(record)
                     return
 
                 record.verification_scope = "url_accessibility"

@@ -62,12 +62,20 @@ async def test_verify_evidence_records_keeps_urlless_evidence_unknown() -> None:
         title="Target-associated service",
         summary="Association only.",
         assertion_scope="service_association_only",
+        verification_state="reachable",
+        verification_observed_at="2026-10-05T00:00:00+00:00",
+        metadata={
+            "keep": "this metadata",
+            "url_verification": {"status_code": 200, "reachable": True},
+        },
     )
 
     result = await verify_evidence_records([record])
 
     assert result[0].verification_state == "unknown"
     assert result[0].verification_observed_at is None
+    assert "url_verification" not in result[0].metadata
+    assert result[0].metadata["keep"] == "this metadata"
 
 
 @pytest.mark.asyncio
@@ -110,6 +118,12 @@ async def test_verify_evidence_records_isolates_per_record_failure(monkeypatch) 
     good, bad = make_record("good", "https://example.com/good"), make_record(
         "bad", "https://example.com/bad"
     )
+    bad.verification_state = "reachable"
+    bad.verification_observed_at = "2026-10-05T00:00:00+00:00"
+    bad.metadata = {
+        "keep": "other metadata",
+        "url_verification": {"status_code": 200, "reachable": True},
+    }
 
     result = await verify_evidence_records([good, bad], concurrency=2)
 
@@ -118,6 +132,8 @@ async def test_verify_evidence_records_isolates_per_record_failure(monkeypatch) 
     assert result[0].verification_observed_at
     assert result[1].verification_state == "unknown"
     assert result[1].verification_observed_at is None
+    assert "url_verification" not in result[1].metadata
+    assert result[1].metadata["keep"] == "other metadata"
 
 
 @pytest.mark.asyncio
