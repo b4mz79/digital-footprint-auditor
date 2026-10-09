@@ -32,7 +32,13 @@ The launcher moves mutable cache/config files out of the bundled runtime. Prompt
 
 ## Build requirements
 
-Use the project's existing Windows virtual environment with all application dependencies installed from `requirements.txt`. Then the build script installs PyInstaller 6.x.
+- Use CPython **3.12.x** on Windows.
+- Create the project's `venv` with that interpreter.
+- The build script installs the exact package versions from
+  `packaging/locks/windows-py312.lock.txt`, then runs `pip check` and
+  validates the packaging inputs before invoking PyInstaller.
+- Do not substitute the Linux lockfile or manually upgrade PyInstaller without
+  refreshing and revalidating the lock.
 
 Run:
 
