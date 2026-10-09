@@ -130,6 +130,32 @@ def set_secure_file_permissions(file_path: Path) -> None:
             return
 
         logger.warning("Unsupported platform for explicit cache ACL hardening")
+    except subprocess.CalledProcessError as exc:
+        # icacls output is useful for diagnosing Windows ACL failures, but keep
+        # diagnostics bounded and avoid leaking full filesystem paths into logs.
+        command = exc.cmd if isinstance(exc.cmd, (list, tuple)) else []
+        operation = (
+            "reset"
+            if "/reset" in command
+            else "apply_acl"
+            if "icacls" in command
+            else "windows_identity"
+        )
+        detail = str(exc.stderr or exc.stdout or "").strip()
+        if detail:
+            detail = detail.replace(str(path), path.name)
+            detail = re.sub(r"[\\x00-\\x1f\\x7f]+", " ", detail)
+            detail = " ".join(detail.split())[:240]
+        else:
+            detail = "no diagnostic output"
+        logger.error(
+            "Windows ACL command failed: operation=%s returncode=%s detail=%s",
+            operation,
+            exc.returncode,
+            detail,
+        )
+        logger.exception("Unable to harden cache file permissions: %s", _mask_path(path))
+        raise
     except Exception:
         # Fail closed for POSIX because chmod failure leaves the file potentially
         # readable by other local accounts. On Windows, ACL tooling may be absent;
