@@ -197,3 +197,42 @@ def test_existing_cache_key_file_permissions_are_hardened(tmp_path, monkeypatch)
 
     assert cache_security._read_existing_key_file(key_path) == key
     assert hardened == [key_path]
+
+def test_save_analysis_cache_ext_reports_failure(monkeypatch, caplog) -> None:
+    def fail_save(*args, **kwargs):
+        raise PermissionError("synthetic cache permission failure")
+
+    monkeypatch.setattr(ai_agent, "get_cache_filepath_ext", lambda *args, **kwargs: "ignored")
+    monkeypatch.setattr(ai_agent, "save_encrypted_json", fail_save)
+
+    assert ai_agent.save_analysis_cache_ext(
+        "user@example.com",
+        {"analysis": []},
+    ) is False
+    assert "Error saving: PermissionError" in caplog.text
+
+
+def test_windows_acl_failure_logs_bounded_diagnostic(monkeypatch, tmp_path, caplog) -> None:
+    import subprocess
+
+    path = tmp_path / ".cache_key"
+
+    monkeypatch.setattr(cache_security.os, "name", "nt")
+    monkeypatch.setattr(cache_security, "_get_windows_user_sid", lambda: "S-1-5-21-123")
+    monkeypatch.setattr(
+        cache_security.subprocess,
+        "run",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            subprocess.CalledProcessError(
+                5,
+                ["icacls", str(path), "/reset"],
+                stderr="Access is denied.\\r\\n",
+            )
+        ),
+    )
+
+    with pytest.raises(subprocess.CalledProcessError):
+        cache_security.set_secure_file_permissions(path)
+
+    assert "operation=reset returncode=5 detail=Access is denied." in caplog.text
+    assert str(path) not in caplog.text
