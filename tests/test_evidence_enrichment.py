@@ -859,11 +859,32 @@ async def test_enrichment_cache_hit_skips_firecrawl(monkeypatch) -> None:
         summary="Observed service association.",
         assertion_scope="service_association_only",
     )
-    cached = base.to_dict()
+    cached = EvidenceRecord(
+        evidence_id="cached-context-hit",
+        source="Kaspersky Securelist",
+        source_type="security_publication",
+        relation=EvidenceRelation.SECURITY_PUBLICATION,
+        directness=EvidenceDirectness.CONTEXTUAL,
+        confidence=0.65,
+        observed_at="2026-10-05T00:00:00+00:00",
+        published_at="2026-10-01",
+        domain="example.com",
+        url="https://securelist.com/example",
+        title="Example.com phishing research",
+        summary="Security publication context.",
+        provenance={
+            "provider": "firecrawl_search",
+            "publisher_domain": "securelist.com",
+            "query_scope": "domain_only",
+            "relevance_filter": module.CONTEXTUAL_FILTER_NAME,
+            "assertion_scope": "security_publication_context_only",
+        },
+        assertion_scope="security_publication_context_only",
+    )
 
     monkeypatch.setenv("FIRECRAWL_API_KEY", "test-key")
     monkeypatch.setenv("EVIDENCE_ENRICHMENT_CACHE_ENABLED", "true")
-    monkeypatch.setattr(module, "load_enrichment_cache", lambda *args, **kwargs: [cached])
+    monkeypatch.setattr(module, "load_enrichment_cache", lambda *args, **kwargs: [cached.to_dict()])
     monkeypatch.setattr(
         module,
         "FirecrawlSecurityPublicationProvider",
@@ -874,8 +895,10 @@ async def test_enrichment_cache_hit_skips_firecrawl(monkeypatch) -> None:
 
     result = await module.enrich_evidence([base], tenant_id="tenant-a")
 
-    assert len(result) == 1
-    assert result[0].evidence_id == "base-cache"
+    assert {record.evidence_id for record in result} == {
+        "base-cache",
+        "cached-context-hit",
+    }
 
 
 @pytest.mark.asyncio
@@ -911,6 +934,13 @@ async def test_enrichment_cache_hit_preserves_current_base_state(monkeypatch) ->
         url="https://securelist.com/example-phishing/",
         title="Example.com phishing research",
         summary="Security publication context.",
+        provenance={
+            "provider": "firecrawl_search",
+            "publisher_domain": "securelist.com",
+            "query_scope": "domain_only",
+            "relevance_filter": module.CONTEXTUAL_FILTER_NAME,
+            "assertion_scope": "security_publication_context_only",
+        },
         assertion_scope="security_publication_context_only",
     )
     current_base = EvidenceRecord(
