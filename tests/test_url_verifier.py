@@ -66,6 +66,7 @@ async def test_verify_public_url_pins_ip_and_preserves_host_and_tls_name(
     assert [request.method for request in requests] == ["HEAD", "GET"]
     assert all(str(request.url) == f"https://{PUBLIC_IP}/public" for request in requests)
     assert all(request.headers["host"] == "example.com" for request in requests)
+    assert all(request.headers["accept-encoding"] == "identity" for request in requests)
     assert all(request.extensions["sni_hostname"] == "example.com" for request in requests)
 
 
@@ -283,3 +284,38 @@ async def test_title_fetch_reads_only_bounded_body_and_closes_responses(
     # Streaming may read at most one additional 8 KiB chunk before truncation;
     # it must never consume the entire 200 KiB response.
     assert streams["GET"].bytes_yielded <= url_verifier.MAX_TITLE_BYTES + 8192
+
+
+@pytest.mark.asyncio
+async def test_title_fetch_does_not_decode_untrusted_compressed_body(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        url_verifier,
+        "_resolve_public_addresses",
+        lambda hostname, port=None: [PUBLIC_IP],
+    )
+    streams: dict[str, TrackingStream] = {}
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        stream = TrackingStream(b"x" * 200_000)
+        streams[request.method] = stream
+        headers = {"content-type": "text/html"}
+        if request.method == "GET":
+            headers["content-encoding"] = "gzip"
+        return httpx.Response(200, headers=headers, stream=stream, request=request)
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler),
+        follow_redirects=True,
+    ) as client:
+        result = await verify_public_url(
+            "https://public.example/report",
+            client=client,
+            fetch_title=True,
+        )
+
+    assert result.reachable is True
+    assert result.title == ""
+    assert streams["GET"].bytes_yielded == 0
+    assert streams["GET"].closed is True
