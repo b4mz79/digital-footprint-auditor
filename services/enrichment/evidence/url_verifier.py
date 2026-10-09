@@ -228,7 +228,11 @@ async def verify_public_url(
     client: httpx.AsyncClient | None = None,
     fetch_title: bool = False,
 ) -> URLVerification:
-    """Verify URL accessibility using validated IPs; never follow redirects."""
+    """Verify URL accessibility using validated IPs; never follow redirects.
+
+    An injected client is caller-controlled infrastructure: its transport must
+    honor the pinned IP destination and must not disable TLS certificate checks.
+    """
     value, parsed, host_header, tls_hostname, addresses = _validated_url_target(url)
     owns_client = client is None
     http = client or httpx.AsyncClient(
