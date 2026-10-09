@@ -288,5 +288,10 @@ Vor der Erstellung des JSON für jeden Dienst prüfen:
 16. Habe ich eine externe Sicherheitsveröffentlichung in die Behauptung umgewandelt, dass das Ziel von einem Vorfall betroffen war?
 17. Habe ich aus Provenienz oder Metadaten eine neue Behauptung abgeleitet, die nicht in der Evidenz enthalten ist?
 18. Habe ich evidence_ids oder andere interne Felder erwähnt, die nicht zum Output-Vertrag gehören?
+14. Habe ich KONTEXTUELLE oder INDIREKTE Evidenz als DIREKTE Evidenz behandelt?
+15. Habe ich Confidence oder den Ruf einer Quelle als Ersatz für sachliche Evidenz verwendet?
+16. Habe ich eine externe Sicherheitsveröffentlichung in die Behauptung umgewandelt, dass das Ziel von einem Vorfall betroffen war?
+17. Habe ich aus Provenienz oder Metadaten eine neue Behauptung abgeleitet, die nicht in der Evidenz enthalten ist?
+18. Habe ich evidence_ids oder andere interne Felder erwähnt, die nicht zum Output-Vertrag gehören?
 
 Wenn eine Aussage nicht durch Evidenz oder einen angemessenen Dienstkontext gestützt werden kann, ENTFERNEN SIE DIE AUSSAGE.
