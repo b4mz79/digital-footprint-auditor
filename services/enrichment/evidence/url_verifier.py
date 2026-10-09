@@ -171,7 +171,7 @@ async def _send_pinned_request(
         method,
         request_url,
         timeout=timeout_seconds,
-        headers={"Host": host_header},
+        headers={"Host": host_header, "Accept-Encoding": "identity"},
         extensions=extensions,
     )
     # Enforce redirect policy on the individual request, even for injected
@@ -185,13 +185,13 @@ async def _read_limited_body(
     *,
     max_bytes: int,
 ) -> bytes:
-    """Read at most max_bytes of decoded response content."""
+    """Read at most max_bytes of raw response bytes."""
     if max_bytes <= 0:
         return b""
 
     chunks: list[bytes] = []
     total = 0
-    async for chunk in response.aiter_bytes(chunk_size=8192):
+    async for chunk in response.aiter_raw(chunk_size=8192):
         remaining = max_bytes - total
         if remaining <= 0:
             break
@@ -296,7 +296,14 @@ async def verify_public_url(
                             tls_hostname=tls_hostname,
                             scheme=parsed.scheme.lower(),
                         )
-                        if get_response.status_code < 500 and not get_response.is_redirect:
+                        content_encoding = get_response.headers.get(
+                            "content-encoding", ""
+                        ).strip().lower()
+                        if (
+                            get_response.status_code < 500
+                            and not get_response.is_redirect
+                            and content_encoding in {"", "identity"}
+                        ):
                             body = await _read_limited_body(
                                 get_response,
                                 max_bytes=MAX_TITLE_BYTES,
