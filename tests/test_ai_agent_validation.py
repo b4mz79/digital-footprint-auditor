@@ -185,6 +185,25 @@ def test_cached_analysis_rebuild_rejects_forged_evidence_lineage() -> None:
     assert "unrelated-evidence" not in rebuilt[0]["evidence_ids"]
 
 
+def test_finalize_analysis_normalizes_unsupported_reason_when_already_unknown() -> None:
+    services = [{"name": "Example", "domain": "example.com", "subject": "Welcome! Verify your email address."}]
+    analysis = [{
+        "service": "Example",
+        "risk_key": "unknown",
+        "risk_level": "Unknown",
+        "reason": "Insufficient evidence to determine risk.",
+        "delete_url": "https://example.com/delete",
+    }]
+
+    finalized, exposures = ai_agent._finalize_analysis(analysis, services, [], "en")
+
+    assert exposures == []
+    assert finalized[0]["risk_key"] == "unknown"
+    assert finalized[0]["reason"] == ai_agent.t("unknown_generic_event_reason", lang="en")
+    assert finalized[0]["delete_url"] == "-"
+    assert finalized[0]["risk_guarded"] is True
+
+
 def test_build_user_prompt_marks_incomplete_breach_scan() -> None:
     prompt = ai_agent.build_user_prompt(
         "user@example.org",
