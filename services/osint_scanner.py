@@ -14,6 +14,7 @@ from utils.paths import resolve_data_path
 
 from utils.domains import display_name
 from utils.logging_setup import get_logger
+from utils.envutil import env_bool
 from utils.privacy import mask_email
 from utils.translations import t
 
@@ -100,7 +101,12 @@ async def _run_holehe(email_address: str) -> tuple[list[dict], int, int]:
     results: list[dict] = []
     errors = 0
     rate_limited = 0
-    client = httpx.AsyncClient(timeout=HOLEHE_HTTP_TIMEOUT_SECONDS, follow_redirects=False)
+    trust_env = env_bool("HTTPX_TRUST_ENV", False)
+    client = httpx.AsyncClient(
+        timeout=HOLEHE_HTTP_TIMEOUT_SECONDS,
+        follow_redirects=False,
+        trust_env=trust_env,
+    )
     limiter = trio.Semaphore(HOLEHE_MAX_CONCURRENCY)
 
     async def run_module(module) -> None:
