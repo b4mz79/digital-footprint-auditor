@@ -477,6 +477,7 @@ async def test_firecrawl_provider_swallows_provider_failure() -> None:
         await client.aclose()
 
     assert records == []
+    assert provider.had_failures is True
 
 
 @pytest.mark.asyncio
