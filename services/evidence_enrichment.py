@@ -432,11 +432,9 @@ async def enrich_evidence(
         results: list[list[EvidenceRecord] | Exception] = []
         loop = asyncio.get_running_loop()
         deadline = loop.time() + total_timeout_seconds
-        timed_out = False
         for start in range(0, len(domains), domain_concurrency):
             remaining = deadline - loop.time()
             if remaining <= 0:
-                timed_out = True
                 logger.warning(
                     "[Evidence Enrichment] Total runtime budget exhausted between batches; completed_domains=%d/%d.",
                     len(results),
@@ -463,7 +461,6 @@ async def enrich_evidence(
                     results.append(exc)
 
             if pending:
-                timed_out = True
                 for task in pending:
                     task.cancel()
                 await asyncio.gather(*pending, return_exceptions=True)
