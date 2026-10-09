@@ -42,8 +42,15 @@ async def verify_evidence_records(
     enabled: bool | None = None,
     timeout_seconds: float | None = None,
     concurrency: int | None = None,
+    total_timeout_seconds: float | None = None,
 ) -> list[EvidenceRecord]:
-    """Annotate existing evidence with scoped URL accessibility state."""
+    """Annotate existing evidence with scoped URL accessibility state.
+
+    A batch-wide deadline bounds pipeline latency independently of per-URL
+    timeouts. Records that do not finish within the budget remain UNKNOWN;
+    this signal describes URL accessibility only, never account validity or
+    target compromise.
+    """
     items = list(records)
     if enabled is None:
         enabled = os.getenv("EVIDENCE_URL_VERIFICATION_ENABLED", "true").strip().lower() in {
@@ -61,6 +68,16 @@ async def verify_evidence_records(
         if timeout_seconds is not None
         else env_positive_float("EVIDENCE_URL_VERIFICATION_TIMEOUT_SECONDS", 12.0, 120.0)
     )
+    total_timeout = (
+        total_timeout_seconds
+        if total_timeout_seconds is not None
+        else env_positive_float(
+            "EVIDENCE_URL_VERIFICATION_TOTAL_TIMEOUT_SECONDS", 120.0, 900.0
+        )
+    )
+    if total_timeout <= 0:
+        raise ValueError("total_timeout_seconds must be > 0")
+
     limit = (
         max(1, int(concurrency))
         if concurrency is not None
@@ -128,7 +145,57 @@ async def verify_evidence_records(
                         },
                     }
 
-            await asyncio.gather(*(verify_one(record) for record in targets))
+            tasks = {
+                asyncio.create_task(verify_one(record)): record
+                for record in targets
+            }
+            try:
+                done, pending = await asyncio.wait(
+                    tasks,
+                    timeout=total_timeout,
+                    return_when=asyncio.ALL_COMPLETED,
+                )
+
+                # Consume unexpected task exceptions individually. One malformed
+                # record must not downgrade the other records in the same batch.
+                for task in done:
+                    record = tasks[task]
+                    try:
+                        task.result()
+                    except asyncio.CancelledError:
+                        mark_verification_unknown(record)
+                    except Exception as exc:
+                        logger.warning(
+                            "[Evidence Verification] Unexpected task failure: %s",
+                            type(exc).__name__,
+                        )
+                        mark_verification_unknown(record)
+
+                if pending:
+                    # Stop unfinished probes before mutating their records, so a
+                    # cancelled coroutine cannot later overwrite UNKNOWN with stale
+                    # reachability metadata.
+                    for task in pending:
+                        task.cancel()
+                    await asyncio.gather(*pending, return_exceptions=True)
+                    for task in pending:
+                        mark_verification_unknown(tasks[task])
+                    logger.warning(
+                        "[Evidence Verification] Total deadline reached; "
+                        "completed=%d pending=%d total=%d timeout_seconds=%.2f",
+                        len(done),
+                        len(pending),
+                        len(tasks),
+                        total_timeout,
+                    )
+            finally:
+                # Parent-task cancellation must propagate, but all child probes
+                # must be cancelled and awaited before the shared HTTP client exits.
+                unfinished = [task for task in tasks if not task.done()]
+                for task in unfinished:
+                    task.cancel()
+                if unfinished:
+                    await asyncio.gather(*unfinished, return_exceptions=True)
     except Exception as exc:
         # Client construction/setup failures can bypass the per-URL handler.
         # Do not leak old reachability metadata through the pipeline fallback.
