@@ -119,6 +119,6 @@ def test_all_dsr_templates_have_matching_runtime_placeholders_and_requests() -> 
         assert "27/2022" in reference_line or "27 Tahun 2022" in reference_line, (
             f"Indonesia PDP Law reference missing from DSR template: {lang}"
         )
-        assert any(token in reference_line.upper() for token in ("GDPR", "RGPD", "AVG")), (
+        assert any(token in reference_line.upper() for token in ("GDPR", "RGPD", "AVG", "DSGVO")), (
             f"GDPR reference scope missing from DSR template: {lang}"
         )
