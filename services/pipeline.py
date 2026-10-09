@@ -25,6 +25,7 @@ from services.imap_scanner import IMAP_CACHE_DIR, imap_cache_enabled, load_imap_
 from services.osint_scanner import OSINT_CACHE_DIR, load_osint_cache, osint_cache_enabled, save_osint_cache, scan_osint_footprint
 from utils.envutil import env_bool, env_non_negative_int
 from utils.logging_setup import get_logger
+from utils.translations import t
 
 logger = get_logger("Pipeline")
 
@@ -193,7 +194,9 @@ def run_scan(
             emit(
                 _event(
                     "error",
-                    text=f"Error Add-on event {event_name}: {exc}",
+                    key="error_addon_event",
+                    event_name=event_name,
+                    error=str(exc),
                 )
             )
             return
@@ -241,7 +244,9 @@ def run_scan(
             emit(
                 _event(
                     "success",
-                    text=f"Add-on {addon_id} event {event_name} selesai.",
+                    key="addon_event_finished",
+                    addon_id=addon_id,
+                    event_name=event_name,
                     stage=addon_id,
                 ),
                 live_payload,
@@ -264,7 +269,7 @@ def run_scan(
                     if imap_cache_on:
                         save_imap_cache(email, found, tenant_id=tenant_id)
                 except Exception as exc:
-                    emit(_event("error", text=f"Error IMAP: {exc}", stage="imap"))
+                    emit(_event("error", "error_imap", stage="imap", error=str(exc)))
                     found = None
             if found is not None:
                 state["services"].extend(found)
@@ -289,7 +294,7 @@ def run_scan(
                 if osint_cache_on:
                     save_osint_cache(email, found, tenant_id=tenant_id)
             except Exception as exc:
-                emit(_event("error", text=f"Error OSINT: {exc}", stage="osint"))
+                emit(_event("error", "error_osint", stage="osint", error=str(exc)))
                 found = None
         if found is not None:
             state["services"].extend(found)
@@ -323,7 +328,7 @@ def run_scan(
             emit(
                 _event(
                     "info",
-                    text="Breach scan selesai.",
+                    key="breach_scan_complete",
                     stage="breach",
                 ),
                 {"breach": dict(state["breach"])},
@@ -335,7 +340,7 @@ def run_scan(
             )
         except Exception as exc:
             state["breach"]["error"] = str(exc)
-            emit(_event("error", text=f"Error Breach Scan: {exc}", stage="breach"))
+            emit(_event("error", "error_breach_scan", stage="breach", error=str(exc)))
 
     # Step 4: Evidence Enrichment
     #
@@ -354,10 +359,10 @@ def run_scan(
         emit(
             _event(
                 "info",
-                text=(
-                    "Memulai Evidence & Enrichment..."
+                key=(
+                    "evidence_enrichment_start"
                     if os.getenv("FIRECRAWL_API_KEY", "").strip()
-                    else "Evidence & Enrichment dilewati: Firecrawl API tidak dikonfigurasi."
+                    else "evidence_enrichment_skipped"
                 ),
                 stage="evidence_start",
             ),
@@ -413,11 +418,7 @@ def run_scan(
         emit(
             _event(
                 "success",
-                text=(
-                    "Evidence normalization & enrichment selesai. "
-                    f"Total={len(state['evidence'])}; "
-                    f"contextual={contextual_count}."
-                ),
+                key="evidence_enrichment_complete",
                 stage="evidence",
                 count=len(state["evidence"]),
                 contextual_count=contextual_count,
@@ -499,7 +500,7 @@ def run_ai(
         state["ai"], state["ai_lang"] = None, lang
         return state
 
-    emit(_event("info", text="Memulai AI Privacy Audit...", stage="ai"))
+    emit(_event("info", "spinner_ai", stage="ai"))
 
     def on_analysis_item(item: dict[str, Any]) -> None:
         emit(
@@ -555,7 +556,7 @@ def run_ai(
         emit(
             _event(
                 "success",
-                text="AI Privacy Audit selesai.",
+                key="ai_completed",
                 stage="ai",
             ),
             {"ai": state["ai"]},
@@ -563,4 +564,4 @@ def run_ai(
     except Exception as exc:
         state["ai"] = None
         logger.exception("[Pipeline] AI execution failed")
-        emit(_event("error", text=f"Error AI: {type(exc).__name__}: {exc}", stage="ai"))
+        emit(_event("error", "ai_failed", stage="ai", error_type=type(exc).__name__, error=str(exc)))
