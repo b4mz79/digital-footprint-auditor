@@ -421,9 +421,11 @@ async def enrich_evidence(
     output = list(merged.values())
 
     if (
-        failed == 0
+        enrichment_cache_enabled()
+        and failed == 0
         and len(results) == len(domains)
         and not provider.cooldown_active
+        and not getattr(provider, "had_failures", False)
     ):
         save_enrichment_cache(
             cache_payload,

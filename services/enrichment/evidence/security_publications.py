@@ -488,6 +488,9 @@ class FirecrawlSecurityPublicationProvider:
         self._request_rate_gate = _RequestRateGate(self.requests_per_minute)
         self._cooldown_until = 0.0
         self._cooldown_lock = asyncio.Lock()
+        # Any publisher failure makes the aggregate search incomplete. Keep
+        # usable partial results, but do not persist them as a complete cache hit.
+        self.had_failures = False
         self.publishers = tuple(
             SecurityPublisher(name=name, domain=domain)
             for name, domain in publishers
@@ -750,6 +753,9 @@ class FirecrawlSecurityPublicationProvider:
                 )
                 continue
             evidence.extend(result)
+
+        if failed or rate_limited:
+            self.had_failures = True
 
         # Deduplicate by evidence id while retaining publisher provenance.
         unique: dict[str, EvidenceRecord] = {}

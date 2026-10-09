@@ -846,6 +846,61 @@ async def test_enrichment_cache_hit_preserves_current_base_state(monkeypatch) ->
     assert by_id["cached-context"].assertion_scope == "security_publication_context_only"
 
 
+@pytest.mark.parametrize(
+    "cache_enabled, provider_failed, expected_write",
+    [
+        (False, False, False),
+        (True, True, False),
+        (True, False, True),
+    ],
+)
+@pytest.mark.asyncio
+async def test_enrichment_cache_writes_only_when_enabled_and_complete(
+    monkeypatch, cache_enabled, provider_failed, expected_write
+) -> None:
+    import services.evidence_enrichment as module
+
+    writes: list[tuple[object, ...]] = []
+
+    class FakeProvider:
+        def __init__(self, **kwargs):
+            self.cooldown_active = False
+            self.had_failures = provider_failed
+
+        async def search_domain(self, domain):
+            return []
+
+    base = EvidenceRecord(
+        evidence_id="base-cache-policy",
+        source="OSINT",
+        source_type="osint",
+        relation=EvidenceRelation.TARGET_RESOURCE,
+        directness=EvidenceDirectness.DIRECT,
+        confidence=0.8,
+        observed_at="2026-10-09T00:00:00+00:00",
+        published_at=None,
+        domain="example.com",
+        url="",
+        title="Target-associated service: Example",
+        summary="Observed service association.",
+        assertion_scope="service_association_only",
+    )
+
+    monkeypatch.setenv(
+        "EVIDENCE_ENRICHMENT_CACHE_ENABLED",
+        "true" if cache_enabled else "false",
+    )
+    monkeypatch.setattr(module, "load_enrichment_cache", lambda *args, **kwargs: None)
+    monkeypatch.setattr(module, "save_enrichment_cache", lambda *args, **kwargs: writes.append(args))
+    monkeypatch.setattr(module, "FirecrawlSecurityPublicationProvider", FakeProvider)
+
+    result = await module.enrich_evidence([base], firecrawl_api_key="test-key")
+
+    assert len(result) == 1
+    assert bool(writes) is expected_write
+
+
+
 def test_contextual_relevance_does_not_treat_public_suffix_as_target_alias() -> None:
     from services.enrichment.evidence.security_publications import _contextual_relevance
 
