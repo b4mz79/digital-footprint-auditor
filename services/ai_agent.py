@@ -659,14 +659,17 @@ def _sanitize_evidence_records(evidence_records: list | None) -> list[dict[str, 
             return (0, 0)
         return (1, 0)
 
+    # Filter scanner mirrors before applying the evidence-record cap. The
+    # pipeline appends enrichment after normalized scanner records, so slicing
+    # first could consume the entire cap with records this function then drops.
     records = sorted(
         (
             pair
-            for pair in enumerate(evidence_records[:MAX_EVIDENCE_RECORDS])
+            for pair in enumerate(evidence_records)
             if not is_base_scanner_mirror(pair[1])
         ),
         key=lambda pair: (priority(pair[1]), pair[0]),
-    )
+    )[:MAX_EVIDENCE_RECORDS]
 
     out: list[dict[str, Any]] = []
     payload_chars = 2
@@ -946,6 +949,11 @@ def build_user_prompt(
         "Evidence fields describe provenance and relationship. "
         "A contextual or indirect record is not proof of direct target compromise. "
         "Do not upgrade a risk conclusion solely because a security publication mentions a related domain.\n"
+        "Verification is narrowly scoped: verification_scope='url_accessibility' and "
+        "verification_state='reachable' mean only that the URL responded during the check; "
+        "'unreachable' means it could not be reached at that time. Neither state proves or "
+        "disproves the publication's claims, source legitimacy, target exposure, compromise, "
+        "or maliciousness. Never raise risk solely because a URL is unreachable.\n"
         "The real target identity is intentionally withheld from the cloud model."
     )
     if AI_FORENSIC_TELEMETRY:
