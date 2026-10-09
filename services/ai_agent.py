@@ -964,7 +964,7 @@ def build_user_prompt(
         "Even assertion_scope='service_association_only' supports only an observed service association, "
         "not compromise, sensitive-data exposure, or independent proof of account ownership. "
         "A contextual or indirect record is not proof of direct target compromise. "
-        "Do not upgrade a risk conclusion solely because a security publication mentions a related domain.\\n"
+        "Do not upgrade a risk conclusion solely because a security publication mentions a related domain.\n"
         "Verification is narrowly scoped: verification_scope='url_accessibility' and "
         "verification_state='reachable' mean only that the URL responded during the check; "
         "'unreachable' means it could not be reached at that time. Neither state proves or "
