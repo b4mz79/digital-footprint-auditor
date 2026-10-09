@@ -769,6 +769,78 @@ async def test_enrich_evidence_applies_contextual_output_budget(monkeypatch) -> 
 
 
 @pytest.mark.asyncio
+async def test_contextual_budget_orders_publication_timestamps_by_utc(monkeypatch) -> None:
+    import services.evidence_enrichment as module
+
+    base = EvidenceRecord(
+        evidence_id="base-time-order",
+        source="OSINT",
+        source_type="osint",
+        relation=EvidenceRelation.TARGET_RESOURCE,
+        directness=EvidenceDirectness.DIRECT,
+        confidence=0.8,
+        observed_at="2026-10-09T00:00:00+00:00",
+        published_at=None,
+        domain="example.com",
+        url="",
+        title="Target-associated service: Example",
+        summary="Observed service association.",
+    )
+
+    class FakeProvider:
+        def __init__(self, **kwargs):
+            self.cooldown_active = False
+            self.had_failures = False
+
+        async def search_domain(self, domain):
+            assert domain == "example.com"
+            return [
+                EvidenceRecord(
+                    evidence_id="publication-earlier-utc",
+                    source="Kaspersky Securelist",
+                    source_type="security_publication",
+                    relation=EvidenceRelation.SECURITY_PUBLICATION,
+                    directness=EvidenceDirectness.CONTEXTUAL,
+                    confidence=0.65,
+                    observed_at="2026-10-09T00:00:00+00:00",
+                    published_at="2026-10-01T00:30:00+03:00",
+                    domain=domain,
+                    url="https://securelist.com/earlier",
+                    title="Earlier publication",
+                    summary="Security incident context.",
+                ),
+                EvidenceRecord(
+                    evidence_id="publication-later-utc",
+                    source="Kaspersky Securelist",
+                    source_type="security_publication",
+                    relation=EvidenceRelation.SECURITY_PUBLICATION,
+                    directness=EvidenceDirectness.CONTEXTUAL,
+                    confidence=0.65,
+                    observed_at="2026-10-09T00:00:00+00:00",
+                    published_at="2026-10-01T00:00:00Z",
+                    domain=domain,
+                    url="https://securelist.com/later",
+                    title="Later publication",
+                    summary="Security incident context.",
+                ),
+            ]
+
+    monkeypatch.setattr(module, "FirecrawlSecurityPublicationProvider", FakeProvider)
+    monkeypatch.setenv("FIRECRAWL_MAX_CONTEXTUAL_RECORDS_PER_DOMAIN", "1")
+    monkeypatch.setenv("FIRECRAWL_MAX_CONTEXTUAL_RECORDS", "5")
+
+    result = await module.enrich_evidence([base], firecrawl_api_key="test-key")
+    contextual = [
+        record
+        for record in result
+        if record.relation is EvidenceRelation.SECURITY_PUBLICATION
+    ]
+
+    assert len(contextual) == 1
+    assert contextual[0].evidence_id == "publication-later-utc"
+
+
+@pytest.mark.asyncio
 async def test_enrichment_cache_hit_skips_firecrawl(monkeypatch) -> None:
     import services.evidence_enrichment as module
 

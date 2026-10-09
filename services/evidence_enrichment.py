@@ -11,6 +11,7 @@ for the enrichment operation (currently normalized domains).
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timezone
 import hashlib
 import json
 import os
@@ -110,6 +111,20 @@ def save_enrichment_cache(
                 pass
     except Exception:
         return
+
+
+def _publication_datetime_utc(value: str | None) -> datetime:
+    """Return a comparable UTC timestamp for ordering publication dates.
+
+    Date-only values are interpreted as midnight UTC for ordering only; the
+    original source timestamp remains unchanged in the evidence record.
+    """
+    if not value:
+        return datetime.min.replace(tzinfo=timezone.utc)
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 
 DEFAULT_MAX_CONTEXTUAL_RECORDS = 20
@@ -385,7 +400,7 @@ async def enrich_evidence(
         unique_contextual.values(),
         key=lambda record: (
             record.published_at is not None,
-            record.published_at or "",
+            _publication_datetime_utc(record.published_at),
             record.confidence,
             record.evidence_id,
         ),
