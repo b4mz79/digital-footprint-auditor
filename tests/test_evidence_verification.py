@@ -4,6 +4,7 @@ import pytest
 
 from services.enrichment.evidence.models import EvidenceDirectness, EvidenceRecord, EvidenceRelation
 from services.enrichment.verification import verify_evidence_records
+import services.enrichment.verification as verification_module
 
 
 @pytest.mark.asyncio
@@ -142,3 +143,54 @@ async def test_verify_evidence_records_can_be_disabled() -> None:
     assert result[0] is record
     assert result[0].verification_state == "unknown"
     assert result[0].verification_observed_at is None
+
+
+@pytest.mark.asyncio
+async def test_verification_disables_implicit_environment_proxies(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client_options: dict[str, object] = {}
+
+    class StubAsyncClient:
+        def __init__(self, **kwargs) -> None:
+            client_options.update(kwargs)
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+    class Result:
+        reachable = True
+        status_code = 200
+        redirected = False
+        location = None
+        content_type = "text/html"
+
+    async def fake_verify(url, *, timeout_seconds, client):
+        return Result()
+
+    monkeypatch.setattr(verification_module.httpx, "AsyncClient", StubAsyncClient)
+    monkeypatch.setattr(verification_module, "verify_public_url", fake_verify)
+
+    record = EvidenceRecord(
+        evidence_id="proxy-policy",
+        source="Example Security",
+        source_type="security_publication",
+        relation=EvidenceRelation.SECURITY_PUBLICATION,
+        directness=EvidenceDirectness.CONTEXTUAL,
+        confidence=0.65,
+        observed_at="2026-10-05T00:00:00+00:00",
+        published_at="2026-10-01T00:00:00+00:00",
+        domain="example.com",
+        url="https://example.com/report",
+        title="Security report",
+        summary="Security context.",
+        assertion_scope="security_publication_context_only",
+    )
+
+    await verify_evidence_records([record], concurrency=1)
+
+    assert client_options["trust_env"] is False
+    assert client_options["follow_redirects"] is False
