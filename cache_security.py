@@ -149,6 +149,8 @@ def _read_existing_key_file(path: Path) -> bytes:
     if not path.is_file():
         raise RuntimeError(f"Cache key path is not a regular file: {path.name}")
 
+    # Restrict access before reading an existing key, not only after it has been loaded.
+    set_secure_file_permissions(path)
     data = path.read_bytes()
     if not data:
         raise RuntimeError("Cache key file is empty; key recovery is not possible")
@@ -157,10 +159,6 @@ def _read_existing_key_file(path: Path) -> bytes:
         Fernet(data)
     except (ValueError, TypeError):
         raise RuntimeError("Cache key file does not contain a valid Fernet key")
-
-    if os.name == "posix" and (stat_result.st_mode & 0o077):
-        # Best-effort correction, but do not allow a permission failure silently.
-        os.chmod(path, 0o600)
 
     return data
 

@@ -121,6 +121,8 @@ class LauncherConfig:
             lines.extend(f"{key}={updates[key]}" for key in missing)
 
         self.env_file.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+        if os.name == "posix":
+            self.env_file.chmod(0o600)
         self.values = self._read()
 
 
@@ -143,6 +145,10 @@ def user_data_dir() -> Path:
         root = Path(os.getenv("LOCALAPPDATA") or Path.home() / "AppData" / "Local") / APP_NAME
 
     root.mkdir(parents=True, exist_ok=True)
+    # The launcher stores API keys and a Gmail App Password here. On POSIX,
+    # the default umask can leave this directory traversable by other users.
+    if os.name == "posix":
+        root.chmod(0o700)
     return root
 
 #def user_data_dir() -> Path:
@@ -176,6 +182,8 @@ def prepare_environment() -> tuple[Path, bool]:
         env_file.write_text(example.read_text(encoding="utf-8"), encoding="utf-8")
 
     _ensure_pepper(env_file)
+    if os.name == "posix":
+        env_file.chmod(0o600)
     load_dotenv(env_file, override=False)
 
     cache_dir = data_dir / "cache"

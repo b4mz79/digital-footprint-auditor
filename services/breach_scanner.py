@@ -101,7 +101,7 @@ ENGINE_CIRCUITS = CircuitRegistry()
 ENGINE_HEALTH = HealthRegistry()
 _ENGINE_COOLDOWN_UNTIL: dict[str, float] = {}
 
-BREACH_QUEUE_WORKERS = _env_non_negative_int("BREACH_QUEUE_WORKERS", 2, maximum=32)
+BREACH_QUEUE_WORKERS = max(1, _env_non_negative_int("BREACH_QUEUE_WORKERS", 2, maximum=32))
 BREACH_CACHE_SCHEMA_VERSION = 1
 BREACH_ENGINE_COOLDOWN = float(os.getenv("BREACH_ENGINE_COOLDOWN", "60"))
 
@@ -836,7 +836,7 @@ async def scan_bing_scrape_async(client: httpx.AsyncClient, target: str, lang: s
         status_code, response_text = await _request_text_limited(
             client, "GET", "https://www.bing.com/search",
             headers=headers, params={"q": query}, timeout=REQUEST_TIMEOUT,
-            follow_redirects=True, max_bytes=RESPONSE_LIMIT_HTML, raise_for_status=False,
+            follow_redirects=False, max_bytes=RESPONSE_LIMIT_HTML, raise_for_status=False,
         )
         if status_code != 200:
             logger.warning("[Bing Scraper] HTTP status: %s", status_code)
@@ -1043,7 +1043,10 @@ async def run_engine_queue_v2(plan: list[tuple[str, object]]) -> list[EngineResu
             finally:
                 queue.task_done()
 
-    workers = [asyncio.create_task(worker()) for _ in range(BREACH_QUEUE_WORKERS)]
+    # A zero-worker queue would leave every item unfinished and block queue.join() forever.
+    # Clamp again at the execution boundary so runtime overrides cannot reintroduce the hang.
+    worker_count = max(1, int(BREACH_QUEUE_WORKERS))
+    workers = [asyncio.create_task(worker()) for _ in range(worker_count)]
     await queue.join()
     for task in workers:
         task.cancel()

@@ -180,3 +180,20 @@ async def test_explicit_cache_clear_invalidates_pending_ai_write(monkeypatch) ->
     deferred_targets[0]()
 
     assert saved == []
+
+
+
+def test_existing_cache_key_file_permissions_are_hardened(tmp_path, monkeypatch) -> None:
+    key_path = tmp_path / ".cache_key"
+    key = Fernet.generate_key()
+    key_path.write_bytes(key)
+    hardened = []
+
+    monkeypatch.setattr(
+        cache_security,
+        "set_secure_file_permissions",
+        lambda path: hardened.append(path),
+    )
+
+    assert cache_security._read_existing_key_file(key_path) == key
+    assert hardened == [key_path]
