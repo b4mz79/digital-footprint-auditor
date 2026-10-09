@@ -110,6 +110,7 @@ def _validate_python_tree(tree: ast.AST, relative_path: str) -> None:
     # add-on-local lifecycle logs/state. This is a static screening rule, not
     # runtime filesystem confinement.
     local_path_names: set[str] = set()
+    approved_path_bindings: set[int] = set()
     for node in ast.walk(tree):
         if isinstance(node, (ast.Assign, ast.AnnAssign)):
             value = node.value
@@ -118,6 +119,29 @@ def _validate_python_tree(tree: ast.AST, relative_path: str) -> None:
                 for target in targets:
                     if isinstance(target, ast.Name):
                         local_path_names.add(target.id)
+                        approved_path_bindings.add(id(target))
+
+    # A name that was once bound to a safe sibling path must not be rebound
+    # to an arbitrary object or shadowed by a function parameter. Otherwise
+    # the later receiver check would trust the name rather than its value.
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Name)
+            and node.id in local_path_names
+            and isinstance(node.ctx, ast.Store)
+            and id(node) not in approved_path_bindings
+        ):
+            _reject(
+                relative_path,
+                node.lineno,
+                f"local path variable may not be rebound: {node.id}",
+            )
+        if isinstance(node, ast.arg) and node.arg in local_path_names:
+            _reject(
+                relative_path,
+                node.lineno,
+                f"local path variable may not be shadowed: {node.arg}",
+            )
 
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
