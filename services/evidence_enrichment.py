@@ -437,6 +437,11 @@ async def enrich_evidence(
             remaining = deadline - loop.time()
             if remaining <= 0:
                 timed_out = True
+                logger.warning(
+                    "[Evidence Enrichment] Total runtime budget exhausted between batches; completed_domains=%d/%d.",
+                    len(results),
+                    len(domains),
+                )
                 break
 
             batch = domains[start : start + domain_concurrency]
@@ -478,14 +483,6 @@ async def enrich_evidence(
                 )
                 break
 
-        if timed_out and not any("Total runtime budget reached" in str(message) for message in []):
-            # A deadline can expire between batches, before another batch starts.
-            if loop.time() >= deadline:
-                logger.warning(
-                    "[Evidence Enrichment] Total runtime budget exhausted between batches; completed_domains=%d/%d.",
-                    len(results),
-                    len(domains),
-                )
 
     merged: dict[str, EvidenceRecord] = {
         record.evidence_id: record for record in base
