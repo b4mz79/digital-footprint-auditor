@@ -102,7 +102,7 @@ ENGINE_HEALTH = HealthRegistry()
 _ENGINE_COOLDOWN_UNTIL: dict[str, float] = {}
 
 BREACH_QUEUE_WORKERS = max(1, _env_non_negative_int("BREACH_QUEUE_WORKERS", 2, maximum=32))
-BREACH_CACHE_SCHEMA_VERSION = 1
+BREACH_CACHE_SCHEMA_VERSION = 2
 BREACH_ENGINE_COOLDOWN = float(os.getenv("BREACH_ENGINE_COOLDOWN", "60"))
 
 # SearXNG is administrator-configured, including the case of a private/self-hosted instance.
@@ -1057,30 +1057,82 @@ async def run_engine_queue_v2(plan: list[tuple[str, object]]) -> list[EngineResu
 # Orchestrator
 # =============================================================================
 
-async def scan_data_breaches(email: str, phone: str = "", force_refresh: bool = False, lang: str = "id", tenant_id: str = "default") -> dict:
-    """Run all configured breach scanners asynchronously with bounded resources."""
+def _cached_engine_findings(
+    engine_cache: dict,
+    target: str,
+    engine_name: str,
+) -> tuple[bool, list[dict]]:
+    """Return a cached successful result; an empty list is a valid cached success."""
+    target_results = engine_cache.get(target)
+    if not isinstance(target_results, dict) or engine_name not in target_results:
+        return False, []
+    findings = target_results[engine_name]
+    if not isinstance(findings, list) or not all(isinstance(item, dict) for item in findings):
+        return False, []
+    return True, findings
+
+
+def _store_engine_findings(
+    engine_cache: dict,
+    target: str,
+    engine_name: str,
+    findings: list[dict],
+) -> None:
+    """Store only successful engine responses, including successful empty responses."""
+    engine_cache.setdefault(target, {})[engine_name] = [
+        dict(item) for item in findings if isinstance(item, dict)
+    ]
+
+
+async def scan_data_breaches(
+    email: str,
+    phone: str = "",
+    force_refresh: bool = False,
+    lang: str = "id",
+    tenant_id: str = "default",
+) -> dict:
+    """Run configured breach engines and reuse each successful target/engine result."""
     email = _validate_email_target(email)
     phone = _validate_phone_target(phone) if phone and phone.strip() else ""
-    if not isinstance(force_refresh, bool):
-        force_refresh = bool(force_refresh)
+    force_refresh = bool(force_refresh)
 
-    # Cache is tenant-scoped. The caller in a multi-tenant deployment must pass the
-    # authenticated tenant identifier; it must not be taken from untrusted form data.
     tenant_id = tenant_id.strip()
     if not tenant_id or len(tenant_id) > 128 or CONTROL_CHARS_RE.search(tenant_id):
         raise ValueError("tenant_id tidak valid.")
 
-    if not force_refresh:
-        cached_result = load_breach_cache(email, phone, max_age_hours=12.0, tenant_id=tenant_id)
-        # Only trust caches written by a *complete* scan. Entries without the flag
-        # predate engine-status tracking and may be false "clean" results.
-        if cached_result and cached_result.get("complete") is True:
-            logger.info("[BreachScan] Memuat hasil dari Local Cache.")
-            return cached_result
-
     search_targets = [email]
     if phone:
         search_targets.extend(normalize_phone_number(phone))
+
+    # One encrypted cache file per tenant + normalized scan identity. The payload
+    # records successful responses by target and engine so a failed engine can be
+    # retried without discarding other engines' valid results.
+    engine_cache: dict[str, dict[str, list[dict]]] = {}
+    cached_result = None
+    if not force_refresh:
+        cached_result = load_breach_cache(
+            email,
+            phone,
+            max_age_hours=12.0,
+            tenant_id=tenant_id,
+        )
+    if (
+        isinstance(cached_result, dict)
+        and cached_result.get("targets") == search_targets
+        and isinstance(cached_result.get("engine_results"), dict)
+    ):
+        for target, results_by_engine in cached_result["engine_results"].items():
+            if not isinstance(target, str) or not isinstance(results_by_engine, dict):
+                continue
+            valid_results = {
+                name: [dict(item) for item in findings]
+                for name, findings in results_by_engine.items()
+                if isinstance(name, str)
+                and isinstance(findings, list)
+                and all(isinstance(item, dict) for item in findings)
+            }
+            if valid_results:
+                engine_cache[target] = valid_results
 
     tavily_key = os.getenv("TAVILY_API_KEY", "").strip()
     google_search_key = os.getenv("GOOGLE_SEARCH_API_KEY", "").strip()
@@ -1098,12 +1150,18 @@ async def scan_data_breaches(email: str, phone: str = "", force_refresh: bool = 
         ENGINE_SEARXNG: bool(SEARXNG_INSTANCE_URL),
         ENGINE_DDG: True,
     }
-    stats = {name: {"ok": 0, "failed": 0} for name, on in engine_enabled.items() if on}
-    skipped_engines = [name for name, on in engine_enabled.items() if not on]
+    stats = {
+        name: {"ok": 0, "failed": 0}
+        for name, enabled in engine_enabled.items()
+        if enabled
+    }
+    skipped_engines = [name for name, enabled in engine_enabled.items() if not enabled]
 
     def build_plan(client: httpx.AsyncClient, target: str) -> list[tuple[str, object]]:
         plan: list[tuple[str, object]] = []
-        if engine_enabled[ENGINE_BREACHDIRECTORY] and (target == email or re.fullmatch(r"\+\d{7,15}", target)):
+        if engine_enabled[ENGINE_BREACHDIRECTORY] and (
+            target == email or re.fullmatch(r"\+\d{7,15}", target)
+        ):
             plan.append((
                 ENGINE_BREACHDIRECTORY,
                 lambda: scan_breachdirectory_async(client, target, rapidapi_key),
@@ -1116,7 +1174,9 @@ async def scan_data_breaches(email: str, phone: str = "", force_refresh: bool = 
         if engine_enabled[ENGINE_GOOGLE_API]:
             plan.append((
                 ENGINE_GOOGLE_API,
-                lambda: scan_google_custom_search_async(client, target, google_search_key, google_cx_id, lang=lang),
+                lambda: scan_google_custom_search_async(
+                    client, target, google_search_key, google_cx_id, lang=lang
+                ),
             ))
         plan.append((
             ENGINE_GOOGLE_SCRAPER,
@@ -1144,12 +1204,12 @@ async def scan_data_breaches(email: str, phone: str = "", force_refresh: bool = 
 
     all_findings: list[dict] = []
     active_engines: set[str] = set()
+    cache_hits = 0
+    fresh_engine_calls = 0
     start_time = time.monotonic()
-
     logger.info("=== MEMULAI PARALLEL DATA BREACH SCAN (%d target) ===", len(search_targets))
 
     limits = httpx.Limits(max_connections=10, max_keepalive_connections=5)
-
     async with httpx.AsyncClient(
         limits=limits,
         timeout=REQUEST_TIMEOUT,
@@ -1164,52 +1224,78 @@ async def scan_data_breaches(email: str, phone: str = "", force_refresh: bool = 
                 await asyncio.sleep(DELAY_SECONDS)
 
             plan = build_plan(client, target)
-            engine_results = await run_engine_queue_v2(plan)
+            pending_plan: list[tuple[str, object]] = []
+            target_results: dict[str, list[dict]] = {}
 
-            for engine_result in engine_results:
-                name = engine_result.engine
-                if engine_result.status == EngineStatus.SKIPPED:
-                    logger.warning("[%s] Engine skipped: %s", name, engine_result.error)
-                    continue
-                if engine_result.status != EngineStatus.SUCCESS:
+            for engine_name, factory in plan:
+                found, cached_findings = _cached_engine_findings(
+                    engine_cache, target, engine_name
+                )
+                if found:
+                    target_results[engine_name] = cached_findings
+                    stats[engine_name]["ok"] += 1
+                    cache_hits += 1
+                else:
+                    pending_plan.append((engine_name, factory))
+
+            engine_results = await run_engine_queue_v2(pending_plan)
+            fresh_engine_calls += len(pending_plan)
+
+            for result in engine_results:
+                name = result.engine
+                if result.status == EngineStatus.SUCCESS:
+                    stats[name]["ok"] += 1
+                    masked_findings = [
+                        _mask_web_finding(item)
+                        for item in result.findings[:MAX_FINDINGS_PER_ENGINE]
+                        if isinstance(item, dict)
+                    ]
+                    target_results[name] = masked_findings
+                    _store_engine_findings(engine_cache, target, name, masked_findings)
+                else:
+                    # A failure is deliberately not cached as an empty success.
                     stats[name]["failed"] += 1
-                    logger.warning("[%s] Engine gagal status=%s error=%s", name, engine_result.status.value, engine_result.error)
-                    continue
+                    logger.warning(
+                        "[%s] Engine gagal status=%s error=%s",
+                        name,
+                        result.status.value,
+                        result.error,
+                    )
 
-                stats[name]["ok"] += 1
-                res = engine_result.findings
-                if not res:
+            # Aggregate in plan order for stable output. The total-result cap applies
+            # to displayed findings, not to engine execution or cache completeness.
+            for engine_name, _ in plan:
+                findings = target_results.get(engine_name)
+                if findings is None:
                     continue
                 remaining = MAX_TOTAL_FINDINGS - len(all_findings)
-                if remaining <= 0:
-                    continue
-
-                bounded_results = [_mask_web_finding(item) for item in res[:remaining]]
-                all_findings.extend(bounded_results)
-                for item in bounded_results:
-                    if isinstance(item, dict) and item.get("source"):
-                        active_engines.add(str(item["source"]))
-
-            if len(all_findings) >= MAX_TOTAL_FINDINGS:
-                logger.warning("[BreachScan] Batas maksimum temuan (%d) tercapai.", MAX_TOTAL_FINDINGS)
-                break
+                if remaining > 0:
+                    all_findings.extend(findings[:remaining])
+                for item in findings:
+                    source = item.get("source") if isinstance(item, dict) else None
+                    if source:
+                        active_engines.add(str(source))
 
     elapsed = time.monotonic() - start_time
-    logger.info("=== PARALLEL SCAN SELESAI Dalam %.2f detik ===", elapsed)
+    logger.info(
+        "=== PARALLEL SCAN SELESAI Dalam %.2f detik === cache_engine_hits=%d fresh_engine_calls=%d",
+        elapsed,
+        cache_hits,
+        fresh_engine_calls,
+    )
 
-    # Per-engine outcome. "ok" means it answered for every target queried.
     engines_report: dict[str, dict] = {}
-    for name, st in stats.items():
-        if st["failed"] == 0:
+    for name, outcome in stats.items():
+        if outcome["failed"] == 0:
             status = "ok"
-        elif st["ok"] == 0:
+        elif outcome["ok"] == 0:
             status = "error"
         else:
             status = "partial"
         engines_report[name] = {
             "status": status,
-            "targets_ok": st["ok"],
-            "targets_failed": st["failed"],
+            "targets_ok": outcome["ok"],
+            "targets_failed": outcome["failed"],
         }
     for name in skipped_engines:
         engines_report[name] = {
@@ -1218,24 +1304,21 @@ async def scan_data_breaches(email: str, phone: str = "", force_refresh: bool = 
             "targets_failed": 0,
         }
 
-    # A scan is "complete" only if every enabled engine answered. An empty result from an
-    # incomplete scan is NOT evidence that nothing was found.
     complete = bool(stats) and all(
-        v["status"] == "ok"
-        for v in engines_report.values()
-        if v["status"] != "skipped"
+        report["status"] == "ok"
+        for report in engines_report.values()
+        if report["status"] != "skipped"
     )
     if not complete:
         failed_names = [
-            n for n, v in engines_report.items()
-            if v["status"] in {"error", "partial"}
+            name for name, report in engines_report.items()
+            if report["status"] in {"error", "partial"}
         ]
         logger.warning(
             "[BreachScan] Scan tidak lengkap. Engine bermasalah: %s",
             ", ".join(failed_names) or "-",
         )
 
-    # De-duplicate by normalized URL.
     unique_findings: list[dict] = []
     seen_keys: set[tuple] = set()
     for item in all_findings:
@@ -1245,7 +1328,6 @@ async def scan_data_breaches(email: str, phone: str = "", force_refresh: bool = 
         if not url:
             continue
         if item.get("kind") == "breach_db":
-            # Every BreachDirectory finding shares one URL; key on the dataset instead.
             dedupe_key = (url, str(item.get("dataset", "")), item.get("record_count"))
         else:
             dedupe_key = (url,)
@@ -1258,16 +1340,25 @@ async def scan_data_breaches(email: str, phone: str = "", force_refresh: bool = 
         if len(unique_findings) >= MAX_TOTAL_FINDINGS:
             break
 
-    output = {
+    # Persist every successful target/engine response, including [] from a
+    # successful engine. Failed engines are absent, so the next scan retries them.
+    if engine_cache:
+        save_breach_cache(
+            email,
+            {
+                "cache_schema_version": BREACH_CACHE_SCHEMA_VERSION,
+                "targets": search_targets,
+                "engine_results": engine_cache,
+            },
+            phone,
+            tenant_id=tenant_id,
+        )
+
+    return {
         "engine": ", ".join(sorted(active_engines)) if active_engines else "None",
         "results": unique_findings,
-        "is_from_cache": False,
+        "is_from_cache": cache_hits > 0 and fresh_engine_calls == 0,
         "engines": engines_report,
         "complete": complete,
         "cache_schema_version": BREACH_CACHE_SCHEMA_VERSION,
     }
-
-    # Never cache an incomplete scan: it would replay a possibly false "clean" result for 12h.
-    if complete:
-        save_breach_cache(email, output, phone, tenant_id=tenant_id)
-    return output
