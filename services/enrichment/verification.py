@@ -111,8 +111,15 @@ async def verify_evidence_records(
                         "reachable" if result.reachable else "unreachable"
                     )
                     record.verification_observed_at = _utc_now()
+                    # Evidence records can be reconstructed from external or cached
+                    # payloads. Treat malformed optional metadata as empty rather than
+                    # allowing one record to abort gather() and downgrade every URL in
+                    # this verification batch to UNKNOWN.
+                    existing_metadata = (
+                        record.metadata if isinstance(record.metadata, dict) else {}
+                    )
                     record.metadata = {
-                        **record.metadata,
+                        **existing_metadata,
                         "url_verification": {
                             "status_code": result.status_code,
                             "redirected": result.redirected,
