@@ -8,9 +8,9 @@ from services import imap_scanner, osint_scanner
 from services import pipeline
 
 
-def test_osint_cache_disabled_by_default(monkeypatch):
+def test_osint_cache_enabled_by_default(monkeypatch):
     monkeypatch.delenv("OSINT_CACHE_ENABLED", raising=False)
-    assert osint_scanner.osint_cache_enabled() is False
+    assert osint_scanner.osint_cache_enabled() is True
 
 
 def test_osint_cache_roundtrip(monkeypatch, tmp_path):
