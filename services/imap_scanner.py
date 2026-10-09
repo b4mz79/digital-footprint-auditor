@@ -30,7 +30,7 @@ IMAP_CACHE_MAX_AGE_HOURS = 12.0
 IMAP_CACHE_DIR = resolve_data_path(os.getenv("IMAP_CACHE_DIR"), "cache/imap")
 
 def imap_cache_enabled() -> bool:
-    return env_bool(IMAP_CACHE_ENABLED_ENV, False)
+    return env_bool(IMAP_CACHE_ENABLED_ENV, True)
 
 def _cache_path(email: str, tenant_id: str) -> Path:
     tenant_dir = IMAP_CACHE_DIR / tenant_identity(tenant_id)
