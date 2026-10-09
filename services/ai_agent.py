@@ -662,14 +662,23 @@ def _sanitize_evidence_records(evidence_records: list | None) -> list[dict[str, 
     # Filter scanner mirrors before applying the evidence-record cap. The
     # pipeline appends enrichment after normalized scanner records, so slicing
     # first could consume the entire cap with records this function then drops.
-    records = sorted(
-        (
-            pair
-            for pair in enumerate(evidence_records)
-            if not is_base_scanner_mirror(pair[1])
-        ),
-        key=lambda pair: (priority(pair[1]), pair[0]),
-    )[:MAX_EVIDENCE_RECORDS]
+    # Keep selection memory bounded while reserving the cap for contextual
+    # evidence first; preserve input order within each priority class.
+    priority_records: list[tuple[int, object]] = []
+    other_records: list[tuple[int, object]] = []
+    for pair in enumerate(evidence_records):
+        raw = pair[1]
+        if is_base_scanner_mirror(raw):
+            continue
+        if priority(raw)[0] == 0:
+            if len(priority_records) < MAX_EVIDENCE_RECORDS:
+                priority_records.append(pair)
+            if len(priority_records) >= MAX_EVIDENCE_RECORDS:
+                break
+        elif len(other_records) < MAX_EVIDENCE_RECORDS:
+            other_records.append(pair)
+
+    records = (priority_records + other_records)[:MAX_EVIDENCE_RECORDS]
 
     out: list[dict[str, Any]] = []
     payload_chars = 2
