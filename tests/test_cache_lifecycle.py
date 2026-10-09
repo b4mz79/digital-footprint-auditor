@@ -217,7 +217,9 @@ def test_windows_acl_failure_logs_bounded_diagnostic(monkeypatch, tmp_path, capl
 
     path = tmp_path / ".cache_key"
 
-    monkeypatch.setattr(cache_security.os, "name", "nt")
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(cache_security, "os", SimpleNamespace(name="nt"))
     monkeypatch.setattr(cache_security, "_get_windows_user_sid", lambda: "S-1-5-21-123")
     monkeypatch.setattr(
         cache_security.subprocess,
