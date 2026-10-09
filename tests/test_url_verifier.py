@@ -119,6 +119,7 @@ def test_resolver_rejects_mixed_public_and_private_dns_answers(
     ("head_status", "fetch_title", "expected_methods"),
     [
         (302, False, ["HEAD"]),
+        (302, True, ["HEAD"]),
         (200, True, ["HEAD", "GET"]),
         (405, False, ["HEAD", "GET"]),
     ],
