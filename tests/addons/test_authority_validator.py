@@ -216,3 +216,28 @@ def test_authority_gate_rejects_rebinding_or_shadowing_local_path_names(
     with pytest.raises(ValueError, match="local path variable may not be (rebound|shadowed)"):
         validate_package_authority(root)
 
+
+
+@pytest.mark.parametrize(
+    "link_method",
+    ["symlink_to", "hardlink_to", "link_to", "replace"],
+)
+def test_authority_gate_rejects_path_link_and_redirect_operations(
+    tmp_path: Path,
+    link_method: str,
+) -> None:
+    root = _package(
+        tmp_path / "package",
+        **{
+            "plugin.py": (
+                "from pathlib import Path\\n"
+                "_LOG = Path(__file__).with_name('lifecycle.log')\\n"
+                "def run(context):\\n"
+                f"    _LOG.{link_method}('/tmp/sensitive.txt')\\n"
+                "    return _LOG.read_text()\\n"
+            ),
+        },
+    )
+
+    with pytest.raises(ValueError, match=f"forbidden API call \\.{link_method}\\(\\)"):
+        validate_package_authority(root)
