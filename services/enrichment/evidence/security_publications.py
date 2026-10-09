@@ -530,17 +530,51 @@ class FirecrawlSecurityPublicationProvider:
             domain,
         )
         await self._check_cooldown()
+        response_body = bytearray()
         try:
             async with self._request_gate:
                 await self._check_cooldown()
                 await self._request_rate_gate.wait()
                 await self._check_cooldown()
-                response = await client.post(
+                async with client.stream(
+                    "POST",
                     FIRECRAWL_SEARCH_URL,
                     headers=headers,
                     json=payload,
                     timeout=self.timeout_seconds,
-                )
+                ) as response:
+                    if response.status_code == 429:
+                        await self._set_cooldown()
+                        logger.warning(
+                            "[Firecrawl] Rate limited publisher=%s domain=%s cooldown=%.1fs",
+                            publisher.name,
+                            domain,
+                            self.cooldown_seconds,
+                        )
+                        raise SecurityPublicationRateLimited(
+                            f"{publisher.name}: HTTP 429"
+                        )
+
+                    if response.status_code >= 400:
+                        logger.warning(
+                            "[Firecrawl] HTTP failure publisher=%s domain=%s status=%d",
+                            publisher.name,
+                            domain,
+                            response.status_code,
+                        )
+                        raise SecurityPublicationError(
+                            f"{publisher.name}: HTTP {response.status_code}"
+                        )
+
+                    # Enforce the cap while streaming, before buffering an
+                    # unbounded provider response in memory. aiter_bytes()
+                    # counts decoded bytes as well as ordinary JSON bodies.
+                    async for chunk in response.aiter_bytes():
+                        if len(response_body) + len(chunk) > MAX_RESPONSE_BYTES:
+                            raise SecurityPublicationError(
+                                f"{publisher.name}: response too large."
+                            )
+                        response_body.extend(chunk)
         except httpx.HTTPError as exc:
             logger.warning(
                 "[Firecrawl] Request failed publisher=%s domain=%s error=%s",
@@ -552,33 +586,9 @@ class FirecrawlSecurityPublicationProvider:
                 f"{publisher.name}: {type(exc).__name__}"
             ) from exc
 
-        if response.content and len(response.content) > MAX_RESPONSE_BYTES:
-            raise SecurityPublicationError(f"{publisher.name}: response too large.")
-
-        if response.status_code == 429:
-            await self._set_cooldown()
-            logger.warning(
-                "[Firecrawl] Rate limited publisher=%s domain=%s cooldown=%.1fs",
-                publisher.name,
-                domain,
-                self.cooldown_seconds,
-            )
-            raise SecurityPublicationRateLimited(f"{publisher.name}: HTTP 429")
-
-        if response.status_code >= 400:
-            logger.warning(
-                "[Firecrawl] HTTP failure publisher=%s domain=%s status=%d",
-                publisher.name,
-                domain,
-                response.status_code,
-            )
-            raise SecurityPublicationError(
-                f"{publisher.name}: HTTP {response.status_code}"
-            )
-
         try:
-            body = response.json()
-        except ValueError as exc:
+            body = json.loads(response_body)
+        except (ValueError, UnicodeDecodeError) as exc:
             raise SecurityPublicationError(
                 f"{publisher.name}: invalid JSON response"
             ) from exc
