@@ -303,6 +303,22 @@ async def enrich_evidence(
                 # only provider-owned contextual publications may be restored.
                 # Reject the entire entry on semantic mismatch rather than
                 # partially merging stale or scanner-like records into this scan.
+                # Reject malformed serialized fields before records reach merge logic.
+                if any(
+                    not isinstance(record.evidence_id, str)
+                    or not record.evidence_id.strip()
+                    or not isinstance(record.source, str)
+                    or not isinstance(record.source_type, str)
+                    or not isinstance(record.domain, str)
+                    or not isinstance(record.url, str)
+                    or not isinstance(record.title, str)
+                    or not isinstance(record.summary, str)
+                    or not isinstance(record.provenance, dict)
+                    or not isinstance(record.metadata, dict)
+                    for record in cached
+                ):
+                    raise ValueError("Cache contains malformed evidence fields")
+
                 if any(
                     record.source_type != "security_publication"
                     or record.relation is not EvidenceRelation.SECURITY_PUBLICATION

@@ -1389,3 +1389,68 @@ async def test_malformed_base_domain_does_not_abort_valid_domain_enrichment(monk
         "base-valid-domain",
     }
 
+
+
+@pytest.mark.asyncio
+async def test_enrichment_cache_rejects_unhashable_evidence_id(monkeypatch) -> None:
+    import services.evidence_enrichment as module
+
+    base = EvidenceRecord(
+        evidence_id="base-malformed-cache-id",
+        source="OSINT",
+        source_type="osint",
+        relation=EvidenceRelation.TARGET_RESOURCE,
+        directness=EvidenceDirectness.DIRECT,
+        confidence=0.8,
+        observed_at="2026-10-09T00:00:00+00:00",
+        published_at=None,
+        domain="example.com",
+        url="",
+        title="Target-associated service: Example",
+        summary="Observed service association.",
+        assertion_scope="service_association_only",
+    )
+    cached = {
+        "evidence_id": [],
+        "source": "Kaspersky Securelist",
+        "source_type": "security_publication",
+        "relation": "security_publication",
+        "directness": "contextual",
+        "confidence": 0.65,
+        "observed_at": "2026-10-08T00:00:00+00:00",
+        "published_at": "2026-10-01",
+        "domain": "example.com",
+        "url": "https://securelist.com/example-report",
+        "title": "Example.com security report",
+        "summary": "Security publication context.",
+        "provenance": {
+            "provider": "firecrawl_search",
+            "publisher_domain": "securelist.com",
+            "query_scope": "domain_only",
+            "relevance_filter": module.CONTEXTUAL_FILTER_NAME,
+            "assertion_scope": "security_publication_context_only",
+        },
+        "metadata": {},
+        "assertion_scope": "security_publication_context_only",
+    }
+    provider_calls = []
+
+    class FakeProvider:
+        def __init__(self, **kwargs):
+            self.cooldown_active = False
+            self.had_failures = False
+
+        async def search_domain(self, domain):
+            provider_calls.append(domain)
+            return []
+
+    monkeypatch.setenv("EVIDENCE_ENRICHMENT_CACHE_ENABLED", "true")
+    monkeypatch.setattr(module, "load_enrichment_cache", lambda *args, **kwargs: [cached])
+    monkeypatch.setattr(module, "save_enrichment_cache", lambda *args, **kwargs: None)
+    monkeypatch.setattr(module, "FirecrawlSecurityPublicationProvider", FakeProvider)
+
+    result = await module.enrich_evidence(
+        [base], firecrawl_api_key="test-key", tenant_id="tenant-malformed-cache-id"
+    )
+    assert provider_calls == ["example.com"]
+    assert [record.evidence_id for record in result] == ["base-malformed-cache-id"]

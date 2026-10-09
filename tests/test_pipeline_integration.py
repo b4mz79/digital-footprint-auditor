@@ -1,11 +1,37 @@
 from __future__ import annotations
 
+import pytest
+
 from services import pipeline
 from services.enrichment.evidence.models import (
     EvidenceDirectness,
     EvidenceRecord,
     EvidenceRelation,
 )
+
+
+def test_tenant_id_fails_closed_when_configured_value_is_invalid(monkeypatch) -> None:
+    monkeypatch.setenv("TENANT_ID", "tenant with spaces")
+    with pytest.raises(ValueError, match="TENANT_ID tidak valid"):
+        pipeline.get_tenant_id()
+
+
+def test_run_scan_rejects_invalid_explicit_tenant_id(monkeypatch) -> None:
+    monkeypatch.delenv("TENANT_ID", raising=False)
+    with pytest.raises(ValueError, match="TENANT_ID tidak valid"):
+        pipeline.run_scan(
+            email="subject@example.org",
+            enable_imap=False,
+            enable_osint=False,
+            enable_breach=False,
+            tenant_id="tenant/invalid",
+            with_ai=False,
+        )
+
+
+def test_unconfigured_tenant_id_keeps_local_default(monkeypatch) -> None:
+    monkeypatch.delenv("TENANT_ID", raising=False)
+    assert pipeline.get_tenant_id() == "default"
 
 
 def test_pipeline_import() -> None:
