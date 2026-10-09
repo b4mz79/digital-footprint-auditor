@@ -144,7 +144,7 @@ def set_secure_file_permissions(file_path: Path) -> None:
         detail = str(exc.stderr or exc.stdout or "").strip()
         if detail:
             detail = detail.replace(str(path), path.name)
-            detail = re.sub(r"[\\x00-\\x1f\\x7f]+", " ", detail)
+            detail = re.sub(r"[\x00-\x1f\x7f]+", " ", detail)
             detail = " ".join(detail.split())[:240]
         else:
             detail = "no diagnostic output"
@@ -154,7 +154,7 @@ def set_secure_file_permissions(file_path: Path) -> None:
             exc.returncode,
             detail,
         )
-        logger.exception("Unable to harden cache file permissions: %s", _mask_path(path))
+        logger.error("Unable to harden cache file permissions: %s", _mask_path(path))
         raise
     except Exception:
         # Fail closed for POSIX because chmod failure leaves the file potentially
