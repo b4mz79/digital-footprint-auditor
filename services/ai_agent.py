@@ -2407,6 +2407,16 @@ def _finalize_analysis(
                     count=len(matches),
                     level=t(f"risk_{risk_key}", lang=lang),
                 )
+            elif _model_reason_is_unsupported(item.get("reason")):
+                # Matching evidence must also repair a stale unsupported reason
+                # when the deterministic floor does not change the risk level.
+                item["risk_guarded"] = True
+                item["reason"] = t(
+                    "evidence_note",
+                    lang=lang,
+                    count=len(matches),
+                    level=t(f"risk_{risk_key}", lang=lang),
+                )
         item["risk_key"] = risk_key
         item["risk_level"] = t(f"risk_{risk_key}", lang=lang)
 

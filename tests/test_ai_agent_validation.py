@@ -219,3 +219,89 @@ def test_build_user_prompt_marks_incomplete_breach_scan() -> None:
     assert "BreachDirectory" in prompt
     assert "DuckDuckGo" in prompt
     assert "do not describe the absence of breach findings" in prompt
+
+def test_matching_breach_evidence_repairs_unsupported_reason_without_raising_risk() -> None:
+    services = [{"name": "Example", "domain": "example.com", "subject": "Payment receipt"}]
+    findings = [{
+        "kind": "breach_db",
+        "dataset": "example.com",
+        "has_password": True,
+        "record_count": 10,
+    }]
+    analysis = [{
+        "service": "Example",
+        "risk_key": "high",
+        "risk_level": "High",
+        "reason": "Insufficient evidence to determine risk.",
+        "delete_url": "-",
+    }]
+
+    finalized, exposures = ai_agent._finalize_analysis(analysis, services, findings, "en")
+
+    assert exposures == []
+    assert finalized[0]["risk_key"] == "high"
+    assert finalized[0]["reason"] == ai_agent.t(
+        "evidence_note",
+        lang="en",
+        count=1,
+        level=ai_agent.t("risk_high", lang="en"),
+    )
+    assert finalized[0]["risk_guarded"] is True
+    assert "risk_raised" not in finalized[0]
+
+
+def test_service_association_lineage_does_not_raise_risk_by_itself() -> None:
+    services = [{"name": "Example", "domain": "example.com"}]
+    evidence = [{
+        "evidence_id": "association-only-1",
+        "domain": "example.com",
+        "directness": "direct",
+        "assertion_scope": "service_association_only",
+        "provenance": {"service_name": "Example"},
+    }]
+    analysis = [{
+        "service": "Example",
+        "risk_key": "high",
+        "risk_level": "High",
+        "reason": "The account is highly exposed.",
+        "delete_url": "-",
+    }]
+
+    finalized, exposures = ai_agent._finalize_analysis(
+        analysis, services, [], "en", evidence_records=evidence
+    )
+    linked = ai_agent._attach_evidence_lineage(finalized, services, evidence)
+
+    assert exposures == []
+    assert linked[0]["risk_key"] == "unknown"
+    assert linked[0]["reason"] == ai_agent.t("unknown_reason", lang="en")
+    assert linked[0]["evidence_ids"] == ["association-only-1"]
+
+
+def test_security_context_lineage_does_not_raise_risk_by_itself() -> None:
+    services = [{"name": "Example", "domain": "example.com"}]
+    evidence = [{
+        "evidence_id": "context-only-1",
+        "domain": "example.com",
+        "relation": "security_publication",
+        "directness": "contextual",
+        "provenance": {"provider": "firecrawl_search", "publisher_domain": "securelist.com"},
+    }]
+    analysis = [{
+        "service": "Example",
+        "risk_key": "high",
+        "risk_level": "High",
+        "reason": "The service is highly dangerous.",
+        "delete_url": "-",
+    }]
+
+    finalized, exposures = ai_agent._finalize_analysis(
+        analysis, services, [], "en", evidence_records=evidence
+    )
+    linked = ai_agent._attach_evidence_lineage(finalized, services, evidence)
+
+    assert exposures == []
+    assert linked[0]["risk_key"] == "unknown"
+    assert linked[0]["reason"] == ai_agent.t("unknown_reason", lang="en")
+    assert linked[0]["evidence_ids"] == ["context-only-1"]
+
