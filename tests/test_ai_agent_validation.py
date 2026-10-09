@@ -3,8 +3,10 @@ from __future__ import annotations
 from services import ai_agent
 
 
-
-def test_ai_forensic_telemetry_counts_service_discovery_from_metadata(caplog) -> None:
+def test_ai_forensic_telemetry_counts_service_discovery_from_metadata(
+    caplog, monkeypatch
+) -> None:
+    monkeypatch.setattr(ai_agent, "AI_FORENSIC_TELEMETRY", True)
     evidence = [
         {
             "evidence_id": "service-1",
@@ -29,6 +31,7 @@ def test_ai_forensic_telemetry_counts_service_discovery_from_metadata(caplog) ->
         )
 
     assert "service_discovery_count=1" in caplog.text
+
 
 def test_ai_agent_import() -> None:
     assert ai_agent is not None
