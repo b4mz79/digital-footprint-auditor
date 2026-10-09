@@ -291,6 +291,12 @@ async def test_malformed_metadata_does_not_downgrade_other_url_verification(monk
         )
 
     malformed = make_record("malformed-metadata", "https://example.com/a", None)
+    # Simulate a record reconstructed from a malformed payload: the model
+    # normalizes metadata while verification is UNKNOWN, so install the
+    # inconsistent legacy state the verifier must still handle defensively.
+    malformed.metadata = None
+    malformed.verification_state = "reachable"
+    malformed.verification_observed_at = "2026-10-09T00:00:00+00:00"
     valid = make_record(
         "valid-metadata",
         "https://example.com/b",
