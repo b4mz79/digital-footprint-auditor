@@ -1548,3 +1548,105 @@ async def test_enrichment_global_deadline_preserves_base_evidence(
     assert {record.evidence_id for record in result} == {
         record.evidence_id for record in base
     }
+
+
+@pytest.mark.asyncio
+async def test_evidence_verification_total_deadline_marks_pending_unknown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import asyncio
+    import services.enrichment.verification as verification
+    from services.enrichment.evidence.models import EvidenceRecord, EvidenceRelation, EvidenceDirectness
+
+    def make_record(evidence_id: str, url: str) -> EvidenceRecord:
+        return EvidenceRecord(
+            evidence_id=evidence_id,
+            source="test",
+            source_type="test",
+            relation=EvidenceRelation.TARGET_RESOURCE,
+            directness=EvidenceDirectness.DIRECT,
+            confidence=0.5,
+            observed_at="2026-10-09T00:00:00+00:00",
+            published_at=None,
+            domain="example.com",
+            url=url,
+            title=evidence_id,
+            summary="URL accessibility is an evidence-quality signal only.",
+            verification_state="reachable",
+            verification_observed_at="2026-10-08T00:00:00+00:00",
+            metadata={"url_verification": {"status_code": 200}},
+        )
+
+    async def slow_verify(url, **kwargs):
+        if url.endswith("/slow"):
+            await asyncio.sleep(1)
+        return type(
+            "Result",
+            (),
+            {"reachable": True, "status_code": 200, "redirected": False,
+             "location": None, "content_type": "text/html"},
+        )()
+
+    monkeypatch.setattr(verification, "verify_public_url", slow_verify)
+    fast = make_record("fast", "https://example.com/fast")
+    slow = make_record("slow", "https://example.com/slow")
+
+    result = await verification.verify_evidence_records(
+        [fast, slow],
+        timeout_seconds=2,
+        concurrency=2,
+        total_timeout_seconds=0.05,
+    )
+
+    assert result[0].verification_state == "reachable"
+    assert result[0].metadata["url_verification"]["status_code"] == 200
+    assert result[1].verification_state == "unknown"
+    assert result[1].verification_observed_at is None
+    assert "url_verification" not in result[1].metadata
+
+
+@pytest.mark.asyncio
+async def test_evidence_verification_parent_cancellation_propagates_and_cleans_tasks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import asyncio
+    import services.enrichment.verification as verification
+    from services.enrichment.evidence.models import EvidenceRecord, EvidenceRelation, EvidenceDirectness
+
+    started = asyncio.Event()
+    cancelled = asyncio.Event()
+
+    async def slow_verify(url, **kwargs):
+        started.set()
+        try:
+            await asyncio.sleep(10)
+        except asyncio.CancelledError:
+            cancelled.set()
+            raise
+
+    record = EvidenceRecord(
+        evidence_id="cancelled-verification",
+        source="test",
+        source_type="test",
+        relation=EvidenceRelation.TARGET_RESOURCE,
+        directness=EvidenceDirectness.DIRECT,
+        confidence=0.5,
+        observed_at="2026-10-09T00:00:00+00:00",
+        published_at=None,
+        domain="example.com",
+        url="https://example.com/slow",
+        title="Slow verification",
+        summary="Test cancellation cleanup.",
+    )
+    monkeypatch.setattr(verification, "verify_public_url", slow_verify)
+
+    task = asyncio.create_task(
+        verification.verify_evidence_records(
+            [record], timeout_seconds=20, total_timeout_seconds=20
+        )
+    )
+    await started.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert cancelled.is_set()
