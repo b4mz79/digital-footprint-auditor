@@ -835,3 +835,17 @@ async def test_enrichment_cache_hit_preserves_current_base_state(monkeypatch) ->
     assert by_id["base-current-state"].provenance == {"fresh_scan": True}
     assert by_id["cached-context"].assertion_scope == "security_publication_context_only"
 
+
+def test_contextual_relevance_does_not_treat_public_suffix_as_target_alias() -> None:
+    from services.enrichment.evidence.security_publications import _contextual_relevance
+
+    accepted, signals = _contextual_relevance(
+        "example.co.id",
+        url="https://securelist.com/co-malware-campaign/",
+        title="CO malware campaign",
+        summary="A malware incident unrelated to the target.",
+    )
+
+    assert accepted is False
+    assert signals["reason"] == "target_not_subject"
+

@@ -230,8 +230,9 @@ def _build_query(domain: str) -> str:
 
 def _domain_aliases(domain: str) -> tuple[str, ...]:
     normalized = domain.casefold().strip(".")
-    labels = normalized.split(".")
-    registrable = labels[-2] if len(labels) >= 2 else normalized
+    # Use the shared root-domain helper so multi-label public suffixes such
+    # as co.id, com.au, and co.uk do not turn "co"/"com" into target aliases.
+    registrable = root_domain(normalized).split(".")[0] or normalized
     aliases = {normalized, registrable}
     aliases.update(token for token in re.split(r"[-_]+", registrable) if len(token) >= 3)
     return tuple(sorted(aliases, key=lambda value: (-len(value), value)))
