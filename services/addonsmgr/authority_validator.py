@@ -163,13 +163,23 @@ def _validate_python_tree(tree: ast.AST, relative_path: str) -> None:
                     node.lineno if hasattr(node, "lineno") else 1,
                     f"local path variable may not be shadowed: {bound_name}",
                 )
-        if isinstance(node, (ast.MatchAs, ast.MatchStar)) and node.name in local_path_names:
+        match_as_type = getattr(ast, "MatchAs", None)
+        match_star_type = getattr(ast, "MatchStar", None)
+        if (
+            (match_as_type is not None and isinstance(node, match_as_type))
+            or (match_star_type is not None and isinstance(node, match_star_type))
+        ) and node.name in local_path_names:
             _reject(
                 relative_path,
                 node.lineno if hasattr(node, "lineno") else 1,
                 f"local path variable may not be shadowed: {node.name}",
             )
-        if isinstance(node, ast.MatchMapping) and node.rest in local_path_names:
+        match_mapping_type = getattr(ast, "MatchMapping", None)
+        if (
+            match_mapping_type is not None
+            and isinstance(node, match_mapping_type)
+            and node.rest in local_path_names
+        ):
             _reject(
                 relative_path,
                 node.lineno if hasattr(node, "lineno") else 1,
