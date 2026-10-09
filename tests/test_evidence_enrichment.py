@@ -373,6 +373,47 @@ async def test_firecrawl_provider_returns_contextual_evidence() -> None:
 
 
 @pytest.mark.asyncio
+async def test_firecrawl_oversized_response_stops_streaming_and_closes(monkeypatch) -> None:
+    import services.enrichment.evidence.security_publications as module
+
+    consumed: list[bytes] = []
+    stream_closed = False
+
+    class ChunkedBody(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            nonlocal stream_closed
+            for chunk in (b"12345", b"67890", b"X", b"should-not-be-read"):
+                consumed.append(chunk)
+                yield chunk
+
+        async def aclose(self) -> None:
+            nonlocal stream_closed
+            stream_closed = True
+
+    monkeypatch.setattr(module, "MAX_RESPONSE_BYTES", 10)
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, stream=ChunkedBody(), request=request)
+        )
+    )
+    provider = module.FirecrawlSecurityPublicationProvider(
+        api_key="test-key",
+        client=client,
+        publishers=(("Kaspersky Securelist", "securelist.com"),),
+        requests_per_minute=60000,
+    )
+
+    try:
+        assert await provider.search_domain("example.com") == []
+    finally:
+        await client.aclose()
+
+    assert len(consumed) == 3
+    assert consumed[-1] == b"X"
+    assert stream_closed is True
+
+
+@pytest.mark.asyncio
 async def test_firecrawl_provider_is_optional_without_api_key() -> None:
     provider = FirecrawlSecurityPublicationProvider(
         api_key="",
