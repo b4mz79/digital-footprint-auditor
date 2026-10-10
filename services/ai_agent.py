@@ -2707,8 +2707,8 @@ async def analyze_smart_cache(
 
             except (TypeError, ValueError, KeyError) as exc:
                 logger.warning(
-                    "[AICache] Cache cocok fingerprint tetapi payload ditolak: %s. "
-                    "Melanjutkan sebagai cache miss.",
+                    "[AICache] Cache fingerprint matched but payload was rejected: %s. "
+                    "Continuing as a cache miss.",
                     type(exc).__name__,
                 )
             else:
@@ -3038,8 +3038,8 @@ async def analyze_smart_cache(
     # directly here.
     # -------------------------------------------------------------------------
     logger.error(
-        "[AI Agent Error] Semua provider AI gagal/ditolak. "
-        "Menggunakan Local Rule-based Engine sebagai fallback terakhir."
+        "[AI Agent Error] All AI providers failed or were rejected. "
+        "Using the local rule-based engine as the final fallback."
     )
 
     analysis, exposures = _finalize_analysis(
