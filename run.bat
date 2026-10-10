@@ -12,6 +12,7 @@ set "RESET_MODE=false"
 set "FULL_RESET_MODE=false"
 set "NO_RUN=false"
 set "INVALID_ARGS=false"
+set "DOCKER_MODE="
 
 rem Supported modes:
 rem   run.bat
@@ -19,8 +20,17 @@ rem   run.bat reset
 rem   run.bat full-reset
 rem   run.bat reset-only
 rem   run.bat full-reset-only
+rem   run.bat docker-build
+rem   run.bat docker-test
+rem   run.bat docker-dev
 for %%A in (%*) do (
-    if /i "%%~A"=="reset" (
+    if /i "%%~A"=="docker-build" (
+        set "DOCKER_MODE=build"
+    ) else if /i "%%~A"=="docker-test" (
+        set "DOCKER_MODE=test"
+    ) else if /i "%%~A"=="docker-dev" (
+        set "DOCKER_MODE=dev"
+    ) else if /i "%%~A"=="reset" (
         set "RESET_MODE=true"
     ) else if /i "%%~A"=="full-reset" (
         set "RESET_MODE=true"
@@ -40,8 +50,27 @@ for %%A in (%*) do (
 
 if "%INVALID_ARGS%"=="true" (
     echo.
-    echo Penggunaan: run.bat [reset^|full-reset^|reset-only^|full-reset-only]
+    echo Penggunaan: run.bat [reset^|full-reset^|reset-only^|full-reset-only^|docker-build^|docker-test^|docker-dev]
     exit /b 2
+)
+
+if not "%DOCKER_MODE%"=="" (
+    if "%RESET_MODE%"=="true" (
+        echo [ERROR] Mode Docker tidak dapat digabung dengan mode reset.
+        exit /b 2
+    )
+    if /i "%DOCKER_MODE%"=="build" (
+        call "%~dp0scripts\build-docker.bat"
+        exit /b !ERRORLEVEL!
+    )
+    if /i "%DOCKER_MODE%"=="test" (
+        call "%~dp0scripts\build-docker.bat" --test
+        exit /b !ERRORLEVEL!
+    )
+    if /i "%DOCKER_MODE%"=="dev" (
+        call "%~dp0scripts\build-docker.bat" --shell
+        exit /b !ERRORLEVEL!
+    )
 )
 
 if "%RESET_MODE%"=="true" (
