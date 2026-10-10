@@ -6,6 +6,7 @@ from pathlib import Path
 
 from utils import translations
 from utils.translations import TRANSLATIONS
+from utils import prompt_loader
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -43,6 +44,37 @@ def test_translation_import() -> None:
 
 def test_default_translation_language_is_english() -> None:
     assert translations.t("title") == TRANSLATIONS["en"]["title"]
+
+
+def test_unknown_translation_language_falls_back_to_english() -> None:
+    assert translations.t("title", lang="unsupported") == TRANSLATIONS["en"]["title"]
+
+
+def test_system_prompt_loader_defaults_to_english(monkeypatch, tmp_path) -> None:
+    (tmp_path / "system_prompt_en.txt").write_text(
+        "English system prompt", encoding="utf-8"
+    )
+    (tmp_path / "system_prompt_id.txt").write_text(
+        "Prompt sistem Bahasa Indonesia", encoding="utf-8"
+    )
+    monkeypatch.setattr(prompt_loader, "PROMPT_DIR", tmp_path)
+    prompt_loader.load_system_prompt.cache_clear()
+    try:
+        assert prompt_loader.load_system_prompt() == "English system prompt"
+    finally:
+        prompt_loader.load_system_prompt.cache_clear()
+
+
+def test_system_prompt_loader_falls_back_to_english(monkeypatch, tmp_path) -> None:
+    (tmp_path / "system_prompt_en.txt").write_text(
+        "English fallback prompt", encoding="utf-8"
+    )
+    monkeypatch.setattr(prompt_loader, "PROMPT_DIR", tmp_path)
+    prompt_loader.load_system_prompt.cache_clear()
+    try:
+        assert prompt_loader.load_system_prompt("unsupported") == "English fallback prompt"
+    finally:
+        prompt_loader.load_system_prompt.cache_clear()
 
 
 def test_ui_translation_keys_are_aligned_across_all_languages() -> None:
