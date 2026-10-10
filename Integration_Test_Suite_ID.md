@@ -1,5 +1,7 @@
 # 🧪 Integration Test Suite
 
+**Language / Bahasa:** [English](Integration_Test_Suite.md) | [Bahasa Indonesia](Integration_Test_Suite_ID.md)
+
 Proyek ini menggunakan pytest untuk menguji perilaku inti dan mengurangi regresi pada pemindaian, pemrosesan evidence, analisis AI, cache, Add-On, dan integrasi aplikasi.
 
 ## Cakupan Pengujian
