@@ -201,7 +201,7 @@ def _fetch_batch(mail: imaplib.IMAP4_SSL, uid_batch: list[bytes]) -> list[email.
     uid_set = b",".join(uid_batch).decode("ascii", errors="ignore")
     status, msg_data = mail.uid("fetch", uid_set, FETCH_SPEC)
     if status != "OK":
-        logger.warning("[IMAP] Batch FETCH gagal untuk %d message(s).", len(uid_batch))
+        logger.warning("[IMAP] Batch FETCH failed for %d message(s).", len(uid_batch))
         return []
     return _iter_fetched_messages(msg_data)
 
