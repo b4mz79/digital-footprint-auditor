@@ -1,5 +1,7 @@
 # Add-On Tech Guide
 
+**Language / Bahasa:** [English](ADDON_TECH_GUIDE.md) | [Bahasa Indonesia](ADDON_TECH_GUIDE_ID.md)
+
 ## 1. Purpose
 
 This guide documents the public Add-On architecture of Privacy Auditor.
