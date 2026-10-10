@@ -502,7 +502,7 @@ def sanitize_external_text(text: str, max_len: int = 300) -> str:
 # Cache management
 # =============================================================================
 
-def safe_filename_identity(email_addr: str, phone: str = "", lang: str = "id") -> str:
+def safe_filename_identity(email_addr: str, phone: str = "", lang: str = "en") -> str:
     email_norm = _validate_email(email_addr)
     phone_norm = re.sub(r"\D", "", _validate_phone(phone))
     lang_norm = _validate_lang(lang)
@@ -513,7 +513,7 @@ def safe_tenant_identity(tenant_id: str) -> str:
     tenant = _validate_tenant_id(tenant_id)
     return tenant_identity(tenant)
 
-def get_cache_filepath_ext(email: str, phone: str = "", lang: str = "id", tenant_id: str = "default") -> Path:
+def get_cache_filepath_ext(email: str, phone: str = "", lang: str = "en", tenant_id: str = "default") -> Path:
     tenant_hash = safe_tenant_identity(tenant_id)
     identity_hash = safe_filename_identity(email, phone, lang)
     tenant_dir = CACHE_DIR / tenant_hash
@@ -530,7 +530,7 @@ def load_analysis_cache_ext(
     email: str,
     phone: str = "",
     max_age_hours: float = 12.0,
-    lang: str = "id",
+    lang: str = "en",
     tenant_id: str = "default",
 ) -> dict[str, Any] | None:
     if max_age_hours < 0:
@@ -559,11 +559,11 @@ def save_analysis_cache_ext(
     email: str,
     data: dict[str, Any],
     phone: str = "",
-    lang: str = "id",
+    lang: str = "en",
     tenant_id: str = "default",
 ) -> bool:
     try:
-        logger.info("[AICache] Menyimpan analysis cache...")
+        logger.info("[AICache] Saving analysis cache...")
         cache_file = get_cache_filepath_ext(email, phone, lang, tenant_id)
         save_encrypted_json(cache_file, data, tenant_id=_validate_tenant_id(tenant_id))
         if os.name == "posix":
@@ -580,11 +580,11 @@ def save_analysis_cache_ext(
 
 # Compatibility wrappers. The old implementation is deliberately not retained because
 # it used a non-HMAC cache identity and mtime-based expiry.
-def load_analysis_cache(email: str, phone: str = "", max_age_hours: float = 24.0, lang: str = "id", tenant_id: str = "default") -> dict | None:
+def load_analysis_cache(email: str, phone: str = "", max_age_hours: float = 24.0, lang: str = "en", tenant_id: str = "default") -> dict | None:
     return load_analysis_cache_ext(email, phone, max_age_hours=max_age_hours, lang=lang, tenant_id=tenant_id)
 
 
-def save_analysis_cache(email: str, data: dict, phone: str = "", lang: str = "id", tenant_id: str = "default") -> None:
+def save_analysis_cache(email: str, data: dict, phone: str = "", lang: str = "en", tenant_id: str = "default") -> None:
     save_analysis_cache_ext(email, data, phone=phone, lang=lang, tenant_id=tenant_id)
 
 
@@ -903,7 +903,7 @@ def build_user_prompt(
     email: str,
     found_services: list,
     phone: str = "",
-    lang: str = "id",
+    lang: str = "en",
     evidence_records: list | None = None,
     addon_results: Mapping[str, Any] | None = None,
     scan_status: dict[str, Any] | None = None,
@@ -981,7 +981,7 @@ def build_user_prompt(
         raise ValueError("LLM prompt terlalu besar.")
     return prompt
 
-def read_dsr_template_c(lang: str = "id") -> str:
+def read_dsr_template_c(lang: str = "en") -> str:
     candidate_files = [
         UTILS_DIR / f"dsr_{lang}.txt",
         Path("utils") / f"dsr_{lang}.txt",
@@ -996,7 +996,7 @@ def read_dsr_template_c(lang: str = "id") -> str:
             logger.error("[DSR Template] Template error: %s", type(exc).__name__)
     return ""
 
-def load_local_dsr_template(email: str, found_services: list, phone: str = "", lang: str = "id") -> str:
+def load_local_dsr_template(email: str, found_services: list, phone: str = "", lang: str = "en") -> str:
     lang = _validate_lang(lang)
     email = _validate_email(email)
     phone = _validate_phone(phone)
@@ -1423,7 +1423,7 @@ def _ollama_batch_prompt(
 async def call_ollama_async(
     prompt: str,
     sys_prompt: str,
-    lang: str = "id",
+    lang: str = "en",
     on_batch: Callable[[list[dict[str, Any]], list[dict[str, Any]]], None] | None = None,
     on_failure: Callable[[], None] | None = None,
 ) -> str:
@@ -1753,7 +1753,7 @@ async def _run_provider_chain_impl(
             valid_keys = list(dict.fromkeys(k for k in keys if k))
 
             if not valid_keys:
-                logger.info("[Gemini] Tidak ada API Key yang dikonfigurasi.")
+                logger.info("[Gemini] No API key is configured.")
                 continue
 
             logger.info(
@@ -2585,7 +2585,7 @@ async def analyze_smart_cache(
     found_services: list,
     phone: str = "",
     force_refresh: bool = False,
-    lang: str = "id",
+    lang: str = "en",
     tenant_id: str = "default",
     breach_findings: list | None = None,
     evidence_records: list | None = None,
@@ -2723,7 +2723,7 @@ async def analyze_smart_cache(
                         phone,
                         lang,
                     )
-                logger.info("[AICache] Memuat hasil analisis dari Local Cache.")
+                logger.info("[AICache] Loading analysis result from local cache.")
                 logger.info(
                     "AI Audit Selesai (%s, CACHE) dalam %.2f detik.",
                     cached_result.get("provider_used", "Unknown"),
@@ -2858,7 +2858,7 @@ async def analyze_smart_cache(
     # -------------------------------------------------------------------------
     if parsed_data is not None:
         try:
-            logger.info("[AIAgent] Post-processing: finalize analysis dimulai.")
+            logger.info("[AIAgent] Post-processing: analysis finalization started.")
             analysis, exposures = _finalize_analysis(
                 parsed_data["analysis"],
                 services,
@@ -2877,7 +2877,7 @@ async def analyze_smart_cache(
                 services,
                 evidence,
             )
-            logger.info("[AIAgent] Post-processing: evidence lineage selesai.")
+            logger.info("[AIAgent] Post-processing: evidence lineage completed.")
 
             parsed_data["exposures"] = exposures
             parsed_data["provider_used"] = provider_used
@@ -2889,7 +2889,7 @@ async def analyze_smart_cache(
                 phone,
                 lang,
             )
-            logger.info("[AIAgent] Post-processing: DSR template selesai.")
+            logger.info("[AIAgent] Post-processing: DSR template completed.")
 
             # Cache is deliberately best-effort and must never block delivery of
             # an otherwise valid AI result. A daemon thread prevents asyncio.run()
@@ -2956,7 +2956,7 @@ async def analyze_smart_cache(
                                 "cache save reported failure."
                             )
                             return
-                    logger.info("[AICache] Background cache write selesai.")
+                    logger.info("[AICache] Background cache write completed.")
                 except Exception as exc:
                     logger.warning(
                         "[AICache] Background cache write gagal: %s",
@@ -2968,7 +2968,7 @@ async def analyze_smart_cache(
                 name="PrivacyAuditor-AICache",
                 daemon=True,
             ).start()
-            logger.info("[AIAgent] Cache write dispatched; result tidak menunggu cache.")
+            logger.info("[AIAgent] Cache write dispatched; result does not wait for cache persistence.")
 
             elapsed = time.monotonic() - start_time
 
