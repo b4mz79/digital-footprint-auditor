@@ -1689,7 +1689,7 @@ def _parse_and_validate_provider_response(raw: str, lang: str) -> dict[str, Any]
     clean_resp = clean_json_string(raw)
 
     if not clean_resp:
-        raise ValueError("Provider menghasilkan respons kosong.")
+        raise ValueError("Provider returned an empty response.")
 
     try:
         parsed = json.loads(clean_resp)
@@ -1775,7 +1775,7 @@ async def _run_provider_chain_impl(
 
                     if not raw:
                         logger.warning(
-                            "[Gemini] Key #%d menghasilkan respons kosong.",
+                            "[Gemini] Key #%d returned an empty response.",
                             idx,
                         )
                         continue
@@ -1810,7 +1810,7 @@ async def _run_provider_chain_impl(
 
                 except Exception as exc:
                     logger.warning(
-                        "[Gemini] Key #%d gagal: %s: %s | user_chars=%d system_chars=%d combined_chars=%d estimated_tokens=%d",
+                        "[Gemini] Key #%d failed: %s: %s | user_chars=%d system_chars=%d combined_chars=%d estimated_tokens=%d",
                         idx,
                         type(exc).__name__,
                         _safe_exception_detail(exc),
@@ -1855,7 +1855,7 @@ async def _run_provider_chain_impl(
 
                 if not raw:
                     logger.warning(
-                        "[Groq Cloud] Provider menghasilkan respons kosong."
+                        "[Groq Cloud] Provider returned an empty response."
                     )
                     continue
 
@@ -1914,7 +1914,7 @@ async def _run_provider_chain_impl(
 
                 if not raw:
                     logger.warning(
-                        "[OpenAI] Provider menghasilkan respons kosong."
+                        "[OpenAI] Provider returned an empty response."
                     )
                     continue
 
@@ -1966,7 +1966,7 @@ async def _run_provider_chain_impl(
 
                 if not raw:
                     logger.warning(
-                        "[Ollama Local] Provider menghasilkan respons kosong."
+                        "[Ollama Local] Provider returned an empty response."
                     )
                     continue
 
