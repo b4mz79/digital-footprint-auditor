@@ -51,7 +51,7 @@ The root launchers also expose the Docker workflows without requiring you to rem
 ./run.sh docker-dev
 ```
 
-On Windows, use `run.bat docker-build`, `run.bat docker-test`, or `run.bat docker-dev`. These map to the runtime image build, test-image build plus pytest, and contributor development shell, respectively. Existing `reset` and `full-reset` launcher modes remain available and cannot be combined with Docker modes.
+On Windows, use `run.bat docker-build`, `run.bat docker-test`, or `run.bat docker-dev`. These map to the runtime image build, test-image build plus pytest, and contributor development shell, respectively. Existing `reset` and `full-reset` launcher modes remain available and cannot be combined with Docker modes. The native `run.sh` and `run.bat` launchers bind Streamlit to `127.0.0.1` by default so the unauthenticated UI and add-on uploader are not exposed to the LAN.
 
 ## 3. Open the contributor development shell
 
