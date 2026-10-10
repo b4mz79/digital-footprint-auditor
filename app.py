@@ -1,5 +1,6 @@
 import os
 from typing import Mapping
+from urllib.parse import urlsplit
 
 import pandas as pd
 import streamlit as st
@@ -47,6 +48,26 @@ ENGINE_STATUS_ICONS = {
     "error": "❌",
     "skipped": "⏭️",
 }
+
+def _safe_external_url(value: object) -> str | None:
+    """Return an HTTP(S) URL safe for a structured link component, else None."""
+    raw = str(value or "").strip()
+    try:
+        parsed = urlsplit(raw)
+        # Reject non-web schemes and URLs containing credentials. Do not render
+        # untrusted scanner data as Markdown, where URL delimiters can escape.
+        if (
+            parsed.scheme.lower() not in {"http", "https"}
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+        ):
+            return None
+        # Accessing .port validates malformed port syntax.
+        _ = parsed.port
+    except ValueError:
+        return None
+    return raw
 
 def _md_escape(text: str) -> str:
     """Escape characters that could break out of a markdown link label."""
@@ -164,14 +185,18 @@ def render_breach(scan_state: dict) -> None:
         ):
             for item in findings:
                 finding_title, finding_snippet = _finding_text(item, lang)
-                st.markdown(
-                    f"**[{_md_escape(finding_title)}]({item['url']})**"
+                safe_url = _safe_external_url(item.get("url"))
+                if safe_url:
+                    st.link_button(finding_title or safe_url, safe_url)
+                else:
+                    # Invalid or unsupported URLs are shown as inert text.
+                    st.text(finding_title)
+                st.text(
+                    f"{t('source_label', lang=lang)}: {item.get('source', '')} | "
+                    f"{t('link_label', lang=lang)}: {item.get('url', '')}"
                 )
-                st.caption(
-                    f"{t('source_label', lang=lang)}: {item['source']} | "
-                    f"{t('link_label', lang=lang)}: {item['url']}"
-                )
-                st.write(finding_snippet)
+                # Scanner-provided snippets are untrusted external content.
+                st.text(finding_snippet)
 
                 if item.get("kind") != "breach_db":
                     st.caption(
