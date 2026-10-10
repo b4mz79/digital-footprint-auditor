@@ -1352,7 +1352,7 @@ def _compact_ollama_prompt(prompt: str) -> str:
     capped = compacted[:max_chars]
     logger.warning(
         "[Ollama Local] Prompt masih besar setelah compaction: %d chars; "
-        "dipotong ke %d chars.",
+        "truncated to %d chars.",
         len(compacted),
         max_chars,
     )
@@ -1561,7 +1561,7 @@ async def call_ollama_async(
                     on_batch(batch_analysis, batch)
 
                 logger.info(
-                    "[Ollama Local] Batch %d selesai: %d service.",
+                    "[Ollama Local] Batch %d completed: %d services.",
                     batch_index // batch_size + 1,
                     len(batch),
                 )
@@ -1582,7 +1582,7 @@ async def call_ollama_async(
         # Missing/invalid batches must rotate to the next provider instead of
         # being silently converted into rule-based "unknown" items by the finalizer.
         logger.warning(
-            "[Ollama Local] Partial batch result discarded: %d item tervalidasi, %d batch gagal.",
+            "[Ollama Local] Partial batch result discarded: %d validated items, %d failed batches.",
             len(combined),
             failed_batches,
         )
@@ -1597,7 +1597,7 @@ async def call_ollama_async(
         )
 
     logger.info(
-        "[Ollama Local] Batch analysis selesai: %d item tervalidasi, 0 batch gagal.",
+        "[Ollama Local] Batch analysis completed: %d validated items, 0 failed batches.",
         len(combined),
     )
     return json.dumps({"analysis": combined}, ensure_ascii=False)
@@ -1764,7 +1764,7 @@ async def _run_provider_chain_impl(
             for idx, key in enumerate(valid_keys, 1):
                 try:
                     logger.info(
-                        "[Gemini] Mencoba eksekusi dengan Key #%d...",
+                        "[Gemini] Attempting execution with key #%d...",
                         idx,
                     )
 
@@ -1781,7 +1781,7 @@ async def _run_provider_chain_impl(
                         continue
 
                     logger.info(
-                        "[Gemini] Key #%d berhasil mendapatkan respons.",
+                        "[Gemini] Key #%d received a response successfully.",
                         idx,
                     )
 
@@ -1789,7 +1789,7 @@ async def _run_provider_chain_impl(
                         parsed = _timed_response_validation("Gemini", f"Key #{idx}", raw, lang)
                     except Exception as exc:
                         logger.warning(
-                            "[Gemini] Key #%d respons ditolak: %s.",
+                            "[Gemini] Key #%d response rejected: %s.",
                             idx,
                             type(exc).__name__,
                         )
@@ -1824,7 +1824,7 @@ async def _run_provider_chain_impl(
             # Continue to the NEXT PROVIDER rather than offline fallback.
             logger.warning(
                 "[Gemini] Semua API Key gagal atau menghasilkan output "
-                "yang tidak dapat divalidasi. Rotasi ke provider berikutnya."
+                "yang tidak dapat divalidasi. Rotating to the next provider."
             )
             logger.info(
                 "[AI Timing] provider=Gemini phase=key_rotation elapsed_seconds=%.3f outcome=exhausted",
@@ -1839,13 +1839,13 @@ async def _run_provider_chain_impl(
 
             if not key:
                 logger.info(
-                    "[Groq Cloud] GROQ_API_KEY tidak dikonfigurasi."
+                    "[Groq Cloud] GROQ_API_KEY is not configured."
                 )
                 continue
 
             try:
                 logger.info(
-                    "[Groq Cloud] Memulai eksekusi via Groq API..."
+                    "[Groq Cloud] Starting execution via Groq API..."
                 )
 
                 raw = await _timed_provider_call(
@@ -1860,15 +1860,15 @@ async def _run_provider_chain_impl(
                     continue
 
                 logger.info(
-                    "[Groq Cloud] Berhasil mendapatkan respons."
+                    "[Groq Cloud] Response received successfully."
                 )
 
                 try:
                     parsed = _timed_response_validation("Groq Cloud", "single attempt", raw, lang)
                 except Exception as exc:
                     logger.warning(
-                        "[Groq Cloud] Respons ditolak: %s. "
-                        "Rotasi ke provider berikutnya.",
+                        "[Groq Cloud] Response rejected: %s. "
+                        "Rotating to the next provider.",
                         type(exc).__name__,
                     )
                     continue
@@ -1880,8 +1880,8 @@ async def _run_provider_chain_impl(
 
             except Exception as exc:
                 logger.warning(
-                    "[Groq Cloud] Gagal: %s: %s. user_chars=%d system_chars=%d combined_chars=%d estimated_tokens=%d. "
-                    "Rotasi ke provider berikutnya.",
+                    "[Groq Cloud] Failed: %s: %s. user_chars=%d system_chars=%d combined_chars=%d estimated_tokens=%d. "
+                    "Rotating to the next provider.",
                     type(exc).__name__,
                     _safe_exception_detail(exc),
                     len(user_prompt),
@@ -1898,13 +1898,13 @@ async def _run_provider_chain_impl(
 
             if not key:
                 logger.info(
-                    "[OpenAI] OPENAI_API_KEY tidak dikonfigurasi."
+                    "[OpenAI] OPENAI_API_KEY is not configured."
                 )
                 continue
 
             try:
                 logger.info(
-                    "[OpenAI] Memulai eksekusi via OpenAI API..."
+                    "[OpenAI] Starting execution via OpenAI API..."
                 )
 
                 raw = await _timed_provider_call(
@@ -1919,15 +1919,15 @@ async def _run_provider_chain_impl(
                     continue
 
                 logger.info(
-                    "[OpenAI] Berhasil mendapatkan respons."
+                    "[OpenAI] Response received successfully."
                 )
 
                 try:
                     parsed = _timed_response_validation("OpenAI", "single attempt", raw, lang)
                 except Exception as exc:
                     logger.warning(
-                        "[OpenAI] Respons ditolak: %s. "
-                        "Rotasi ke provider berikutnya.",
+                        "[OpenAI] Response rejected: %s. "
+                        "Rotating to the next provider.",
                         type(exc).__name__,
                     )
                     continue
@@ -1939,8 +1939,8 @@ async def _run_provider_chain_impl(
 
             except Exception as exc:
                 logger.warning(
-                    "[OpenAI] Gagal: %s: %s. user_chars=%d system_chars=%d combined_chars=%d estimated_tokens=%d. "
-                    "Rotasi ke provider berikutnya.",
+                    "[OpenAI] Failed: %s: %s. user_chars=%d system_chars=%d combined_chars=%d estimated_tokens=%d. "
+                    "Rotating to the next provider.",
                     type(exc).__name__,
                     _safe_exception_detail(exc),
                     len(user_prompt),
@@ -1955,7 +1955,7 @@ async def _run_provider_chain_impl(
         elif provider == "ollama":
             try:
                 logger.info(
-                    "[Ollama Local] Memulai eksekusi lokal..."
+                    "[Ollama Local] Starting local execution..."
                 )
 
                 raw = await _timed_provider_call(
@@ -1971,14 +1971,14 @@ async def _run_provider_chain_impl(
                     continue
 
                 logger.info(
-                    "[Ollama Local] Berhasil mendapatkan respons."
+                    "[Ollama Local] Response received successfully."
                 )
 
                 try:
                     parsed = _timed_response_validation("Ollama Local", "full batch run", raw, lang)
                 except Exception as exc:
                     logger.warning(
-                        "[Ollama Local] Respons ditolak: %s.",
+                        "[Ollama Local] Response rejected: %s.",
                         type(exc).__name__,
                     )
                     continue
@@ -1990,7 +1990,7 @@ async def _run_provider_chain_impl(
 
             except Exception as exc:
                 logger.warning(
-                    "[Ollama Local] Gagal: %s: %s.",
+                    "[Ollama Local] Failed: %s: %s.",
                     type(exc).__name__,
                     str(exc)[:240],
                 )
@@ -2637,7 +2637,7 @@ async def analyze_smart_cache(
     safe_preview = _safe_component(mask_pii(email), 64)
 
     logger.info(
-        "Memulai AI Privacy Audit target [%s] "
+        "Starting AI Privacy Audit for target [%s] "
         "(%d layanan, %d temuan breach) [Bahasa: %s]",
         safe_preview,
         len(services),
@@ -2725,7 +2725,7 @@ async def analyze_smart_cache(
                     )
                 logger.info("[AICache] Loading analysis result from local cache.")
                 logger.info(
-                    "AI Audit Selesai (%s, CACHE) dalam %.2f detik.",
+                    "AI audit completed (%s, CACHE) in %.2f seconds.",
                     cached_result.get("provider_used", "Unknown"),
                     time.monotonic() - start_time,
                 )
@@ -2867,7 +2867,7 @@ async def analyze_smart_cache(
                 evidence_records=evidence,
             )
             logger.info(
-                "[AIAgent] Post-processing: finalize analysis selesai (%d items, %d exposures).",
+                "[AIAgent] Post-processing: analysis finalization completed (%d items, %d exposures).",
                 len(analysis),
                 len(exposures),
             )
@@ -2952,14 +2952,14 @@ async def analyze_smart_cache(
                         )
                         if cache_saved is False:
                             logger.warning(
-                                "[AICache] Background cache write gagal: "
+                                "[AICache] Background cache write failed: "
                                 "cache save reported failure."
                             )
                             return
                     logger.info("[AICache] Background cache write completed.")
                 except Exception as exc:
                     logger.warning(
-                        "[AICache] Background cache write gagal: %s",
+                        "[AICache] Background cache write failed: %s",
                         type(exc).__name__,
                     )
 
@@ -2973,7 +2973,7 @@ async def analyze_smart_cache(
             elapsed = time.monotonic() - start_time
 
             logger.info(
-                "AI Audit Selesai (%s) dalam %.2f detik.",
+                "AI audit completed (%s) in %.2f seconds.",
                 provider_used,
                 elapsed,
             )
@@ -2987,7 +2987,7 @@ async def analyze_smart_cache(
             # Any unexpected post-validation/finalization failure is a genuine
             # application-side failure.
             logger.error(
-                "[AI Agent Error] Post-processing gagal: %s",
+                "[AI Agent Error] Post-processing failed: %s",
                 type(exc).__name__,
             )
 
@@ -3020,7 +3020,7 @@ async def analyze_smart_cache(
             elapsed = time.monotonic() - start_time
 
             logger.info(
-                "AI Audit Fallback Selesai dalam %.2f detik.",
+                "AI fallback audit completed in %.2f seconds.",
                 elapsed,
             )
 
@@ -3070,7 +3070,7 @@ async def analyze_smart_cache(
     elapsed = time.monotonic() - start_time
 
     logger.info(
-        "AI Audit Fallback Selesai dalam %.2f detik.",
+        "AI fallback audit completed in %.2f seconds.",
         elapsed,
     )
 
