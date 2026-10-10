@@ -1,5 +1,7 @@
 # 🧪 Integration Test Suite
 
+**Language / Bahasa:** [English](Integration_Test_Suite.md) | [Bahasa Indonesia](Integration_Test_Suite_ID.md)
+
 The project uses pytest tests to check core behavior and reduce regressions across scanning, evidence handling, AI analysis, caching, add-ons, and application integration.
 
 ## Test Coverage
