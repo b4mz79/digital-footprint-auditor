@@ -385,3 +385,77 @@ def test_pipeline_normalization_failure_does_not_abort_scan_or_ai(monkeypatch) -
         and event.get("stage") == "evidence_start"
         for event in state["events"]
     )
+
+
+def test_breach_refresh_flag_does_not_bypass_other_module_caches(monkeypatch) -> None:
+    calls: dict[str, bool] = {}
+
+    cached_imap = [
+        {
+            "name": "Cached IMAP Service",
+            "domain": "imap-example.com",
+            "source": "Gmail IMAP Scan",
+            "subject": "Cached discovery result",
+        }
+    ]
+    cached_osint = [
+        {
+            "name": "Cached OSINT Service",
+            "domain": "osint-example.com",
+            "source": "OSINT / Holehe",
+            "subject": "Cached discovery result",
+        }
+    ]
+
+    monkeypatch.setattr(pipeline, "imap_cache_enabled", lambda: True)
+    monkeypatch.setattr(pipeline, "osint_cache_enabled", lambda: True)
+    monkeypatch.setattr(pipeline, "load_imap_cache", lambda *args, **kwargs: cached_imap)
+    monkeypatch.setattr(pipeline, "load_osint_cache", lambda *args, **kwargs: cached_osint)
+
+    def unexpected_scan(*args, **kwargs):
+        raise AssertionError("Breach-only refresh must not rescan cached discovery modules")
+
+    monkeypatch.setattr(pipeline, "scan_gmail_inbox", unexpected_scan)
+    monkeypatch.setattr(pipeline, "scan_osint_footprint", unexpected_scan)
+
+    async def fake_breach_scan(**kwargs):
+        calls["breach_force_refresh"] = kwargs["force_refresh"]
+        return {
+            "results": [],
+            "engine": "test",
+            "is_from_cache": False,
+            "engines": {},
+            "complete": True,
+        }
+
+    async def fake_ai(**kwargs):
+        calls["ai_force_refresh"] = kwargs["force_refresh"]
+        return {
+            "provider_used": "test",
+            "analysis": [],
+            "exposures": [],
+        }
+
+    monkeypatch.setattr(pipeline, "scan_data_breaches", fake_breach_scan)
+    monkeypatch.setattr(pipeline, "analyze_smart_cache", fake_ai)
+
+    state = pipeline.run_scan(
+        email="subject@example.org",
+        gmail_app_password="test-password-not-used-on-cache-hit",
+        enable_imap=True,
+        enable_osint=True,
+        enable_breach=True,
+        enable_evidence_enrichment=False,
+        force_refresh=False,
+        force_refresh_breach=True,
+        with_ai=True,
+    )
+
+    assert [item["name"] for item in state["services"]] == [
+        "Cached IMAP Service",
+        "Cached OSINT Service",
+    ]
+    assert calls["breach_force_refresh"] is True
+    assert calls["ai_force_refresh"] is False
+    assert state["ai"]["provider_used"] == "test"
+
