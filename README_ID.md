@@ -145,11 +145,11 @@ pip install -r requirements-test.txt
 python -m pytest
 ```
 
-Lihat [Integration Test Suite](Integration_Test_Suite_ID.md) untuk cakupan dan panduan contributor.
+Lihat [Integration Test Suite](docs/Integration_Test_Suite_ID.md) untuk cakupan dan panduan contributor.
 
 ## 🧩 Mengembangkan Proyek
 
-- Untuk mengintegrasikan provider pencarian breach bawaan, ikuti [Custom Breach Engine Extension](Custom_Breach_Engine_Extension_ID.md). Engine breach didaftarkan pada plan scanner inti; mekanisme ini berbeda dari Add-On yang dipasang melalui ZIP.
+- Untuk mengintegrasikan provider pencarian breach bawaan, ikuti [Custom Breach Engine Extension](docs/Custom_Breach_Engine_Extension_ID.md). Engine breach didaftarkan pada plan scanner inti; mekanisme ini berbeda dari Add-On yang dipasang melalui ZIP.
 - Untuk mengembangkan Add-On opsional, ikuti [Add-On Tech Guide](docs/ADDON_TECH_GUIDE.md).
 - Sebelum membuat Pull Request, jalankan test dan sertakan regression test yang relevan.
 
