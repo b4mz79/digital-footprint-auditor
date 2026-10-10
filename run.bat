@@ -1,104 +1,122 @@
 @echo off
 chcp 65001 >nul
-setlocal enabledelayedexpansion
+setlocal EnableExtensions EnableDelayedExpansion
 
+rem Always run relative to this script, not the caller's working directory.
+cd /d "%~dp0" || (
+    echo [ERROR] Tidak dapat berpindah ke direktori proyek.
+    exit /b 1
+)
 
-:: Pindah ke direktori tempat script ini berada
-cd /d "%~dp0"
-
-:: Parsing parameter untuk mengecek perintah 'reset' dan 'web'
 set "RESET_MODE=false"
 set "FULL_RESET_MODE=false"
 set "NO_RUN=false"
-set "ARGS="
+set "INVALID_ARGS=false"
 
-for %%a in (%*) do (
-    if /i "%%~a"=="reset" (
+rem Supported modes:
+rem   run.bat
+rem   run.bat reset
+rem   run.bat full-reset
+rem   run.bat reset-only
+rem   run.bat full-reset-only
+for %%A in (%*) do (
+    if /i "%%~A"=="reset" (
         set "RESET_MODE=true"
-    ) else if /i "%%~a"=="full-reset" (
-	    set "RESET_MODE=true"
+    ) else if /i "%%~A"=="full-reset" (
+        set "RESET_MODE=true"
         set "FULL_RESET_MODE=true"
-    ) else if /i "%%~a"=="reset-only" (
-	    set "RESET_MODE=true"
-		set "NO_RUN=true"
-    ) else if /i "%%~a"=="full-reset-only" (
-	    set "RESET_MODE=true"
-		set "FULL_RESET_MODE=true"
-		set "NO_RUN=true"
+    ) else if /i "%%~A"=="reset-only" (
+        set "RESET_MODE=true"
+        set "NO_RUN=true"
+    ) else if /i "%%~A"=="full-reset-only" (
+        set "RESET_MODE=true"
+        set "FULL_RESET_MODE=true"
+        set "NO_RUN=true"
     ) else (
-        set "ARGS=!ARGS! %%~a"
+        echo [ERROR] Argumen tidak dikenal: %%~A
+        set "INVALID_ARGS=true"
     )
 )
 
-if "%NO_RUN%"=="false" (
-	:: Cek & aktifkan virtual environment (Windows path)
-	if exist "venv\Scripts\activate.bat" (
-		echo 🔌 Mengaktifkan virtual environment ^(venv^)...
-		call venv\Scripts\activate.bat
-	) else (
-		echo ❌ Virtual environment 'venv\Scripts\activate.bat' tidak ditemukan!
-		exit /b 1
-	)
+if "%INVALID_ARGS%"=="true" (
+    echo.
+    echo Penggunaan: run.bat [reset^|full-reset^|reset-only^|full-reset-only]
+    exit /b 2
 )
 
-:: Eksekusi reset jika parameter terdeteksi
 if "%RESET_MODE%"=="true" (
-    echo 🧹 Parameter 'reset' terdeteksi! Membersihkan cache...
-	if exist "log.txt" (
-		del log.txt
-		echo ✅ File log.txt berhasil dihapus!
-	)
-    for /d /r . %%d in (__pycache__) do (
-        if exist "%%d" rd /s /q "%%d" 2>nul
-    )
-    echo ✅ Folder __pycache__ berhasil dibersihkan!
-	
-	if "%FULL_RESET_MODE%"=="true" (
-		for /d /r . %%d in (cache) do (
-			if exist "%%d" rd /s /q "%%d" 2>nul
-		)
-		echo ✅ Folder cache berhasil dibersihkan!
-		for /d /r . %%d in (.pytest_cache) do (
-			if exist "%%d" rd /s /q "%%d" 2>nul
-		)
-		echo ✅ Folder Pytest cache berhasil dibersihkan!
-		for /d /r . %%d in (build\PrivacyAuditor) do (
-			if exist "%%d" rd /s /q "%%d" 2>nul
-		)
-		echo ✅ Folder build packaging berhasil dibersihkan!
-		for /d /r . %%d in (dist\PrivacyAuditor) do (
-			if exist "%%d" rd /s /q "%%d" 2>nul
-		)
-		for /d /r . %%d in (dist\installer) do (
-			if exist "%%d" rd /s /q "%%d" 2>nul
-		)
-		echo ✅ Folder dist packaging berhasil dibersihkan!
-	)
-	
-    :: Jika Streamlit lagi jalan di port 8501, matikan prosesnya
-    set "KILLED=false"
-    for /f "tokens=5" %%p in ('netstat -aon ^| findstr :8501 ^| findstr LISTENING 2^>nul') do (
-        if "!KILLED!"=="false" (
-            echo 🛑 Mematikan proses yang sedang berjalan di port 8501 ^(PID: %%p^)...
-            taskkill /f /pid %%p >nul 2>&1
-            set "KILLED=true"
+    echo [INFO] Membersihkan cache proyek...
+
+    if exist "log.txt" (
+        del /q "log.txt" >nul 2>&1
+        if exist "log.txt" (
+            echo [WARN] Tidak dapat menghapus log.txt.
+        ) else (
+            echo [OK] log.txt dihapus.
         )
     )
-    if "!KILLED!"=="true" (
-        timeout /t 2 /nobreak >nul
-        echo ✅ Proses lama di port 8501 berhasil di-kill!
+
+    rem Exclude virtual environments, Git metadata, and packaging output.
+    powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+      "$root=(Get-Location).Path; Get-ChildItem -LiteralPath $root -Directory -Recurse -Force -Filter '__pycache__' -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch '[\/](venv|\.venv|\.git|build|dist)[\/]' } | ForEach-Object { Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }"
+    if errorlevel 1 (
+        echo [WARN] Pembersihan sebagian folder __pycache__ mungkin gagal.
+    ) else (
+        echo [OK] Cache Python proyek dibersihkan.
+    )
+
+    if "%FULL_RESET_MODE%"=="true" (
+        for %%D in ("cache" ".pytest_cache" "build\PrivacyAuditor" "dist\PrivacyAuditor" "dist\installer") do (
+            if exist "%%~D" (
+                rd /s /q "%%~D" >nul 2>&1
+                if exist "%%~D" (
+                    echo [WARN] Tidak dapat menghapus %%~D.
+                ) else (
+                    echo [OK] %%~D dihapus.
+                )
+            )
+        )
+    )
+
+    rem Reset intentionally targets the exact TCP port 8501.
+    for /f %%P in ('powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='SilentlyContinue'; Get-NetTCPConnection -State Listen -LocalPort 8501 | Select-Object -ExpandProperty OwningProcess -Unique"') do (
+        echo [INFO] Menghentikan proses pada port 8501 ^(PID %%P^)...
+        taskkill /PID %%P /T /F >nul 2>&1
+        if errorlevel 1 (
+            echo [WARN] Gagal menghentikan PID %%P.
+        )
     )
 )
 
-if "%NO_RUN%"=="false" (
-	:: Eksekusi aplikasi berdasarkan mode
-	netstat -aon | findstr :8501 | findstr LISTENING >nul 2>&1
-	if !errorlevel! neq 0 (
-		echo 🌐 Menjalankan Web UI via Streamlit di ^(port 8501^)...
-		:: streamlit run app.py > log.txt 2>&1
-		streamlit run app.py
-	) else (
-		echo ⚠️ Server Web UI di port 8501 sudah berjalan!
-		echo 🌐 Akses via browser: http://localhost:8501
-	)
+if "%NO_RUN%"=="true" (
+    echo [OK] Reset selesai; aplikasi tidak dijalankan.
+    exit /b 0
 )
+
+if not exist "app.py" (
+    echo [ERROR] app.py tidak ditemukan di direktori proyek.
+    exit /b 1
+)
+
+if not exist "venv\Scripts\python.exe" (
+    echo [ERROR] Python virtual environment tidak ditemukan: venv\Scripts\python.exe
+    echo Buat environment dan install dependensi terlebih dahulu.
+    exit /b 1
+)
+
+rem Use the venv interpreter explicitly; do not depend on PATH activation.
+set "VENV_PYTHON=%CD%\venv\Scripts\python.exe"
+
+for /f %%P in ('powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='SilentlyContinue'; Get-NetTCPConnection -State Listen -LocalPort 8501 | Select-Object -ExpandProperty OwningProcess -Unique"') do (
+    echo [WARN] Port 8501 sudah digunakan ^(PID %%P^).
+    echo Buka http://localhost:8501 atau hentikan proses tersebut secara manual.
+    exit /b 0
+)
+
+echo [INFO] Menjalankan Privacy Auditor melalui Streamlit pada port 8501...
+"%VENV_PYTHON%" -m streamlit run app.py
+set "APP_EXIT_CODE=%ERRORLEVEL%"
+if not "%APP_EXIT_CODE%"=="0" (
+    echo [ERROR] Streamlit berhenti dengan exit code %APP_EXIT_CODE%.
+)
+exit /b %APP_EXIT_CODE%
