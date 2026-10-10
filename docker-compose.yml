@@ -44,8 +44,8 @@ services:
     profiles:
       - test
     working_dir: /app
-    volumes:
-      - .:/app
+    # Test source is baked into the test image at build time. Do not bind-mount
+    # the host project: that would expose .env, cache keys and local cache files.
     environment:
       PII_PEPPER_KEY: docker-test-only-key-not-for-real-data-00000000000000000000
       PYTHONDONTWRITEBYTECODE: "1"
