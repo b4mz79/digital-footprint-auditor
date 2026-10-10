@@ -23,7 +23,7 @@ configure_logging()
 logger = get_logger("App")
 addon_manager = get_addon_manager()
 st.set_page_config(
-    page_title=t("page_title", lang=st.session_state.get("lang", "id")),
+    page_title=t("page_title", lang=st.session_state.get("lang", "en")),
     page_icon="🛡️",
     layout="wide",
 )
@@ -528,19 +528,19 @@ def render_ai(scan_state: dict) -> None:
         )
 
 
-# Setup Pilihan Bahasa awal di Session State
-st.session_state.setdefault("lang", "id")
+# Initialize the session language.
+st.session_state.setdefault("lang", "en")
 
-# Hapus cache yang sudah kedaluwarsa sekali per sesi.
+# Purge expired caches once per session.
 if not st.session_state.get("cache_purged"):
     purge_expired_caches()
     st.session_state["cache_purged"] = True
 
 # Sidebar Configuration
 with st.sidebar:
-    st.header(t("configuration_header", lang=st.session_state.get("lang", "id")))
+    st.header(t("configuration_header", lang=st.session_state.get("lang", "en")))
 
-    current_lang_code = st.session_state.get("lang", "id")
+    current_lang_code = st.session_state.get("lang", "en")
     options_list = list(LANG_OPTIONS)
     default_index = next(
         (
