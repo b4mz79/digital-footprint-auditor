@@ -210,7 +210,7 @@ def scan_gmail_inbox(
     email_address: str,
     app_password: str,
     max_emails: int | None = None,
-    lang: str = "id",
+    lang: str = "en",
 ) -> list[dict]:
     started_at = time.perf_counter()
     logger.info("[IMAP] Scanning target: %s", mask_email(email_address))
