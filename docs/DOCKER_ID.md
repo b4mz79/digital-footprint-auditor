@@ -41,6 +41,18 @@ Windows:
 
 Tag default image adalah `privacy-auditor:dev`. Untuk build ulang tanpa memakai layer cache, tambahkan `--no-cache`. Untuk memilih tag lain, gunakan `--tag privacy-auditor:local`.
 
+## Shortcut launcher
+
+Launcher di root repository juga menyediakan workflow Docker tanpa harus mengingat path script helper:
+
+```bash
+./run.sh docker-build
+./run.sh docker-test
+./run.sh docker-dev
+```
+
+Di Windows, gunakan `run.bat docker-build`, `run.bat docker-test`, atau `run.bat docker-dev`. Ketiganya menjalankan build image runtime, build image test sekaligus pytest, dan development shell contributor. Mode launcher `reset` dan `full-reset` yang sudah ada tetap tersedia, tetapi tidak bisa digabung dengan mode Docker.
+
 ## 3. Masuk ke development shell contributor
 
 Linux/macOS/WSL:
