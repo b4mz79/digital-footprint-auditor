@@ -1079,11 +1079,11 @@ def _sanitize_delete_value(value: object) -> str:
 def validate_ai_output(parsed: Any, lang: str) -> dict[str, Any]:
     lang = _validate_lang(lang)
     if not isinstance(parsed, dict):
-        raise ValueError("AI output harus object JSON.")
+        raise ValueError("AI output must be a JSON object.")
 
     analysis_raw = parsed.get("analysis")
     if not isinstance(analysis_raw, list):
-        raise ValueError("AI output.analysis harus list.")
+        raise ValueError("AI output.analysis must be a list.")
 
     cleaned_analysis: list[dict[str, str]] = []
     for item in analysis_raw[:MAX_ANALYSIS_ITEMS]:
@@ -1108,7 +1108,7 @@ def validate_ai_output(parsed: Any, lang: str) -> dict[str, Any]:
     # Preserve only the schema fields; do not allow arbitrary model-generated properties into cache/UI.
     # (The DSR letter is always built locally from utils/dsr_<lang>.txt.)
     if not cleaned_analysis:
-        raise ValueError("AI output.analysis tidak berisi item tervalidasi.")
+        raise ValueError("AI output.analysis contains no validated items.")
 
     return {"analysis": cleaned_analysis}
 
