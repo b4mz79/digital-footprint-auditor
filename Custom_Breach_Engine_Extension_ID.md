@@ -1,314 +1,166 @@
-# Arsitektur Breach Scanner v2
-
-Breach Scanner v2 menambahkan lapisan kontrol untuk
-mengelola engine eksternal.
-
-Fitur:
-
-- Worker queue
-- Rate limiter per engine
-- Circuit breaker
-- Monitoring kesehatan engine
-- Penanganan HTTP 429
-- Isolasi kegagalan provider
-
-
-## Mengapa menggunakan worker queue?
-
-Versi sebelumnya menjalankan seluruh engine secara paralel
-langsung.
-
-Hal ini dapat menyebabkan burst request.
-
----
-
 # Custom Breach Engine Extension
 
-Breach Scanner v2 dirancang dengan arsitektur modular sehingga engine breach tambahan dapat ditambahkan tanpa mengubah core scanner.
+Dokumen ini menjelaskan cara menambahkan provider ke breach scanner bawaan. Isinya menjelaskan kontrak integrasi core saat ini, bukan API plugin breach engine yang dapat dimuat secara dinamis.
 
-Engine baru hanya perlu mengikuti **engine contract** yang sudah digunakan oleh engine bawaan.
+> **Penting:** breach engine didaftarkan di `services/breach_scanner.py`. Engine ini bukan Add-On yang dipasang melalui ZIP dan dikelola oleh runtime Add-On. Penambahan built-in breach engine saat ini memerlukan perubahan kode pada plan scanner beserta test terkait.
 
-## Engine Lifecycle
+## 1. Arsitektur Scanner Saat Ini
 
-Setiap engine mengikuti alur:
+Scanner menggunakan worker queue yang dibatasi dan shared execution wrapper:
 
-```
+```text
 Input Target
-      |
-      v
-build_plan()
-      |
-      v
+    |
+    v
+Validasi Input / Normalisasi Nomor Telepon
+    |
+    v
+build_plan() di scan_data_breaches()
+    |
+    v
+run_engine_queue_v2()
+    |
+    v
 execute_engine_v2()
-      |
-      v
-EngineResult
-      |
-      v
-Unified Findings Pipeline
-      |
-      v
-Cache / UI / Reporting
+    |
+    v
+EngineResult + finding ternormalisasi
+    |
+    v
+Cache / hasil scan gabungan / UI
 ```
 
-Engine tambahan tidak boleh melakukan:
+Lapisan eksekusi bersama menyediakan rate limiting per engine, circuit breaker dan pelacakan kesehatan, cooldown, timeout, serta pelaporan status standar. Scanner membedakan hasil kosong yang berhasil dari engine yang tidak berhasil menyelesaikan proses.
 
-* penyimpanan cache sendiri
-* perubahan schema output utama
-* bypass `execute_engine_v2()`
-* memasukkan data mentah provider langsung ke UI
+### Kontrak status engine
 
----
+Nilai `EngineStatus` saat ini:
 
-# Engine Registration
+| Status | Arti |
+|---|---|
+| `success` | Request selesai; daftar finding boleh kosong. |
+| `skipped` | Engine belum dikonfigurasi atau tidak berlaku untuk target tersebut. |
+| `rate_limited` | Provider atau limiter lokal menolak percobaan karena batas request. |
+| `timeout` | Eksekusi melewati batas waktu yang diizinkan. |
+| `circuit_open` | Circuit breaker mencegah request saat engine sedang tidak sehat. |
+| `failed` | Eksekusi gagal atau response provider tidak dapat diproses. |
 
-Tambahkan identifier engine:
+Jangan mengubah status failed, skipped, timeout, atau rate-limited menjadi “breach tidak ditemukan”.
+
+## 2. Checklist Integrasi Provider
+
+Sebelum mengimplementasikan provider:
+
+1. Pastikan ketentuan layanan dan API mengizinkan penggunaan defensif yang dimaksud.
+2. Tentukan jenis target yang didukung (email, telepon, atau keduanya).
+3. Identifikasi credential dan variabel konfigurasi.
+4. Tetapkan batas ukuran response, timeout, retry, dan rate limit.
+5. Normalisasi data provider ke format finding yang sudah ada.
+6. Tambahkan engine ke konfigurasi enabled/skipped dan `build_plan()` pada scanner.
+7. Tambahkan test dengan provider mock untuk finding valid, hasil kosong yang valid, credential tidak tersedia, response malformed, rate limit, timeout, dan isolasi kegagalan.
+8. Pastikan cache hanya menyimpan hasil sukses yang valid dan status engine tetap terlihat.
+
+## 3. Mendaftarkan Built-in Engine
+
+Mapping `engine_enabled` dan `build_plan()` saat ini berada di dalam `scan_data_breaches()`. Tambahkan identifier engine internal yang stabil sesuai konvensi yang sudah digunakan, lalu tambahkan pemeriksaan variabel environment.
+
+Pola ilustratif berikut perlu disesuaikan dengan nama dan signature fungsi aktual:
 
 ```python
-ENGINE_CUSTOM = "Custom Breach Engine"
+ENGINE_CUSTOM = "Custom Provider"
+
+custom_api_key = os.getenv("CUSTOM_API_KEY", "").strip()
+engine_enabled[ENGINE_CUSTOM] = bool(custom_api_key)
+
+# Di dalam build_plan(), tambahkan engine hanya jika sudah
+# dikonfigurasi dan target didukung.
+if engine_enabled[ENGINE_CUSTOM] and custom_target_is_supported(target):
+    plan.append((
+        ENGINE_CUSTOM,
+        lambda: scan_custom_async(client, target, custom_api_key, lang=lang),
+    ))
 ```
 
-Tambahkan konfigurasi environment:
+Ini adalah sketsa integrasi, bukan patch mandiri yang bisa langsung ditempel. Pertahankan konsistensi identifier, signature, dan registrasi dengan implementasi yang ada. Jangan membuat queue kedua atau memanggil engine di luar shared execution wrapper.
 
-```python
-CUSTOM_API_KEY = os.getenv(
-    "CUSTOM_API_KEY",
-    ""
-).strip()
-```
+Jika provider hanya mendukung email, daftarkan hanya untuk target email yang sudah dinormalisasi. Jangan kirim variasi nomor telepon kecuali provider memang mendukungnya.
 
-Tambahkan ke engine availability:
+## 4. Normalisasi Finding
 
-```python
-engine_enabled = {
-    ENGINE_CUSTOM: bool(CUSTOM_API_KEY),
-}
-```
+Fungsi engine mengembalikan `list[dict]` berisi finding yang sudah disanitasi. Gunakan schema dan helper normalisasi saat ini di `services/breach_scanner.py` sebagai acuan; jangan meneruskan payload provider langsung ke UI.
 
-Jika API key tidak tersedia, engine harus dianggap:
-
-```
-status = skipped
-```
-
-dan tidak boleh menyebabkan scan gagal.
-
----
-
-# Engine Integration
-
-Engine dimasukkan melalui `build_plan()`:
-
-```python
-if engine_enabled[ENGINE_CUSTOM]:
-    plan.append(
-        (
-            ENGINE_CUSTOM,
-            lambda: scan_custom_async(
-                client,
-                target,
-                CUSTOM_API_KEY,
-            ),
-        )
-    )
-```
-
-Function engine harus mengembalikan:
-
-```python
-list[dict]
-```
-
-dengan format finding internal.
-
----
-
-# Finding Schema
-
-Semua engine wajib melakukan normalisasi output ke schema internal:
+Finding ternormalisasi dapat berisi field seperti:
 
 ```json
 {
-  "source": "Engine Name",
+  "source": "Custom Provider",
   "kind": "breach_db",
-  "dataset": "Dataset Name",
-  "title": "Human readable title",
-  "url": "Provider URL",
-  "has_password": true,
-  "snippet": "Short sanitized summary"
+  "dataset": "Nama dataset",
+  "title": "Judul yang terbaca dan sudah disanitasi",
+  "url": "https://provider.example/report",
+  "breach_date": "2025-01-01",
+  "has_password": false,
+  "snippet": "Ringkasan singkat yang sudah disanitasi"
 }
 ```
 
-Field tambahan diperbolehkan selama:
+Sertakan hanya field yang benar-benar didukung oleh response provider. Jangan menyimpulkan password terekspos hanya dari nama dataset atau hasil pencarian generik. Metadata opsional boleh disimpan jika berguna dan tidak mengandung data personal mentah, credential, atau record bocor.
 
-* tidak mengandung PII mentah
-* tidak menyimpan credential
-* tidak menyimpan raw breach record
+## 5. Contoh Have I Been Pwned (HIBP)
 
----
+HIBP sudah terintegrasi sebagai built-in provider ketika `HIBP_API_KEY` dikonfigurasi. Gunakan implementasinya sebagai referensi sebelum menambahkan provider serupa.
 
-# Have I Been Pwned (HIBP) Integration Example
+Metadata breach dapat mencakup `Name`, `Title`, `Domain`, `BreachDate`, `AddedDate`, `ModifiedDate`, `PwnCount`, `DataClasses`, dan flag verifikasi. Normalisasikan hanya field yang dibutuhkan schema finding aplikasi. Sebagai contoh, `has_password` harus diturunkan dari metadata data-class provider jika tersedia, bukan di-hard-code menjadi `true`.
 
-HIBP menggunakan endpoint API yang mengembalikan JSON breach metadata.
+Jangan pernah menyimpan atau mengeluarkan raw breach record, password, hash password, token autentikasi, atau credential dump. Simpan hanya metadata tersanitasi minimum yang diperlukan untuk menjelaskan exposure.
 
-Contoh response:
+## 6. Persyaratan Keamanan
 
-```json
-{
-  "Name": "Adobe",
-  "Title": "Adobe",
-  "Domain": "adobe.com",
-  "BreachDate": "2013-10-04",
-  "PwnCount": 152445165,
-  "DataClasses": [
-    "Email addresses",
-    "Passwords",
-    "Usernames"
-  ],
-  "IsVerified": true
-}
+### Credential
+
+- Baca credential dari environment variable.
+- Jangan pernah mencatat credential ke log atau memasukkannya ke finding.
+- Jangan simpan credential dalam cache atau pesan exception.
+- Pastikan file `.env` tidak masuk version control.
+
+### Response provider yang tidak tepercaya
+
+- Terapkan timeout request dan batas ukuran response.
+- Validasi bentuk response dan tipe field sebelum diproses.
+- Normalisasi URL dan sanitasi judul/snippet menggunakan helper yang ada.
+- Jangan render HTML provider sebagai markup tepercaya.
+- Batasi jumlah dan panjang finding yang disimpan.
+- Hindari penyimpanan raw breach record atau informasi personal yang tidak diperlukan.
+
+### Resiliensi dan cache
+
+- Gunakan shared execution wrapper, limiter, circuit breaker, dan health tracking.
+- Biarkan wrapper mengklasifikasikan rate limit, timeout, dan kegagalan.
+- Cache hanya hasil ternormalisasi yang sukses, termasuk daftar kosong yang valid.
+- Jangan menganggap scan gagal atau tidak lengkap sebagai bukti tidak ada exposure.
+- Tambahkan regression test untuk isolasi kegagalan provider dan perilaku cache.
+
+## 7. Deduplication dan Test
+
+Gunakan perilaku merge/deduplication global yang sudah ada, bukan membuat cache atau pipeline hasil terpisah. Untuk record breach database, tuple ternormalisasi seperti `(url, dataset, breach_date)` dapat membantu mengenali duplikasi, tetapi periksa implementasi merge aktual sebelum mengandalkannya.
+
+Minimal, tambahkan test untuk:
+
+- kondisi provider terkonfigurasi dan tidak terkonfigurasi;
+- kecocokan target email/telepon;
+- finding valid dan response kosong yang valid;
+- response malformed atau terlalu besar;
+- timeout, rate limit, dan error provider;
+- redaksi secret dan raw record;
+- cache hanya digunakan ulang untuk hasil sukses;
+- tidak ada regresi pada engine lain ketika provider ini gagal.
+
+Jalankan seluruh suite:
+
+```bash
+python -m pytest
 ```
 
-Response tersebut harus diubah menjadi internal finding:
+## Catatan Contributor
 
-```json
-{
-  "source": "HaveIBeenPwned API",
-  "kind": "breach_db",
-  "dataset": "Adobe",
-  "title": "Breach dataset: Adobe",
-  "url": "https://haveibeenpwned.com",
-  "breach_date": "2013-10-04",
-  "has_password": true,
-  "data_classes": [
-    "Email addresses",
-    "Passwords",
-    "Usernames"
-  ],
-  "verified": true
-}
-```
-
----
-
-# Security Requirements
-
-Custom engine wajib mengikuti aturan berikut:
-
-## 1. API Key Handling
-
-API key:
-
-* hanya dibaca dari environment variable
-* tidak boleh masuk log
-* tidak boleh masuk cache
-* tidak boleh masuk finding output
-
-Contoh:
-
-```python
-CUSTOM_API_KEY = os.getenv("CUSTOM_API_KEY")
-```
-
----
-
-## 2. Response Sanitization
-
-Provider response dianggap **untrusted data**.
-
-Engine wajib:
-
-* membatasi ukuran response
-* melakukan validasi JSON schema
-* tidak meneruskan HTML mentah
-* tidak menyimpan raw breach record
-
-Contoh:
-
-```python
-title = clean_title(item.get("Title"))
-```
-
----
-
-## 3. Password Exposure Mapping
-
-Engine dapat memberikan informasi risiko password melalui flag:
-
-```python
-has_password = True
-```
-
-berdasarkan metadata provider.
-
-Jangan pernah menyimpan:
-
-* password
-* hash
-* credential dump
-* raw leaked record
-
----
-
-# Engine Status Handling
-
-Engine harus menggunakan mekanisme status standar:
-
-| Kondisi                 | Status       |
-| ----------------------- | ------------ |
-| API berhasil            | SUCCESS      |
-| API key tidak tersedia  | SKIPPED      |
-| Rate limit provider     | RATE_LIMITED |
-| Timeout                 | TIMEOUT      |
-| Schema provider berubah | FAILED       |
-
----
-
-# Deduplication
-
-Semua finding akan diproses melalui pipeline deduplication global.
-
-Untuk database breach:
-
-```python
-(
-    url,
-    dataset,
-    breach_date
-)
-```
-
-digunakan sebagai identifier.
-
-Engine tidak perlu melakukan dedupe sendiri.
-
----
-
-# Contributor Guidelines
-
-Contributor yang menambahkan breach engine baru cukup menyediakan:
-
-1. Async engine function
-
-```python
-async def scan_custom_async(...):
-    ...
-    return findings
-```
-
-2. Mapping response provider ke internal schema
-
-3. Environment configuration
-
-4. Penambahan engine identifier
-
-Tidak diperlukan perubahan pada:
-
-* queue system
-* circuit breaker
-* limiter
-* cache layer
-* reporting pipeline
-* UI layer
-
-Dengan desain ini, breach provider baru dapat ditambahkan sebagai plugin engine tanpa mengganggu engine yang sudah berjalan.
+Built-in breach engine baru biasanya membutuhkan fungsi provider async (atau wrapper thread berbatas waktu untuk library blocking), pemetaan response, konfigurasi environment, registrasi pada plan scanner, dan regression test. Hindari mengubah queue bersama, status model, pipeline cache, atau UI kecuali kebutuhan provider memang mengharuskannya.
