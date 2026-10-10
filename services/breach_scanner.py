@@ -263,7 +263,7 @@ def clean_title(text: object, max_len: int = MAX_TITLE_LENGTH) -> str:
     cleaned = " ".join(re.sub(r"<[^<]+?>", "", html.unescape(_safe_text(text, MAX_TITLE_LENGTH))).split())
     return mask_sensitive_snippet(cleaned)[:max_len]
 
-def clean_snippet(text: str, max_len: int = 220, lang: str = "id") -> str:
+def clean_snippet(text: str, max_len: int = 220, lang: str = "en") -> str:
     if not text:
         return t("no_summary", lang=lang)
     bounded = _safe_text(text, MAX_SNIPPET_INPUT)
@@ -674,7 +674,7 @@ async def scan_breachdirectory_async(client: httpx.AsyncClient, target: str, rap
         _log_http_error("BreachDirectory", exc)
         raise
 
-async def scan_hibp_async(client: httpx.AsyncClient, target: str, api_key: str, lang: str = "id") -> list[dict]:
+async def scan_hibp_async(client: httpx.AsyncClient, target: str, api_key: str, lang: str = "en") -> list[dict]:
     """Query Have I Been Pwned for one email address and return breach metadata only."""
     email = _validate_email_target(target)
     if not api_key:
@@ -757,7 +757,7 @@ async def scan_hibp_async(client: httpx.AsyncClient, target: str, api_key: str, 
         _log_http_error("HIBP", exc)
         raise
 
-async def scan_google_custom_search_async(client: httpx.AsyncClient, target: str, api_key: str, cx_id: str, lang: str = "id") -> list[dict]:
+async def scan_google_custom_search_async(client: httpx.AsyncClient, target: str, api_key: str, cx_id: str, lang: str = "en") -> list[dict]:
     logger.info("[Google Custom Search] Starting scan for target: %s", mask_pii(target))
     url = "https://www.googleapis.com/customsearch/v1"
     query = f'"{target}" (breach OR leak OR "database dump" OR "combolist" OR site:pastebin.com)'
@@ -792,7 +792,7 @@ async def scan_google_custom_search_async(client: httpx.AsyncClient, target: str
         _log_http_error("Google Custom Search", exc)
         raise
 
-def scan_googlesearch_python(target: str, lang: str = "id") -> list[dict]:
+def scan_googlesearch_python(target: str, lang: str = "en") -> list[dict]:
     """Blocking Google Search library executed in a worker thread."""
     logger.info("[Google Scraper] Starting threaded scan for target: %s", mask_pii(target))
     try:
@@ -827,7 +827,7 @@ def scan_googlesearch_python(target: str, lang: str = "id") -> list[dict]:
         logger.warning("[Google Scraper] Error: %s", type(exc).__name__)
         raise
 
-async def scan_bing_scrape_async(client: httpx.AsyncClient, target: str, lang: str = "id") -> list[dict]:
+async def scan_bing_scrape_async(client: httpx.AsyncClient, target: str, lang: str = "en") -> list[dict]:
     logger.info("[Bing Scraper] Starting scan for target: %s", mask_pii(target))
     try:
         from bs4 import BeautifulSoup
@@ -867,7 +867,7 @@ async def scan_bing_scrape_async(client: httpx.AsyncClient, target: str, lang: s
         _log_http_error("Bing Scraper", exc)
         raise
 
-async def scan_searxng_async(client: httpx.AsyncClient, target: str, lang: str = "id") -> list[dict]:
+async def scan_searxng_async(client: httpx.AsyncClient, target: str, lang: str = "en") -> list[dict]:
     """Scan via administrator-configured SearXNG instance."""
     if not SEARXNG_INSTANCE_URL:
         logger.info("[SearXNG] Scan skipped: SEARXNG_INSTANCE_URL is not configured or invalid.")
@@ -906,7 +906,7 @@ async def scan_searxng_async(client: httpx.AsyncClient, target: str, lang: str =
         _log_http_error("SearXNG", exc)
         raise
 
-async def scan_breaches_tavily_async(client: httpx.AsyncClient, target: str, api_key: str, lang: str = "id") -> list[dict]:
+async def scan_breaches_tavily_async(client: httpx.AsyncClient, target: str, api_key: str, lang: str = "en") -> list[dict]:
     logger.info("[Tavily AI] Starting scan for target: %s", mask_pii(target))
     url = "https://api.tavily.com/search"
     query = f'"{target}" "breach" OR "leak" OR "combolist"'
@@ -958,7 +958,7 @@ def _resolve_ddg_result_url(url: object) -> str:
     return raw
 
 
-def scan_breaches_ddg(target: str, lang: str = "id") -> list[dict]:
+def scan_breaches_ddg(target: str, lang: str = "en") -> list[dict]:
     """Blocking DuckDuckGo HTML search executed in a worker thread."""
     logger.info("[DuckDuckGo] Starting threaded scan for target: %s", mask_pii(target))
     query = f'"{target}" (breach OR leak OR "database dump" OR "combolist")'
@@ -1088,7 +1088,7 @@ async def scan_data_breaches(
     email: str,
     phone: str = "",
     force_refresh: bool = False,
-    lang: str = "id",
+    lang: str = "en",
     tenant_id: str = "default",
 ) -> dict:
     """Run configured breach engines and reuse each successful target/engine result."""
@@ -1256,7 +1256,7 @@ async def scan_data_breaches(
                     # A failure is deliberately not cached as an empty success.
                     stats[name]["failed"] += 1
                     logger.warning(
-                        "[%s] Engine gagal status=%s error=%s",
+                        "[%s] Engine failed status=%s error=%s",
                         name,
                         result.status.value,
                         result.error,
