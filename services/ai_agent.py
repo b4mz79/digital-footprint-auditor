@@ -1543,7 +1543,7 @@ async def call_ollama_async(
                         if fragment:
                             remaining = MAX_RAW_LLM_RESPONSE - total_chars
                             if remaining <= 0:
-                                raise ValueError("Ollama response terlalu besar.")
+                                raise ValueError("Ollama response exceeds the size limit.")
                             fragment = fragment[:remaining]
                             chunks.append(fragment)
                             total_chars += len(fragment)
@@ -1587,13 +1587,13 @@ async def call_ollama_async(
             failed_batches,
         )
         raise ValueError(
-            f"Ollama menghasilkan output parsial ({len(combined)} item tervalidasi; "
-            f"{failed_batches} batch gagal)."
+            f"Ollama returned a partial result ({len(combined)} validated items; "
+            f"{failed_batches} batches failed)."
         )
 
     if not combined:
         raise ValueError(
-            "Ollama tidak menghasilkan analysis tervalidasi."
+            "Ollama did not produce a validated analysis."
         )
 
     logger.info(
@@ -2703,7 +2703,7 @@ async def analyze_smart_cache(
 
                 provider_used = str(cached_result.get("provider_used", "")).strip()
                 if not provider_used or provider_used == "None":
-                    raise ValueError("provider_used cache tidak valid.")
+                    raise ValueError("Cached provider_used value is invalid.")
 
             except (TypeError, ValueError, KeyError) as exc:
                 logger.warning(
