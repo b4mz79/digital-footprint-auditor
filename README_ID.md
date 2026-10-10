@@ -111,6 +111,10 @@ Di Windows, jalankan `run.bat` melalui Command Prompt atau PowerShell. Dashboard
 
 Launcher mendukung mode reset. Pelajari dampaknya terlebih dahulu karena mode reset tertentu menghapus cache/artifact build lokal dan dapat menghentikan proses yang mendengarkan port 8501.
 
+### Docker (contributor)
+
+Untuk environment pengembangan berbasis container dan test runner Docker terpisah, lihat [workflow Docker untuk contributor](docs/DOCKER_ID.md). Konfigurasi Compose hanya mengikat dashboard ke localhost dan menjaga secret serta cache persisten tetap di luar image.
+
 ---
 
 ## 🛠️ Alur Pencarian Breach

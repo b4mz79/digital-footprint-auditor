@@ -111,6 +111,10 @@ On Windows, run `run.bat` from Command Prompt or PowerShell. The dashboard norma
 
 The launchers support reset modes. Review their behavior before using a reset mode because it removes selected local cache/build artifacts and may stop a process listening on port 8501.
 
+### Docker (contributors)
+
+For a containerized development environment and a separate Docker-based test runner, see the [Docker workflow for contributors](docs/DOCKER.md). The Compose setup binds the dashboard to localhost and keeps secrets and persisted cache data out of the image.
+
 ---
 
 ## 🛠️ Breach Search Flow

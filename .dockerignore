@@ -1,0 +1,36 @@
+# Git and Python environments
+.git
+.gitignore
+.venv/
+venv/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local secrets and private scan data
+.env
+.env.*
+!.env.example
+.cache_key
+cache/
+ignored_domains.txt
+*.pem
+*.key
+*.log
+log.txt
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# Local / generated artifacts
+build/
+dist/
+*.zip
+*.bak
+*.patch
+packaging/pandoc/pandoc.exe
