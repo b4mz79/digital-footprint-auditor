@@ -1015,27 +1015,51 @@ class AddonManager:
         if not self._state_path.exists():
             self._save_state({})
 
+    def _disabled_installed_addons(self) -> dict[str, bool]:
+        """Fail closed if registry state is unreadable or malformed."""
+        try:
+            return {
+                directory.name: False
+                for directory in self.root.iterdir()
+                if directory.is_dir() and (directory / "manifest.json").is_file()
+            }
+        except OSError:
+            return {}
+
     def _load_state(self) -> dict[str, bool]:
         try:
             payload = json.loads(self._state_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
-            return {}
-        if not isinstance(payload, dict):
-            return {}
-        return {str(key): bool(value) for key, value in payload.items()}
+            return self._disabled_installed_addons()
+        if not isinstance(payload, dict) or any(
+            not isinstance(key, str) or not isinstance(value, bool)
+            for key, value in payload.items()
+        ):
+            return self._disabled_installed_addons()
+        return dict(payload)
 
     def _save_state(self, state: Mapping[str, bool]) -> None:
-        temp_path = self._state_path.with_suffix(".tmp")
-        temp_path.write_text(
-            json.dumps(
-                dict(state),
-                ensure_ascii=False,
-                indent=2,
-                sort_keys=True,
-            ),
-            encoding="utf-8",
+        # Unique temporary files avoid collisions between concurrent Streamlit
+        # sessions. Atomic replacement prevents readers seeing partial JSON.
+        temp_path = self._state_path.with_name(
+            f"{self._state_path.name}.{uuid4().hex}.tmp"
         )
-        temp_path.replace(self._state_path)
+        try:
+            temp_path.write_text(
+                json.dumps(
+                    dict(state),
+                    ensure_ascii=False,
+                    indent=2,
+                    sort_keys=True,
+                ),
+                encoding="utf-8",
+            )
+            temp_path.replace(self._state_path)
+        finally:
+            try:
+                temp_path.unlink(missing_ok=True)
+            except OSError:
+                logger.warning("[Add-On] could not remove temporary state file")
 
 
 _default_manager: AddonManager | None = None
