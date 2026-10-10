@@ -41,6 +41,18 @@ Windows:
 
 The default image tag is `privacy-auditor:dev`. To force a clean rebuild, append `--no-cache`. To choose a different image tag, use `--tag privacy-auditor:local`. If you want Compose to use that custom tag, set `DOCKER_IMAGE` to the same value when running Compose, for example `DOCKER_IMAGE=privacy-auditor:local docker compose up --build` (PowerShell: `$env:DOCKER_IMAGE='privacy-auditor:local'; docker compose up --build`).
 
+## Launcher shortcuts
+
+The root launchers also expose the Docker workflows without requiring you to remember the helper-script path:
+
+```bash
+./run.sh docker-build
+./run.sh docker-test
+./run.sh docker-dev
+```
+
+On Windows, use `run.bat docker-build`, `run.bat docker-test`, or `run.bat docker-dev`. These map to the runtime image build, test-image build plus pytest, and contributor development shell, respectively. Existing `reset` and `full-reset` launcher modes remain available and cannot be combined with Docker modes.
+
 ## 3. Open the contributor development shell
 
 Linux/macOS/WSL:
