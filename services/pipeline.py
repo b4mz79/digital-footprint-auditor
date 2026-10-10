@@ -118,6 +118,7 @@ def run_scan(
     enable_breach: bool = True,
     enable_evidence_enrichment: bool = False,
     force_refresh: bool = False,
+    force_refresh_breach: bool = False,
     lang: str = "en",
     tenant_id: str | None = None,
     with_ai: bool = True,
@@ -313,7 +314,7 @@ def run_scan(
                 scan_data_breaches(
                     email=email,
                     phone=phone,
-                    force_refresh=force_refresh,
+                    force_refresh=(force_refresh or force_refresh_breach),
                     lang=lang,
                     tenant_id=tenant_id,
                 )
