@@ -259,7 +259,7 @@ def scan_gmail_inbox(
     except imaplib.IMAP4.error as imap_err:
         logger.error("[IMAP Error] IMAP authentication/command failed for [%s]", mask_email(email_address))
         raise RuntimeError(
-            f"Gagal otentikasi IMAP: Pastikan App Password benar & IMAP aktif di Gmail. Detail: {imap_err}"
+            f"IMAP authentication failed: verify the App Password and ensure IMAP is enabled in Gmail. Details: {imap_err}"
         )
     except Exception as exc:
         logger.error("[IMAP Error] Network or server issue: %s", type(exc).__name__)
