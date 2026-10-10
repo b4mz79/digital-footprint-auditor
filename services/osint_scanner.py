@@ -78,7 +78,7 @@ def _load_holehe_modules() -> list:
         return get_functions(modules)
     except Exception as exc:
         logger.error("[OSINT Error] Failed to load Holehe modules: %s", type(exc).__name__)
-        raise OSINTScanError(f"Holehe modules gagal dimuat: {type(exc).__name__}") from exc
+        raise OSINTScanError(f"Holehe modules failed to load: {type(exc).__name__}") from exc
 
 
 def _module_domain(module) -> str:
