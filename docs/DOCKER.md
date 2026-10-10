@@ -41,7 +41,40 @@ Windows:
 
 The default image tag is `privacy-auditor:dev`. To force a clean rebuild, append `--no-cache`. To choose a different image tag, use `--tag privacy-auditor:local`. If you want Compose to use that custom tag, set `DOCKER_IMAGE` to the same value when running Compose, for example `DOCKER_IMAGE=privacy-auditor:local docker compose up --build` (PowerShell: `$env:DOCKER_IMAGE='privacy-auditor:local'; docker compose up --build`).
 
-## 3. Run the application
+## 3. Open the contributor development shell
+
+Linux/macOS/WSL:
+
+```bash
+./scripts/build-docker.sh --shell
+```
+
+Windows PowerShell or Command Prompt:
+
+```powershell
+.\scripts\build-docker.bat --shell
+```
+
+The script builds the `devshell` image (including `requirements.txt` and `requirements-test.txt`) and opens an interactive Bash shell in `/app`. The repository is bind-mounted, so edits made in the container are saved to the host checkout. When finished, run `exit`; the temporary container is removed automatically.
+
+Inside the shell, for example:
+
+```bash
+python --version
+python -m pytest -q
+python -m compileall -q .
+```
+
+Use the shell for contributor development, debugging, and tests without installing the project's Python dependencies directly into WSL. The shell uses a fixed test-only `PII_PEPPER_KEY`; **do not use this development shell for real scan data**. The shell does not automatically load the host `.env`.
+
+To force a clean development-image rebuild, add `--no-cache`:
+
+```bash
+./scripts/build-docker.sh --shell --no-cache
+```
+
+## 4. Run the application
+
 
 ```bash
 docker compose up --build
@@ -57,7 +90,7 @@ docker compose down
 
 The named volume `privacy-auditor-data` stores cache files and the cache encryption key outside the source tree. `docker compose down -v` also deletes that volume and its contents; use it only when you intentionally want to remove the container's persisted cache data and key.
 
-## 4. Run tests in Docker
+## 5. Run tests in Docker
 
 Linux/macOS:
 
