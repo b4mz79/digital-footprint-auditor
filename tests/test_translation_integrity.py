@@ -48,10 +48,10 @@ def test_default_translation_language_is_english() -> None:
 
 def test_runtime_logger_messages_use_english() -> None:
     forbidden_indonesian = re.compile(
-        r"\\b(?:gagal|memulai|selesai|ditemukan|menemukan|berhasil|menggunakan|"
+        r"\b(?:gagal|memulai|selesai|ditemukan|menemukan|berhasil|menggunakan|"
         r"pemindaian|menyimpan|memuat|dilewati|terjadi|ditolak|menunggu|"
         r"tidak valid|tidak ditemukan|tervalidasi|menghasilkan|terlalu besar|"
-        r"batch gagal|provider berikutnya)\\b",
+        r"batch gagal|provider berikutnya)\b",
         flags=re.IGNORECASE,
     )
     log_levels = {"debug", "info", "warning", "error", "exception", "critical"}
