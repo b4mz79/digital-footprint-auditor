@@ -25,9 +25,9 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      # Contributors can edit source files on the host and rerun without rebuilding.
-      - .:/app
       # Keep encrypted caches and their key outside the source tree.
+      # Application code is supplied by the image so the non-root runtime user
+      # is not blocked by host directory permissions on bind-mounted source.
       - privacy-auditor-data:/data
     init: true
     security_opt:
