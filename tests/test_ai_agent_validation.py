@@ -305,3 +305,10 @@ def test_security_context_lineage_does_not_raise_risk_by_itself() -> None:
     assert linked[0]["reason"] == ai_agent.t("unknown_reason", lang="en")
     assert linked[0]["evidence_ids"] == ["context-only-1"]
 
+
+
+def test_docker_host_ollama_endpoint_is_allowed_by_default() -> None:
+    assert (
+        ai_agent._validate_ollama_url("http://host.docker.internal:11434")
+        == "http://host.docker.internal:11434"
+    )
