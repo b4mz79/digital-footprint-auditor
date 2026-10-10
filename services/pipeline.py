@@ -116,7 +116,7 @@ def run_scan(
     enable_imap: bool = True,
     enable_osint: bool = True,
     enable_breach: bool = True,
-    enable_evidence_enrichment: bool = True,
+    enable_evidence_enrichment: bool = False,
     force_refresh: bool = False,
     lang: str = "en",
     tenant_id: str | None = None,
