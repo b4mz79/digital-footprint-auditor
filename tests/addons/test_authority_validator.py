@@ -247,11 +247,11 @@ def run(context):
         (
             "from pathlib import Path\\n"
             "def run(context):\\n"
-            "    return \"{0.exists.__globals__[os].environ}\".format(Path(\"x\"))\\n"
+            "    return '{0.exists.__globals__[os].environ}'.format(Path('x'))\\n"
         ),
         (
             "def run(context):\\n"
-            "    return \"{value.__class__}\".format_map({\"value\": context})\\n"
+            "    return '{value.__class__}'.format_map({'value': context})\\n"
         ),
     ],
 )
