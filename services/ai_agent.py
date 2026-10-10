@@ -1289,7 +1289,7 @@ def _validate_ollama_url(value: str) -> str:
 
         host = parsed.hostname.rstrip(".").lower()
         if not ALLOW_REMOTE_OLLAMA:
-            allowed = {"localhost", "127.0.0.1", "::1", _get_wsl_host_ip()}
+            allowed = {"localhost", "127.0.0.1", "::1", "host.docker.internal", _get_wsl_host_ip()}
             if host not in allowed:
                 raise ValueError("Remote Ollama disabled by default.")
         return value
