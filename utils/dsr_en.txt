@@ -1,0 +1,30 @@
+To:
+Data Protection Officer (DPO) / Data Privacy Team
+[Company / Service Provider Name]
+
+Subject: Request for Personal Data Erasure / Data Subject Request (DSR)
+Reference: Indonesia's PDP Law No. 27/2022 and the GDPR, where applicable.
+
+
+Dear Data Protection Officer,
+
+I am writing to formally submit a Data Subject Request regarding my personal data.
+
+Registered Account Details:
+- Registered Email : {email} {phone_str}
+
+Under data subject rights guaranteed by applicable privacy laws, I hereby request the following:
+
+1. Permanently delete and/or erase all my personal data stored within your systems, databases, and sub-processors.
+2. Immediately cease any further processing, profiling, or commercial utilization of my personal data.
+3. Provide written confirmation via email once the data erasure process has been completed.
+
+List of Detected Services:
+{services_str}
+
+Thank you for your prompt attention to this statutory request.
+
+Sincerely,
+
+
+[{email}]

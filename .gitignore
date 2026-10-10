@@ -1,0 +1,45 @@
+# Environment Variables & Keys
+.env
+.cache_key
+*.pem
+*.patch
+#test_*.py
+.env.example-v*
+*.bak
+packaging/pandoc/pandoc.exe
+
+# Python Cache
+__pycache__/
+services/__pycache__/
+services/breach/__pycache__/
+utils/__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+files/
+files-1/
+files-2/
+.pytest_cache/
+
+# Project Specific Caches (Data Hasil Scan Privasi)
+cache/
+addons/
+ignored_domains.txt
+main.py
+services/phone_scanner.py
+services/scanner.py
+log.txt
+#*.json
+safe_services.json
+*-v*.py
+*-v*.txt
+*.zip
+build/
+dist/
+# Scorecard local persistence
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3

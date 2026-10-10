@@ -1,0 +1,55 @@
+services:
+  app:
+    image: ${DOCKER_IMAGE:-privacy-auditor:dev}
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      CACHE_KEY_FILE: /data/.cache_key
+      AI_CACHE_DIR: /data/cache
+      BREACH_CACHE_DIR: /data/cache/breach
+      IMAP_CACHE_DIR: /data/cache/imap
+      OSINT_CACHE_DIR: /data/cache/osint
+      EVIDENCE_ENRICHMENT_CACHE_DIR: /data/cache/enrichment
+      OLLAMA_HOST: ${OLLAMA_HOST:-http://host.docker.internal:11434}
+      STREAMLIT_SERVER_HEADLESS: "true"
+      STREAMLIT_SERVER_ADDRESS: "0.0.0.0"
+      STREAMLIT_SERVER_PORT: "8501"
+      STREAMLIT_BROWSER_GATHER_USAGE_STATS: "false"
+    ports:
+      - "127.0.0.1:8501:8501"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # Keep encrypted caches and their key outside the source tree.
+      # Application code is supplied by the image so the non-root runtime user
+      # is not blocked by host directory permissions on bind-mounted source.
+      - privacy-auditor-data:/data
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  test:
+    image: ${DOCKER_IMAGE:-privacy-auditor:dev}-test
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: test
+    profiles:
+      - test
+    working_dir: /app
+    volumes:
+      - .:/app
+    environment:
+      PII_PEPPER_KEY: docker-test-only-key-not-for-real-data-00000000000000000000
+      PYTHONDONTWRITEBYTECODE: "1"
+    command: ["python", "-m", "pytest", "-q"]
+
+volumes:
+  privacy-auditor-data:

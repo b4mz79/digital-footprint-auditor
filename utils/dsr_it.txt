@@ -1,0 +1,30 @@
+A:
+Responsabile della Protezione dei Dati (DPO) / Team Privacy
+[Nome Azienda / Fornitore del Servizio]
+
+Oggetto: Richiesta di Cancellazione dei Dati Personali / Data Subject Request (DSR)
+Riferimento: Legge PDP indonesiana n. 27/2022 e GDPR, ove applicabili.
+
+
+Gentile Responsabile della Protezione dei Dati,
+
+Con la presente desidero presentare formalmente una Richiesta dell'Interessato (DSR) relativa ai miei dati personali.
+
+Dettagli dell'Account Registrato:
+- Email Registrata : {email}{phone_str}
+
+Ai sensi dei diritti dell'interessato garantiti dalle leggi vigenti sulla privacy, richiedo quanto segue:
+
+1. Cancellare e/o eliminare definitivamente tutti i miei dati personali conservati nei vostri sistemi, database e responsabili del trattamento (sub-processors).
+2. Interrompere immediatamente qualsiasi ulteriore trattamento, profilazione o utilizzo commerciale dei miei dati personali.
+3. Fornire una conferma scritta via email non appena il processo di cancellazione dei dati sarà stato completato.
+
+Elenco dei Servizi Rilevati:
+{services_str}
+
+Ringraziando per la sollecita attenzione a questa richiesta formale, porgo distinti saluti.
+
+In fede,
+
+
+[{email}]

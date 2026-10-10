@@ -1,0 +1,176 @@
+"""Stable evidence records used by enrichment and future risk lineage."""
+
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass, field
+from datetime import datetime
+import math
+from enum import Enum
+import hashlib
+from typing import Any
+
+
+class EvidenceRelation(str, Enum):
+    """How an evidence item relates to the audited subject."""
+
+    DIRECT_TARGET = "direct_target"
+    TARGET_RESOURCE = "target_resource"
+    SECURITY_PUBLICATION = "security_publication"
+    DOMAIN_CONTEXT = "domain_context"
+    VERIFICATION = "verification"
+
+
+class EvidenceDirectness(str, Enum):
+    """Whether the evidence is directly about the target."""
+
+    DIRECT = "direct"
+    INDIRECT = "indirect"
+    CONTEXTUAL = "contextual"
+    UNKNOWN = "unknown"
+
+
+VERIFICATION_SCOPES = ("url_accessibility",)
+VERIFICATION_STATES = ("reachable", "unreachable", "unknown")
+
+def _validate_timestamp(
+    value: str | None,
+    *,
+    field_name: str,
+    allow_none: bool,
+    allow_date_only: bool = False,
+) -> str | None:
+    """Validate an ISO-8601 temporal value without inferring missing timezone data."""
+    if value is None:
+        if allow_none:
+            return None
+        raise ValueError(f"{field_name} must be a timezone-aware ISO-8601 timestamp")
+
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{field_name} must be a timezone-aware ISO-8601 timestamp")
+
+    raw = value.strip()
+    if allow_date_only and len(raw) == 10:
+        try:
+            parsed = datetime.fromisoformat(raw)
+        except ValueError as exc:
+            raise ValueError(f"{field_name} must be a valid ISO-8601 date") from exc
+        if parsed.time() == datetime.min.time():
+            return raw
+
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError(
+            f"{field_name} must be a timezone-aware ISO-8601 timestamp"
+        ) from exc
+
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ValueError(
+            f"{field_name} must include an explicit timezone offset"
+        )
+    return raw
+
+
+@dataclass(slots=True)
+class EvidenceRecord:
+    """A provenance-preserving, machine-readable evidence item.
+
+    The record deliberately separates target relevance from source reliability.
+    A trusted publication can still be only contextual evidence for a specific
+    person's exposure.
+    """
+
+    evidence_id: str
+    source: str
+    source_type: str
+    relation: EvidenceRelation
+    directness: EvidenceDirectness
+    confidence: float
+    observed_at: str
+    published_at: str | None
+    domain: str
+    url: str
+    title: str
+    summary: str
+    provenance: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
+    # Explicit semantic contract for the assertion represented by this record.
+    # This is not a risk score and must never be interpreted as one.
+    assertion_scope: str = "unknown"
+    # Verification is deliberately scoped. "url_accessibility" means only that
+    # the stored URL was checked for HTTP reachability; it does not verify the
+    # source, claim, or target exposure.
+    verification_scope: str = "url_accessibility"
+    verification_state: str = "unknown"
+    verification_observed_at: str | None = None
+
+    def __post_init__(self) -> None:
+        self.observed_at = _validate_timestamp(
+            self.observed_at, field_name="observed_at", allow_none=False
+        ) or ""
+        self.published_at = _validate_timestamp(
+            self.published_at,
+            field_name="published_at",
+            allow_none=True,
+            allow_date_only=True,
+        )
+        self.verification_observed_at = _validate_timestamp(
+            self.verification_observed_at,
+            field_name="verification_observed_at",
+            allow_none=True,
+        )
+        confidence = float(self.confidence)
+        if not math.isfinite(confidence):
+            raise ValueError("confidence must be finite")
+        self.confidence = max(0.0, min(1.0, confidence))
+        self.assertion_scope = str(self.assertion_scope or "unknown").strip() or "unknown"
+        self.verification_scope = (
+            str(self.verification_scope or "url_accessibility").strip()
+            or "url_accessibility"
+        )
+        self.verification_state = (
+            str(self.verification_state or "unknown").strip().lower() or "unknown"
+        )
+        if self.verification_scope not in VERIFICATION_SCOPES:
+            raise ValueError(f"Unsupported verification scope: {self.verification_scope}")
+        if self.verification_state not in VERIFICATION_STATES:
+            raise ValueError(f"Unsupported verification state: {self.verification_state}")
+        if (
+            self.verification_state == "unknown"
+            or self.verification_observed_at is None
+        ):
+            # A positive/negative reachability state without an observation
+            # timestamp cannot be treated as a current verification result.
+            self.verification_state = "unknown"
+            self.verification_observed_at = None
+            metadata = dict(self.metadata) if isinstance(self.metadata, dict) else {}
+            metadata.pop("url_verification", None)
+            self.metadata = metadata
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return JSON-serializable evidence without losing enum semantics."""
+        data = asdict(self)
+        data["relation"] = self.relation.value
+        data["directness"] = self.directness.value
+        return data
+
+
+def make_evidence_id(
+    *,
+    source: str,
+    source_type: str,
+    domain: str,
+    url: str,
+    title: str = "",
+) -> str:
+    """Create a deterministic identifier from provenance, never from PII."""
+    material = "".join(
+        [
+            source.strip().lower(),
+            source_type.strip().lower(),
+            domain.strip().lower(),
+            url.strip(),
+            title.strip(),
+        ]
+    )
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()

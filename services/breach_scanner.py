@@ -1,0 +1,1364 @@
+import os
+import json
+import re
+import time
+import html
+import asyncio
+import random
+from urllib.parse import quote, urlsplit, urlunsplit
+from pathlib import Path
+
+import httpx
+from dotenv import load_dotenv
+
+from services.breach.models import EngineResult, EngineStatus
+from services.breach.circuit_breaker import CircuitRegistry
+from services.breach.health import HealthRegistry
+from services.breach.limiter import LimiterRegistry
+
+try:
+    from cache_security import save_encrypted_json, load_encrypted_json
+except ImportError:  # pragma: no cover - cache_security living inside the services package
+    from services.cache_security import save_encrypted_json, load_encrypted_json
+
+from utils.cache_identity import hmac_identity, tenant_identity
+from utils.envutil import env_bool as _env_bool, env_non_negative_int as _env_non_negative_int
+from utils.logging_setup import get_logger, log_level
+from utils.paths import resolve_data_path
+from utils.privacy import NUMERIC_CODE_PATTERN
+from utils.translations import t
+
+# =============================================================================
+# Configuration / secure defaults
+# =============================================================================
+
+load_dotenv(override=False)
+
+LOG_LEVEL_VALUE = log_level()
+logger = get_logger("BreachScanner")
+
+# =============================================================================
+# Files / runtime configuration
+# =============================================================================
+
+BREACH_CACHE_DIR = resolve_data_path(os.getenv("BREACH_CACHE_DIR"), "cache/breach")
+BREACH_CACHE_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
+if os.name != "nt":
+    try:
+        os.chmod(BREACH_CACHE_DIR, 0o700)
+    except OSError:
+        pass
+
+DELAY_SECONDS = _env_non_negative_int("DELAY_SECONDS", 2, maximum=300)
+
+IGNORED_DOMAINS_FILE = resolve_data_path(os.getenv("IGNORED_DOMAINS_FILE"), "ignored_domains.txt")
+DEFAULT_IGNORED_DOMAINS = [
+    "cbinsights.com", "zoominfo.com", "tracxn.com", "pitchbook.com",
+    "crunchbase.com", "craft.co", "datanyze.com", "similarweb.com", "chinsights.com",
+]
+
+MAX_TARGET_LENGTH = 254
+MAX_PHONE_DIGITS = 15
+MAX_SNIPPET_INPUT = 16_000
+MAX_RESULT_URL_LENGTH = 4096
+MAX_TITLE_LENGTH = 512
+MAX_RESULT_SNIPPET_LENGTH = 2_000
+MAX_FINDINGS_PER_ENGINE = 10
+MAX_BREACHDIRECTORY_RECORDS = 500  # records inspected per response (never stored individually)
+MAX_TOTAL_FINDINGS = 100
+MAX_HTTP_REDIRECTS = 3
+RESPONSE_LIMIT_JSON = 2 * 1024 * 1024
+RESPONSE_LIMIT_HTML = 2 * 1024 * 1024
+RESPONSE_LIMIT_SEARXNG = 4 * 1024 * 1024
+RESPONSE_LIMIT_TAVILY = 3 * 1024 * 1024
+REQUEST_TIMEOUT = httpx.Timeout(12.0, connect=5.0)
+
+# HTTP resilience controls (especially for public search APIs returning 429)
+HTTP_RETRY_ATTEMPTS = _env_non_negative_int("HTTP_RETRY_ATTEMPTS", 3, maximum=8)
+HTTP_RETRY_BASE_SECONDS = float(os.getenv("HTTP_RETRY_BASE_SECONDS", "1.5"))
+TRUST_ENV = _env_bool("HTTPX_TRUST_ENV", False)
+
+# =============================================================================
+# Breach Scanner v2 runtime control plane
+# =============================================================================
+#
+# Tujuan:
+# - mencegah retry storm
+# - menghentikan sementara engine yang terkena rate-limit
+# - menjaga provider sehat tetap berjalan
+# - membedakan:
+#
+#   "tidak ditemukan breach"
+#
+#   dengan
+#
+#   "engine gagal dianalisa"
+#
+# =============================================================================
+
+ENGINE_LIMITERS = LimiterRegistry()
+ENGINE_CIRCUITS = CircuitRegistry()
+ENGINE_HEALTH = HealthRegistry()
+_ENGINE_COOLDOWN_UNTIL: dict[str, float] = {}
+
+BREACH_QUEUE_WORKERS = max(1, _env_non_negative_int("BREACH_QUEUE_WORKERS", 2, maximum=32))
+BREACH_CACHE_SCHEMA_VERSION = 2
+BREACH_ENGINE_COOLDOWN = float(os.getenv("BREACH_ENGINE_COOLDOWN", "60"))
+
+# SearXNG is administrator-configured, including the case of a private/self-hosted instance.
+def _validate_searxng_base_url(value: str) -> str:
+    value = value.strip().rstrip("/")
+    if not value:
+        return ""
+    try:
+        parsed = urlsplit(value)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            return ""
+        if parsed.username is not None or parsed.password is not None:
+            return ""
+        if parsed.query or parsed.fragment:
+            return ""
+        return value
+    except Exception:
+        return ""
+
+SEARXNG_INSTANCE_URL = _validate_searxng_base_url(os.getenv("SEARXNG_INSTANCE_URL", ""))
+
+# =============================================================================
+# Input / utility helpers
+# =============================================================================
+
+EMAIL_TARGET_RE = re.compile(r"^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9.-]+$")
+CONTROL_CHARS_RE = re.compile(r"[\x00-\x1f\x7f]")
+
+def _safe_text(value: object, max_len: int) -> str:
+    if value is None:
+        return ""
+    return CONTROL_CHARS_RE.sub(" ", str(value))[:max_len]
+
+def _validate_email_target(email: str) -> str:
+    email = email.strip().lower()
+    if not email or len(email) > MAX_TARGET_LENGTH:
+        raise ValueError("Email target tidak valid atau terlalu panjang.")
+    if CONTROL_CHARS_RE.search(email) or not EMAIL_TARGET_RE.fullmatch(email):
+        raise ValueError("Email target tidak valid.")
+    if email.count("@") != 1:
+        raise ValueError("Email target tidak valid.")
+    local, domain = email.rsplit("@", 1)
+    if not local or len(local) > 64 or not domain or domain.startswith(".") or domain.endswith("."):
+        raise ValueError("Email target tidak valid.")
+    return email
+
+def _validate_phone_target(phone: str) -> str:
+    phone = phone.strip()
+    if not phone or len(phone) > 32 or CONTROL_CHARS_RE.search(phone):
+        raise ValueError("Phone target tidak valid.")
+    clean_num = re.sub(r"\D", "", phone)
+    if not 7 <= len(clean_num) <= MAX_PHONE_DIGITS:
+        raise ValueError("Phone target harus memiliki 7-15 digit.")
+    return phone
+
+def mask_pii(text: str) -> str:
+    """Strict logging redaction: do not put partial email/phone into logs."""
+    if not text:
+        return ""
+    return "[EMAIL_REDACTED]" if "@" in text else "[PHONE_REDACTED]"
+
+def mask_sensitive_snippet(subject_text: str) -> str:
+    """Redact PII, phone numbers and common credential-like tokens from text."""
+    if not subject_text:
+        return ""
+    masked = subject_text[:MAX_SNIPPET_INPUT]
+    masked = re.sub(r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+", "[EMAIL_REDACTED]", masked)
+    masked = re.sub(r"\+?\b\d{9,15}\b", "[PHONE_REDACTED]", masked)
+    masked = re.sub(r"\b(?:\+62|62|0)[ \-]?\d{2,4}[ \-]?\d{3,4}[ \-]?\d{3,5}\b", "[PHONE_REDACTED]", masked)
+    masked = re.sub(r"\bG-\d{4,8}\b", "G-[REDACTED]", masked, flags=re.IGNORECASE)
+    masked = NUMERIC_CODE_PATTERN.sub("[NUMERIC_CODE_REDACTED]", masked)
+    return re.sub(
+        r"(?i)\b(otp|pin|kode|code|token|sandi|password)\b[\s:=]+[A-Za-z0-9._~+/-]{4,64}\b",
+        r"\1 [REDACTED]",
+        masked,
+    )
+
+def safe_filename_identity(email_addr: str, phone: str = "") -> str:
+    """Create an HMAC-based cache identity without exposing target PII."""
+    normalized_email = email_addr.strip().lower()
+    normalized_phone = re.sub(r"\D", "", phone.strip())
+    return hmac_identity(f"{normalized_email}_{normalized_phone}")
+
+
+def safe_tenant_identity(tenant_id: str) -> str:
+    return tenant_identity(tenant_id)
+
+
+DEFAULT_PHONE_REGION = (os.getenv("DEFAULT_PHONE_REGION", "ID").strip().upper() or "ID")[:2]
+MAX_PHONE_VARIANTS = _env_non_negative_int("PHONE_VARIANTS_MAX", 12, maximum=18) or 1
+
+def _legacy_phone_variants(clean_num: str, region: str) -> list[str]:
+    """Digit-only variants used when `phonenumbers` is unavailable or cannot parse the input.
+    The Indonesian trunk-prefix heuristic applies only when the region is ID."""
+    if region != "ID":
+        return [clean_num, "+" + clean_num]
+    if clean_num.startswith("62"):
+        local_num, intl_num = "0" + clean_num[2:], clean_num
+    elif clean_num.startswith("0"):
+        local_num, intl_num = clean_num, "62" + clean_num[1:]
+    else:
+        local_num, intl_num = "0" + clean_num, "62" + clean_num
+    variants = ["+" + intl_num, local_num, intl_num]
+    if len(local_num) >= 10:
+        rest_local, rest_intl = local_num[4:], intl_num[5:]
+        mid = len(rest_local) // 2
+        a_l, b_l = rest_local[:mid], rest_local[mid:]
+        a_i, b_i = rest_intl[:mid], rest_intl[mid:]
+        variants += [
+            f"+62 {intl_num[2:5]} {a_i} {b_i}",
+            f"{local_num[:4]} {a_l} {b_l}",
+            f"+62-{intl_num[2:5]}-{a_i}-{b_i}",
+            f"{local_num[:4]}-{a_l}-{b_l}",
+        ]
+    return variants
+
+def _phonenumbers_variants(phone: str, region: str) -> list[str] | None:
+    """E.164, national and international-without-plus forms first (the ones most likely to be
+    indexed), then the formatted variants. None if the library is missing or parsing fails."""
+    try:
+        import phonenumbers
+    except ImportError:
+        return None
+    try:
+        parsed = phonenumbers.parse(phone.strip(), None if phone.strip().startswith("+") else region)
+        if not phonenumbers.is_possible_number(parsed):
+            return None
+        e164 = phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.E164)
+        national = phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.NATIONAL)
+        international = phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.INTERNATIONAL)
+    except Exception:
+        return None
+    national_digits = re.sub(r"\D", "", national)
+    # Some regions print the national form without the trunk prefix; keep it as returned.
+    return [e164, national_digits, e164.lstrip("+"), international, national]
+
+def normalize_phone_number(phone: str, region: str | None = None) -> list[str]:
+    """Search variants for a phone number, capped at PHONE_VARIANTS_MAX because every variant is
+    sent to every engine."""
+    _validate_phone_target(phone)
+    clean_num = re.sub(r"\D", "", phone.strip())
+    if not clean_num:
+        return []
+    region = (region or DEFAULT_PHONE_REGION).upper()
+    variants = _phonenumbers_variants(phone, region)
+    if not variants:
+        # Fallback without the library. A number written with an explicit non-Indonesian "+" prefix
+        # must not receive the Indonesian trunk-prefix (0 <-> 62) rewriting.
+        legacy_region = "INTL" if phone.strip().startswith("+") and not clean_num.startswith("62") else region
+        variants = _legacy_phone_variants(clean_num, legacy_region)
+    unique = list(dict.fromkeys(v for v in variants if v))
+    return unique[:MAX_PHONE_VARIANTS]
+
+def clean_title(text: object, max_len: int = MAX_TITLE_LENGTH) -> str:
+    """Titles come straight from search engines and may contain the target's email/phone."""
+    if not text:
+        return ""
+    cleaned = " ".join(re.sub(r"<[^<]+?>", "", html.unescape(_safe_text(text, MAX_TITLE_LENGTH))).split())
+    return mask_sensitive_snippet(cleaned)[:max_len]
+
+def clean_snippet(text: str, max_len: int = 220, lang: str = "en") -> str:
+    if not text:
+        return t("no_summary", lang=lang)
+    bounded = _safe_text(text, MAX_SNIPPET_INPUT)
+    decoded_text = html.unescape(bounded)
+    cleaned = " ".join(re.sub(r"<[^<]+?>", "", decoded_text).split())
+    cleaned = mask_sensitive_snippet(cleaned)
+    return cleaned[:max_len] + "..." if len(cleaned) > max_len else cleaned
+
+def _mask_web_finding(item: object) -> object:
+    """Central defence in depth: web-sourced titles/snippets never carry raw email/phone into
+    the UI or the cache. Database findings are structured and untouched."""
+    if not isinstance(item, dict) or item.get("kind") == "breach_db":
+        return item
+    masked = dict(item)
+    masked["title"] = clean_title(masked.get("title"))
+    masked["snippet"] = mask_sensitive_snippet(_safe_text(masked.get("snippet"), MAX_RESULT_SNIPPET_LENGTH))
+    return masked
+
+def _normalize_result_url(url: object) -> str:
+    """Allow only HTTP(S) result links; remove credentials/fragments and bound length."""
+    raw = _safe_text(url, MAX_RESULT_URL_LENGTH).strip()
+    if not raw:
+        return ""
+    try:
+        parsed = urlsplit(raw)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            return ""
+        if parsed.username is not None or parsed.password is not None:
+            return ""
+        return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, parsed.query, ""))[:MAX_RESULT_URL_LENGTH]
+    except Exception:
+        return ""
+
+def _ignored_domain(hostname: str, ignored_domains: list[str]) -> bool:
+    normalized_host = hostname.rstrip(".").lower()
+    for domain in ignored_domains:
+        domain = domain.strip().lower().lstrip(".")
+        if normalized_host == domain or normalized_host.endswith("." + domain):
+            return True
+    return False
+
+def load_ignored_domains() -> list[str]:
+    if not IGNORED_DOMAINS_FILE.exists():
+        try:
+            with open(IGNORED_DOMAINS_FILE, "x", encoding="utf-8") as f:
+                f.write("\n".join(DEFAULT_IGNORED_DOMAINS) + "\n")
+            return DEFAULT_IGNORED_DOMAINS.copy()
+        except FileExistsError:
+            pass
+        except OSError:
+            return DEFAULT_IGNORED_DOMAINS.copy()
+    try:
+        with open(IGNORED_DOMAINS_FILE, "r", encoding="utf-8") as f:
+            domains = [line.strip().lower() for line in f if line.strip() and not line.startswith("#") and len(line.strip()) <= 253]
+            return domains or DEFAULT_IGNORED_DOMAINS.copy()
+    except OSError:
+        return DEFAULT_IGNORED_DOMAINS.copy()
+
+def is_valid_finding(url: str, target: str = "", title: str = "", snippet: str = "") -> bool:
+    if not isinstance(url, str) or not url:
+        return False
+    normalized_url = _normalize_result_url(url)
+    if not normalized_url:
+        return False
+    try:
+        parsed = urlsplit(normalized_url)
+        hostname = parsed.hostname or ""
+    except Exception:
+        return False
+    if _ignored_domain(hostname, load_ignored_domains()):
+        return False
+    if target and target.strip():
+        target_lower = target.strip().lower()
+        if target_lower not in f"{title} {snippet}".lower():
+            return False
+    return True
+
+# =============================================================================
+# Cache helpers
+# =============================================================================
+
+def get_breach_cache_filepath(email_addr: str, phone: str = "", tenant_id: str = "default") -> Path:
+    tenant_hash = safe_tenant_identity(tenant_id)
+    identity_hash = safe_filename_identity(email_addr, phone)
+    tenant_dir = BREACH_CACHE_DIR / tenant_hash
+    tenant_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if os.name != "nt":
+        try:
+            os.chmod(tenant_dir, 0o700)
+        except OSError:
+            pass
+    return tenant_dir / f"breach_cache_{identity_hash}.json"
+
+def load_breach_cache(email_addr: str, phone: str = "", max_age_hours: float = 12.0, tenant_id: str = "default") -> dict | None:
+    try:
+        if max_age_hours < 0:
+            raise ValueError("max_age_hours must be >= 0")
+        cache_file = get_breach_cache_filepath(email_addr, phone, tenant_id)
+        if not cache_file.exists():
+            return None
+        # Expiry is authenticated by Fernet's token timestamp rather than relying on filesystem mtime,
+        # which may be changed independently of the token.
+        data = load_encrypted_json(
+            cache_file,
+            tenant_id=tenant_id,
+            max_age_seconds=int(max_age_hours * 3600),
+        )
+        if isinstance(data, dict) and data.get("cache_schema_version") == BREACH_CACHE_SCHEMA_VERSION:
+            data["is_from_cache"] = True
+            return data
+        if isinstance(data, dict):
+            logger.info("[Breach Cache] Legacy or unknown cache schema; treating as cache miss.")
+        return None
+    except Exception:
+        # Cache failure must not fail the scan.
+        return None
+
+def save_breach_cache(email_addr: str, data: dict, phone: str = "", tenant_id: str = "default") -> None:
+    try:
+        cache_file = get_breach_cache_filepath(email_addr, phone, tenant_id)
+        save_encrypted_json(cache_file, data, tenant_id=tenant_id)
+        if os.name != "nt":
+            try:
+                os.chmod(cache_file, 0o600)
+            except OSError:
+                pass
+    except Exception as exc:
+        logger.error("[Breach Cache] Error saving: %s", type(exc).__name__)
+
+def _engine_cooldown_remaining(engine_name: str) -> float:
+    now = time.monotonic()
+    until = _ENGINE_COOLDOWN_UNTIL.get(engine_name, 0.0)
+    if until <= now:
+        _ENGINE_COOLDOWN_UNTIL.pop(engine_name, None)
+        return 0.0
+    return until - now
+
+# =============================================================================
+# HTTP helpers
+# =============================================================================
+
+class ResponseTooLargeError(RuntimeError):
+    pass
+
+class EngineSkipped(Exception):
+    """Raised by an engine that is not configured; reported as 'skipped', not 'ok'."""
+
+async def execute_engine_v2(engine_name: str, coroutine_factory) -> EngineResult:
+    """
+    Universal engine execution wrapper.
+
+    Semua engine:
+    - API
+    - scraper
+    - database lookup
+
+    melewati layer ini.
+    """
+    cooldown_remaining = _engine_cooldown_remaining(engine_name)
+    if cooldown_remaining > 0:
+        logger.warning("[%s] Engine cooldown active; remaining=%.1fs", engine_name, cooldown_remaining)
+        return EngineResult(engine=engine_name, status=EngineStatus.RATE_LIMITED, error="Engine cooldown active")
+    if not ENGINE_CIRCUITS.allow(engine_name):
+        logger.warning("[%s] Circuit breaker OPEN", engine_name)
+        return EngineResult(engine=engine_name, status=EngineStatus.CIRCUIT_OPEN, error="Temporary engine cooldown")
+    if not ENGINE_LIMITERS.allow(engine_name):
+        logger.warning("[%s] Rate limiter blocked", engine_name)
+        return EngineResult(engine=engine_name, status=EngineStatus.RATE_LIMITED, error="Local rate limiter")
+
+    started = time.monotonic()
+    try:
+        try:
+            coroutine = coroutine_factory()
+        except Exception as exc:
+            logger.exception("[%s] Engine exception", engine_name)
+            return EngineResult(engine=engine_name, status=EngineStatus.FAILED, error=type(exc).__name__)
+        result = await asyncio.wait_for(coroutine, timeout=ENGINE_TIMEOUT_SECONDS)
+        elapsed = time.monotonic() - started
+        ENGINE_CIRCUITS.record_success(engine_name)
+        ENGINE_HEALTH.record_success(engine_name, elapsed)
+        return EngineResult(
+            engine=engine_name,
+            status=EngineStatus.SUCCESS,
+            findings=result if isinstance(result, list) else [],
+            metadata={"elapsed": round(elapsed, 3)},
+        )
+    except EngineSkipped as exc:
+        return EngineResult(engine=engine_name, status=EngineStatus.SKIPPED, error=str(exc))
+    except httpx.HTTPStatusError as exc:
+        status_code = exc.response.status_code if exc.response else None
+        if status_code == 429:
+            ENGINE_LIMITERS.penalize(engine_name)
+            cooldown_seconds = max(0.0, BREACH_ENGINE_COOLDOWN)
+            if cooldown_seconds > 0:
+                _ENGINE_COOLDOWN_UNTIL[engine_name] = time.monotonic() + cooldown_seconds
+            logger.warning("[%s] HTTP 429; cooldown=%.1fs", engine_name, cooldown_seconds)
+            return EngineResult(engine=engine_name, status=EngineStatus.RATE_LIMITED, error="HTTP 429")
+        ENGINE_CIRCUITS.record_failure(engine_name)
+        return EngineResult(engine=engine_name, status=EngineStatus.FAILED, error=f"HTTP {status_code}")
+    except asyncio.TimeoutError:
+        ENGINE_CIRCUITS.record_failure(engine_name)
+        return EngineResult(engine=engine_name, status=EngineStatus.TIMEOUT, error="Timeout")
+    except Exception as exc:
+        ENGINE_CIRCUITS.record_failure(engine_name)
+        return EngineResult(engine=engine_name, status=EngineStatus.FAILED, error=type(exc).__name__)
+
+# Stable engine identifiers used in the scan report (not shown as finding sources).
+ENGINE_BREACHDIRECTORY = "BreachDirectory"
+ENGINE_GOOGLE_API = "Google Custom Search"
+ENGINE_GOOGLE_SCRAPER = "Google Scraper"
+ENGINE_BING = "Bing Scraper"
+ENGINE_TAVILY = "Tavily"
+ENGINE_SEARXNG = "SearXNG"
+ENGINE_DDG = "DuckDuckGo"
+ENGINE_HIBP = "Have I Been Pwned"
+ENGINE_HIBP_URL = "https://haveibeenpwned.com"
+HIBP_API_BASE_URL = "https://haveibeenpwned.com/api/v3"
+HIBP_USER_AGENT = os.getenv("HIBP_USER_AGENT", "Digital Footprint Auditor").strip() or "Digital Footprint Auditor"
+
+# Hard ceiling per engine call (thread-based scrapers have no reliable timeout of their own).
+ENGINE_TIMEOUT_SECONDS = 45.0
+
+async def _read_response_limited(response: httpx.Response, max_bytes: int) -> bytes:
+    content_length = response.headers.get("Content-Length")
+    if content_length:
+        try:
+            if int(content_length) > max_bytes:
+                raise ResponseTooLargeError(f"Response exceeds configured limit ({max_bytes} bytes).")
+        except ValueError:
+            pass
+    body = bytearray()
+    async for chunk in response.aiter_bytes():
+        if len(body) + len(chunk) > max_bytes:
+            raise ResponseTooLargeError(f"Response exceeds configured limit ({max_bytes} bytes).")
+        body.extend(chunk)
+    return bytes(body)
+
+async def _request_limited(client: httpx.AsyncClient, method: str, url: str, *, max_bytes: int, raise_for_status: bool = True, **kwargs) -> tuple[int, dict[str, str], bytes]:
+    """HTTP request wrapper with bounded retry/backoff for transient failures.
+
+    Handles rate limiting (429), temporary gateway failures, and network jitter
+    without creating aggressive retry storms. Retry delay honors Retry-After when
+    provided by the upstream service.
+    """
+    last_exc = None
+    for attempt in range(HTTP_RETRY_ATTEMPTS + 1):
+        try:
+            async with client.stream(method, url, **kwargs) as response:
+                if response.status_code == 429:
+                    retry_after = response.headers.get("retry-after")
+                    if retry_after and retry_after.isdigit():
+                        delay = min(float(retry_after), 60.0)
+                    else:
+                        delay = min(HTTP_RETRY_BASE_SECONDS, 5.0)
+                    logger.warning("HTTP rate limited status=429; stop retry chain delay=%.2fs", delay)
+                    raise httpx.HTTPStatusError("HTTP 429 rate limited", request=response.request, response=response)
+
+                if response.status_code in {502, 503, 504} and attempt < HTTP_RETRY_ATTEMPTS:
+                    delay = min(HTTP_RETRY_BASE_SECONDS * (2 ** attempt), 30.0) + random.uniform(0, 0.5)
+                    logger.warning("HTTP transient status=%s; retry in %.2fs", response.status_code, delay)
+                    await asyncio.sleep(delay)
+                    continue
+
+                if raise_for_status:
+                    response.raise_for_status()
+                return response.status_code, dict(response.headers), await _read_response_limited(response, max_bytes)
+        except (httpx.TimeoutException, httpx.NetworkError) as exc:
+            last_exc = exc
+            if attempt < HTTP_RETRY_ATTEMPTS:
+                delay = min(HTTP_RETRY_BASE_SECONDS * (2 ** attempt), 30.0)
+                await asyncio.sleep(delay + random.uniform(0, 0.5))
+                continue
+            raise
+    if last_exc:
+        raise last_exc
+    raise RuntimeError("HTTP request failed after retry policy.")
+
+async def _request_json_limited(client: httpx.AsyncClient, method: str, url: str, *, max_bytes: int, **kwargs) -> dict | list:
+    _, _, body = await _request_limited(client, method, url, max_bytes=max_bytes, raise_for_status=True, **kwargs)
+    data = json.loads(body)
+    if not isinstance(data, (dict, list)):
+        raise ValueError("Unexpected JSON response type.")
+    return data
+
+async def _request_text_limited(client: httpx.AsyncClient, method: str, url: str, *, max_bytes: int, raise_for_status: bool = True, **kwargs) -> tuple[int, str]:
+    status_code, headers, body = await _request_limited(
+        client, method, url, max_bytes=max_bytes, raise_for_status=raise_for_status, **kwargs
+    )
+    charset_match = re.search(r"charset=([^;\s]+)", headers.get("content-type", ""), flags=re.IGNORECASE)
+    encoding = charset_match.group(1).strip('"\'' ) if charset_match else "utf-8"
+    try:
+        text_value = body.decode(encoding, errors="replace")
+    except (LookupError, UnicodeError):
+        text_value = body.decode("utf-8", errors="replace")
+    return status_code, text_value
+
+def _log_http_error(source: str, exc: Exception) -> None:
+    """Log errors without serializing exception messages that may contain URLs/PII."""
+    if isinstance(exc, httpx.HTTPStatusError):
+        logger.warning("[%s] HTTP request failed: status=%s", source, exc.response.status_code)
+    elif isinstance(exc, httpx.TimeoutException):
+        logger.warning("[%s] Request timeout: %s", source, type(exc).__name__)
+    elif isinstance(exc, httpx.RequestError):
+        logger.warning("[%s] Network error: %s", source, type(exc).__name__)
+    else:
+        logger.warning("[%s] Error: %s", source, type(exc).__name__)
+
+# =============================================================================
+# Scanner engines
+# =============================================================================
+
+_NOT_FOUND_RE = re.compile(r"not\s*found|no\s*(results?|records?|data|breach)", re.IGNORECASE)
+
+def _truthy(value: object) -> bool:
+    """Interpret API flags that may be bool, number, or string ('true', 'Available', ...)."""
+    if isinstance(value, str):
+        return value.strip().lower() not in {"", "false", "0", "no", "none", "null"}
+    return bool(value)
+
+def _breach_dataset_names(record: dict) -> list[str]:
+    raw = record.get("sources")
+    if isinstance(raw, str):
+        raw = [raw]
+    names: list[str] = []
+    if isinstance(raw, list):
+        for entry in raw:
+            name = _safe_text(entry, 80).strip()
+            if name and name not in names:
+                names.append(name)
+    return names
+
+async def scan_breachdirectory_async(client: httpx.AsyncClient, target: str, rapidapi_key: str) -> list[dict]:
+    """Query BreachDirectory and return *metadata only*.
+
+    Raw record content (the 'line', password, sha1 and hash fields) is inspected only to set
+    a boolean flag and is never copied into a finding, the UI, logs or the cache.
+    """
+    logger.info("[BreachDirectory] Starting scan for target: %s", mask_pii(target))
+    url = "https://breachdirectory.p.rapidapi.com/"
+    headers = {"X-RapidAPI-Key": rapidapi_key, "X-RapidAPI-Host": "breachdirectory.p.rapidapi.com"}
+    params = {"func": "auto", "term": target}
+    try:
+        data = await _request_json_limited(
+            client, "GET", url, headers=headers, params=params,
+            timeout=REQUEST_TIMEOUT, max_bytes=RESPONSE_LIMIT_JSON,
+        )
+        if not isinstance(data, dict):
+            raise ValueError("Unexpected response shape.")
+        if data.get("success") is False:
+            message = _safe_text(data.get("error") or data.get("message") or "", 200)
+            if data.get("found") == 0 or _NOT_FOUND_RE.search(message):
+                logger.info("[BreachDirectory] Completed. No findings.")
+                return []
+            # Any other explicit failure (quota, auth, upstream error) is NOT a clean result.
+            raise RuntimeError("BreachDirectory reported a failure.")
+        results = data.get("result")
+        if not isinstance(results, list):
+            # Neither a result list nor a recognised failure: schema changed or unknown reply.
+            raise ValueError("Unexpected response shape.")
+
+        # dataset name -> whether any record in it carries password/hash material
+        datasets: dict[str, bool] = {}
+        unattributed = 0
+        unattributed_has_secret = False
+        for record in results[:MAX_BREACHDIRECTORY_RECORDS]:
+            if not isinstance(record, dict):
+                continue
+            has_secret = _truthy(record.get("has_password")) or any(record.get(field) for field in ("password", "sha1", "hash"))
+            names = _breach_dataset_names(record)
+            if names:
+                for name in names:
+                    datasets[name] = datasets.get(name, False) or has_secret
+            else:
+                unattributed += 1
+                unattributed_has_secret = unattributed_has_secret or has_secret
+
+        findings: list[dict] = []
+        for name, has_secret in list(datasets.items())[:MAX_FINDINGS_PER_ENGINE]:
+            findings.append({
+                "source": "BreachDirectory DB API",
+                "kind": "breach_db",
+                "dataset": name,
+                "has_password": has_secret,
+                "title": f"Breach dataset: {name}",
+                "url": "https://breachdirectory.org",
+                "snippet": (
+                    "Password or hash data exists for this record (not shown)."
+                    if has_secret else "No password data reported for this record."
+                ),
+            })
+        if unattributed and len(findings) < MAX_FINDINGS_PER_ENGINE:
+            findings.append({
+                "source": "BreachDirectory DB API",
+                "kind": "breach_db",
+                "dataset": "",
+                "record_count": unattributed,
+                "has_password": unattributed_has_secret,
+                "title": f"{unattributed} record(s) found in BreachDirectory",
+                "url": "https://breachdirectory.org",
+                "snippet": (
+                    "Password or hash data exists for this record (not shown)."
+                    if unattributed_has_secret else "No password data reported for this record."
+                ),
+            })
+        logger.info("[BreachDirectory] Completed. Findings: %d.", len(findings))
+        return findings
+    except Exception as exc:
+        _log_http_error("BreachDirectory", exc)
+        raise
+
+async def scan_hibp_async(client: httpx.AsyncClient, target: str, api_key: str, lang: str = "en") -> list[dict]:
+    """Query Have I Been Pwned for one email address and return breach metadata only."""
+    email = _validate_email_target(target)
+    if not api_key:
+        raise ValueError("HIBP_API_KEY tidak dikonfigurasi.")
+
+    url = f"{HIBP_API_BASE_URL}/breachedaccount/{quote(email, safe='')}"
+    headers = {
+        "hibp-api-key": api_key,
+        "user-agent": HIBP_USER_AGENT,
+        "accept": "application/json",
+    }
+    params = {"truncateResponse": "false", "includeUnverified": "true"}
+
+    logger.info("[HIBP] Starting scan for target: %s", mask_pii(email))
+    try:
+        try:
+            data = await _request_json_limited(
+                client, "GET", url, headers=headers, params=params,
+                timeout=REQUEST_TIMEOUT, max_bytes=RESPONSE_LIMIT_JSON,
+            )
+        except httpx.HTTPStatusError as exc:
+            status_code = exc.response.status_code if exc.response else None
+            if status_code == 404:
+                logger.info("[HIBP] Completed. No breaches found.")
+                return []
+            raise
+
+        if not isinstance(data, list):
+            raise ValueError("Unexpected HIBP response shape.")
+
+        findings: list[dict] = []
+        for item in data[:MAX_FINDINGS_PER_ENGINE]:
+            if not isinstance(item, dict):
+                continue
+            name = _safe_text(item.get("Name"), 120).strip()
+            if not name:
+                continue
+
+            title = clean_title(item.get("Title") or name)
+            description = _safe_text(item.get("Description"), MAX_RESULT_SNIPPET_LENGTH)
+            raw_data_classes = item.get("DataClasses", [])
+            data_classes: list[str] = []
+            if isinstance(raw_data_classes, list):
+                for value in raw_data_classes:
+                    value = _safe_text(value, 120).strip()
+                    if value and value not in data_classes:
+                        data_classes.append(value)
+
+            has_password = any(value.lower() in {"passwords", "passwords and hashes"} for value in data_classes)
+            pwn_count = item.get("PwnCount")
+            if not isinstance(pwn_count, int):
+                pwn_count = None
+
+            findings.append({
+                "source": "Have I Been Pwned API",
+                "kind": "breach_db",
+                "dataset": name,
+                "title": title or f"Breach dataset: {name}",
+                "url": ENGINE_HIBP_URL,
+                "breach_date": _safe_text(item.get("BreachDate"), 32),
+                "added_date": _safe_text(item.get("AddedDate"), 40),
+                "modified_date": _safe_text(item.get("ModifiedDate"), 40),
+                "pwn_count": pwn_count,
+                "data_classes": data_classes,
+                "has_password": has_password,
+                "verified": bool(item.get("IsVerified")),
+                "fabricated": bool(item.get("IsFabricated")),
+                "sensitive": bool(item.get("IsSensitive")),
+                "retired": bool(item.get("IsRetired")),
+                "spam_list": bool(item.get("IsSpamList")),
+                "malware": bool(item.get("IsMalware")),
+                "stealer_log": bool(item.get("IsStealerLog")),
+                "subscription_free": bool(item.get("IsSubscriptionFree")),
+                "snippet": clean_snippet(description, lang=lang),
+            })
+
+        logger.info("[HIBP] Completed. Findings: %d.", len(findings))
+        return findings
+    except Exception as exc:
+        _log_http_error("HIBP", exc)
+        raise
+
+async def scan_google_custom_search_async(client: httpx.AsyncClient, target: str, api_key: str, cx_id: str, lang: str = "en") -> list[dict]:
+    logger.info("[Google Custom Search] Starting scan for target: %s", mask_pii(target))
+    url = "https://www.googleapis.com/customsearch/v1"
+    query = f'"{target}" (breach OR leak OR "database dump" OR "combolist" OR site:pastebin.com)'
+    params = {"key": api_key, "cx": cx_id, "q": query, "num": 5}
+    try:
+        data = await _request_json_limited(
+            client, "GET", url, params=params, timeout=REQUEST_TIMEOUT, max_bytes=RESPONSE_LIMIT_JSON
+        )
+        if not isinstance(data, dict):
+            raise ValueError("Unexpected response shape.")
+        items = data.get("items", [])
+        if not isinstance(items, list):
+            raise ValueError("Unexpected response shape.")
+
+        findings: list[dict] = []
+        for item in items[:MAX_FINDINGS_PER_ENGINE]:
+            if not isinstance(item, dict):
+                continue
+            item_url = _normalize_result_url(item.get("link", ""))
+            title = _safe_text(item.get("title", ""), MAX_TITLE_LENGTH)
+            snippet = _safe_text(item.get("snippet", ""), MAX_RESULT_SNIPPET_LENGTH)
+            if is_valid_finding(item_url, target=target, title=title, snippet=snippet):
+                findings.append({
+                    "source": "Google Custom Search API",
+                    "title": title or "Google Exposure Finding",
+                    "url": item_url,
+                    "snippet": clean_snippet(snippet, lang=lang),
+                })
+        logger.info("[Google Custom Search] Completed. Findings: %d.", len(findings))
+        return findings
+    except Exception as exc:
+        _log_http_error("Google Custom Search", exc)
+        raise
+
+def scan_googlesearch_python(target: str, lang: str = "en") -> list[dict]:
+    """Blocking Google Search library executed in a worker thread."""
+    logger.info("[Google Scraper] Starting threaded scan for target: %s", mask_pii(target))
+    try:
+        from googlesearch import search
+        query = f'"{target}" (breach OR leak OR "database dump" OR "combolist")'
+        findings: list[dict] = []
+        import inspect
+        search_kwargs = {"num_results": 5, "advanced": True}
+        try:
+            parameters = inspect.signature(search).parameters
+            if "timeout" in parameters:
+                search_kwargs["timeout"] = 8
+            if "ssl_verify" in parameters:
+                search_kwargs["ssl_verify"] = True
+        except (TypeError, ValueError):
+            pass
+        results = search(query, **search_kwargs)
+        for r in list(results)[:MAX_FINDINGS_PER_ENGINE]:
+            item_url = _normalize_result_url(getattr(r, "url", ""))
+            title = _safe_text(getattr(r, "title", ""), MAX_TITLE_LENGTH)
+            snippet = _safe_text(getattr(r, "description", ""), MAX_RESULT_SNIPPET_LENGTH)
+            if is_valid_finding(item_url, target=target, title=title, snippet=snippet):
+                findings.append({
+                    "source": "Google Search (Scraper)",
+                    "title": title or "Google Exposure Finding",
+                    "url": item_url,
+                    "snippet": clean_snippet(snippet, lang=lang),
+                })
+        logger.info("[Google Scraper] Completed. Findings: %d.", len(findings))
+        return findings
+    except Exception as exc:
+        logger.warning("[Google Scraper] Error: %s", type(exc).__name__)
+        raise
+
+async def scan_bing_scrape_async(client: httpx.AsyncClient, target: str, lang: str = "en") -> list[dict]:
+    logger.info("[Bing Scraper] Starting scan for target: %s", mask_pii(target))
+    try:
+        from bs4 import BeautifulSoup
+        query = f'"{target}" (breach OR leak OR "database dump" OR "combolist")'
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "Accept-Language": "en-US,en;q=0.9"}
+        status_code, response_text = await _request_text_limited(
+            client, "GET", "https://www.bing.com/search",
+            headers=headers, params={"q": query}, timeout=REQUEST_TIMEOUT,
+            follow_redirects=False, max_bytes=RESPONSE_LIMIT_HTML, raise_for_status=False,
+        )
+        if status_code != 200:
+            logger.warning("[Bing Scraper] HTTP status: %s", status_code)
+            raise RuntimeError(f"Bing returned HTTP {status_code}")
+        soup = BeautifulSoup(response_text, "html.parser")
+        findings: list[dict] = []
+        result_items = soup.select("li.b_algo")
+        if not result_items and re.search(r"captcha|unusual traffic", response_text, re.IGNORECASE):
+            raise RuntimeError("Bing returned a bot-check page")
+        for item in result_items[:MAX_FINDINGS_PER_ENGINE]:
+            title_elem = item.select_one("h2 a")
+            if not title_elem:
+                continue
+            title = _safe_text(title_elem.get_text(strip=True), MAX_TITLE_LENGTH)
+            item_url = _normalize_result_url(title_elem.get("href", ""))
+            snippet_elem = item.select_one("div.b_caption p, p.b_algoSlug, p")
+            snippet = _safe_text(snippet_elem.get_text(strip=True) if snippet_elem else "", MAX_RESULT_SNIPPET_LENGTH)
+            if is_valid_finding(item_url, target=target, title=title, snippet=snippet):
+                findings.append({
+                    "source": "Bing Search (Scraper)",
+                    "title": title or "Bing Exposure Finding",
+                    "url": item_url,
+                    "snippet": clean_snippet(snippet, lang=lang),
+                })
+        logger.info("[Bing Scraper] Completed. Findings: %d.", len(findings))
+        return findings
+    except Exception as exc:
+        _log_http_error("Bing Scraper", exc)
+        raise
+
+async def scan_searxng_async(client: httpx.AsyncClient, target: str, lang: str = "en") -> list[dict]:
+    """Scan via administrator-configured SearXNG instance."""
+    if not SEARXNG_INSTANCE_URL:
+        logger.info("[SearXNG] Scan skipped: SEARXNG_INSTANCE_URL is not configured or invalid.")
+        raise EngineSkipped(ENGINE_SEARXNG)
+    query = f'"{target}" (breach OR leak OR "database dump" OR "combolist")'
+    params = {"q": query, "format": "json", "categories": "general"}
+    search_endpoint = f"{SEARXNG_INSTANCE_URL}/search"
+    try:
+        # Deliberately log only a fixed administrator-configured origin, never query data.
+        logger.info("[SearXNG] Starting scan against the configured instance for target: %s", mask_pii(target))
+        data = await _request_json_limited(
+            client, "GET", search_endpoint, params=params,
+            timeout=REQUEST_TIMEOUT, max_bytes=RESPONSE_LIMIT_SEARXNG,
+        )
+        if not isinstance(data, dict):
+            raise ValueError("Unexpected response shape.")
+        results = data.get("results", [])
+        if not isinstance(results, list):
+            raise ValueError("Unexpected response shape.")
+        findings: list[dict] = []
+        for r in results[:MAX_FINDINGS_PER_ENGINE]:
+            if not isinstance(r, dict):
+                continue
+            title = _safe_text(r.get("title", ""), MAX_TITLE_LENGTH)
+            item_url = _normalize_result_url(r.get("url", ""))
+            snippet = _safe_text(r.get("content", ""), MAX_RESULT_SNIPPET_LENGTH)
+            if is_valid_finding(item_url, target=target, title=title, snippet=snippet):
+                findings.append({
+                    "title": title,
+                    "url": item_url,
+                    "snippet": clean_snippet(snippet, lang=lang),
+                    "source": "SearXNG (Self-Hosted)",
+                })
+        return findings
+    except Exception as exc:
+        _log_http_error("SearXNG", exc)
+        raise
+
+async def scan_breaches_tavily_async(client: httpx.AsyncClient, target: str, api_key: str, lang: str = "en") -> list[dict]:
+    logger.info("[Tavily AI] Starting scan for target: %s", mask_pii(target))
+    url = "https://api.tavily.com/search"
+    query = f'"{target}" "breach" OR "leak" OR "combolist"'
+    payload = {"api_key": api_key, "query": query, "search_depth": "basic", "max_results": 7}
+    try:
+        data = await _request_json_limited(
+            client, "POST", url, json=payload,
+            timeout=REQUEST_TIMEOUT, max_bytes=RESPONSE_LIMIT_TAVILY,
+        )
+        if not isinstance(data, dict):
+            raise ValueError("Unexpected response shape.")
+        results = data.get("results", [])
+        if not isinstance(results, list):
+            raise ValueError("Unexpected response shape.")
+        findings: list[dict] = []
+        for result in results[:MAX_FINDINGS_PER_ENGINE]:
+            if not isinstance(result, dict):
+                continue
+            item_url = _normalize_result_url(result.get("url", ""))
+            title = _safe_text(result.get("title", ""), MAX_TITLE_LENGTH)
+            raw_content = _safe_text(result.get("content", ""), MAX_RESULT_SNIPPET_LENGTH)
+            if is_valid_finding(item_url, target=target, title=title, snippet=raw_content):
+                findings.append({
+                    "source": "Tavily AI Search",
+                    "title": title or "Tavily AI Exposure Finding",
+                    "url": item_url,
+                    "snippet": clean_snippet(raw_content, lang=lang),
+                })
+        logger.info("[Tavily AI] Completed. Findings: %d.", len(findings))
+        return findings
+    except Exception as exc:
+        _log_http_error("Tavily AI", exc)
+        raise
+
+def _resolve_ddg_result_url(url: object) -> str:
+    """Resolve DuckDuckGo redirect links without following arbitrary result redirects."""
+    raw = _safe_text(url, MAX_RESULT_URL_LENGTH).strip()
+    if not raw:
+        return ""
+    try:
+        parsed = urlsplit(raw)
+        if parsed.hostname and parsed.hostname.lower() in {"duckduckgo.com", "www.duckduckgo.com"}:
+            from urllib.parse import parse_qs, unquote
+            redirected = parse_qs(parsed.query).get("uddg", [""])[0]
+            if redirected:
+                return unquote(redirected)
+    except Exception:
+        pass
+    return raw
+
+
+def scan_breaches_ddg(target: str, lang: str = "en") -> list[dict]:
+    """Blocking DuckDuckGo HTML search executed in a worker thread."""
+    logger.info("[DuckDuckGo] Starting threaded scan for target: %s", mask_pii(target))
+    query = f'"{target}" (breach OR leak OR "database dump" OR "combolist")'
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Referer": "https://html.duckduckgo.com/",
+    }
+    try:
+        with httpx.Client(
+            timeout=REQUEST_TIMEOUT,
+            follow_redirects=False,
+            trust_env=TRUST_ENV,
+            headers=headers,
+        ) as client:
+            response = client.post(
+                "https://html.duckduckgo.com/html/",
+                data={"q": query},
+            )
+            if response.status_code != 200:
+                logger.warning("[DuckDuckGo] HTTP status: %s", response.status_code)
+                raise RuntimeError(f"DuckDuckGo returned HTTP {response.status_code}")
+            if len(response.content) > RESPONSE_LIMIT_HTML:
+                raise ResponseTooLargeError("DuckDuckGo response exceeds configured size limit.")
+
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(response.text, "html.parser")
+            findings: list[dict] = []
+            result_items = soup.select("div.result")
+            if not result_items and re.search(r"captcha|unusual traffic|bot", response.text, re.IGNORECASE):
+                raise RuntimeError("DuckDuckGo returned a bot-check page")
+
+            for item in result_items[:MAX_FINDINGS_PER_ENGINE]:
+                title_elem = item.select_one("a.result__a")
+                if not title_elem:
+                    continue
+                title = _safe_text(title_elem.get_text(" ", strip=True), MAX_TITLE_LENGTH)
+                item_url = _normalize_result_url(_resolve_ddg_result_url(title_elem.get("href", "")))
+                snippet_elem = item.select_one(
+                    "a.result__snippet, div.result__snippet, .result__snippet"
+                )
+                snippet = _safe_text(
+                    snippet_elem.get_text(" ", strip=True) if snippet_elem else "",
+                    MAX_RESULT_SNIPPET_LENGTH,
+                )
+                if is_valid_finding(item_url, target=target, title=title, snippet=snippet):
+                    findings.append({
+                        "source": "DuckDuckGo Search",
+                        "title": title or "DuckDuckGo Exposure Finding",
+                        "url": item_url,
+                        "snippet": clean_snippet(snippet, lang=lang),
+                    })
+
+        logger.info("[DuckDuckGo] Completed. Findings: %d.", len(findings))
+        return findings
+    except Exception as exc:
+        logger.warning("[DuckDuckGo] Temporary failure: %s", type(exc).__name__)
+        raise
+
+async def run_engine_queue_v2(plan: list[tuple[str, object]]) -> list[EngineResult]:
+    queue: asyncio.Queue = asyncio.Queue()
+    results: list[EngineResult] = []
+    for engine_name, coroutine_factory in plan:
+        await queue.put((engine_name, coroutine_factory))
+
+    async def worker():
+        while True:
+            try:
+                engine_name, coroutine_factory = await queue.get()
+            except asyncio.CancelledError:
+                break
+            try:
+                results.append(await execute_engine_v2(engine_name, coroutine_factory))
+            except Exception as exc:
+                results.append(EngineResult(
+                    engine=engine_name,
+                    status=EngineStatus.FAILED,
+                    error=type(exc).__name__,
+                ))
+            finally:
+                queue.task_done()
+
+    # A zero-worker queue would leave every item unfinished and block queue.join() forever.
+    # Clamp again at the execution boundary so runtime overrides cannot reintroduce the hang.
+    worker_count = max(1, int(BREACH_QUEUE_WORKERS))
+    workers = [asyncio.create_task(worker()) for _ in range(worker_count)]
+    await queue.join()
+    for task in workers:
+        task.cancel()
+    await asyncio.gather(*workers, return_exceptions=True)
+    return results
+
+# =============================================================================
+# Orchestrator
+# =============================================================================
+
+def _cached_engine_findings(
+    engine_cache: dict,
+    target: str,
+    engine_name: str,
+) -> tuple[bool, list[dict]]:
+    """Return a cached successful result; an empty list is a valid cached success."""
+    target_results = engine_cache.get(target)
+    if not isinstance(target_results, dict) or engine_name not in target_results:
+        return False, []
+    findings = target_results[engine_name]
+    if not isinstance(findings, list) or not all(isinstance(item, dict) for item in findings):
+        return False, []
+    return True, findings
+
+
+def _store_engine_findings(
+    engine_cache: dict,
+    target: str,
+    engine_name: str,
+    findings: list[dict],
+) -> None:
+    """Store only successful engine responses, including successful empty responses."""
+    engine_cache.setdefault(target, {})[engine_name] = [
+        dict(item) for item in findings if isinstance(item, dict)
+    ]
+
+
+async def scan_data_breaches(
+    email: str,
+    phone: str = "",
+    force_refresh: bool = False,
+    lang: str = "en",
+    tenant_id: str = "default",
+) -> dict:
+    """Run configured breach engines and reuse each successful target/engine result."""
+    email = _validate_email_target(email)
+    phone = _validate_phone_target(phone) if phone and phone.strip() else ""
+    force_refresh = bool(force_refresh)
+
+    tenant_id = tenant_id.strip()
+    if not tenant_id or len(tenant_id) > 128 or CONTROL_CHARS_RE.search(tenant_id):
+        raise ValueError("tenant_id tidak valid.")
+
+    search_targets = [email]
+    if phone:
+        search_targets.extend(normalize_phone_number(phone))
+
+    # One encrypted cache file per tenant + normalized scan identity. The payload
+    # records successful responses by target and engine so a failed engine can be
+    # retried without discarding other engines' valid results.
+    engine_cache: dict[str, dict[str, list[dict]]] = {}
+    cached_result = None
+    if not force_refresh:
+        cached_result = load_breach_cache(
+            email,
+            phone,
+            max_age_hours=12.0,
+            tenant_id=tenant_id,
+        )
+    if (
+        isinstance(cached_result, dict)
+        and cached_result.get("targets") == search_targets
+        and isinstance(cached_result.get("engine_results"), dict)
+    ):
+        for target, results_by_engine in cached_result["engine_results"].items():
+            if not isinstance(target, str) or not isinstance(results_by_engine, dict):
+                continue
+            valid_results = {
+                name: [dict(item) for item in findings]
+                for name, findings in results_by_engine.items()
+                if isinstance(name, str)
+                and isinstance(findings, list)
+                and all(isinstance(item, dict) for item in findings)
+            }
+            if valid_results:
+                engine_cache[target] = valid_results
+
+    tavily_key = os.getenv("TAVILY_API_KEY", "").strip()
+    google_search_key = os.getenv("GOOGLE_SEARCH_API_KEY", "").strip()
+    google_cx_id = os.getenv("GOOGLE_CX_ID", "").strip()
+    rapidapi_key = os.getenv("RAPIDAPI_KEY", "").strip()
+    hibp_api_key = os.getenv("HIBP_API_KEY", "").strip()
+
+    engine_enabled = {
+        ENGINE_BREACHDIRECTORY: bool(rapidapi_key),
+        ENGINE_HIBP: bool(hibp_api_key),
+        ENGINE_GOOGLE_API: bool(google_search_key and google_cx_id),
+        ENGINE_GOOGLE_SCRAPER: True,
+        ENGINE_BING: True,
+        ENGINE_TAVILY: bool(tavily_key),
+        ENGINE_SEARXNG: bool(SEARXNG_INSTANCE_URL),
+        ENGINE_DDG: True,
+    }
+    stats = {
+        name: {"ok": 0, "failed": 0}
+        for name, enabled in engine_enabled.items()
+        if enabled
+    }
+    skipped_engines = [name for name, enabled in engine_enabled.items() if not enabled]
+
+    def build_plan(client: httpx.AsyncClient, target: str) -> list[tuple[str, object]]:
+        plan: list[tuple[str, object]] = []
+        if engine_enabled[ENGINE_BREACHDIRECTORY] and (
+            target == email or re.fullmatch(r"\+\d{7,15}", target)
+        ):
+            plan.append((
+                ENGINE_BREACHDIRECTORY,
+                lambda: scan_breachdirectory_async(client, target, rapidapi_key),
+            ))
+        if engine_enabled[ENGINE_HIBP] and target == email:
+            plan.append((
+                ENGINE_HIBP,
+                lambda: scan_hibp_async(client, target, hibp_api_key, lang=lang),
+            ))
+        if engine_enabled[ENGINE_GOOGLE_API]:
+            plan.append((
+                ENGINE_GOOGLE_API,
+                lambda: scan_google_custom_search_async(
+                    client, target, google_search_key, google_cx_id, lang=lang
+                ),
+            ))
+        plan.append((
+            ENGINE_GOOGLE_SCRAPER,
+            lambda: asyncio.to_thread(scan_googlesearch_python, target, lang=lang),
+        ))
+        plan.append((
+            ENGINE_BING,
+            lambda: scan_bing_scrape_async(client, target, lang=lang),
+        ))
+        if engine_enabled[ENGINE_TAVILY]:
+            plan.append((
+                ENGINE_TAVILY,
+                lambda: scan_breaches_tavily_async(client, target, tavily_key, lang=lang),
+            ))
+        if engine_enabled[ENGINE_SEARXNG]:
+            plan.append((
+                ENGINE_SEARXNG,
+                lambda: scan_searxng_async(client, target, lang=lang),
+            ))
+        plan.append((
+            ENGINE_DDG,
+            lambda: asyncio.to_thread(scan_breaches_ddg, target, lang=lang),
+        ))
+        return plan
+
+    all_findings: list[dict] = []
+    active_engines: set[str] = set()
+    cache_hits = 0
+    fresh_engine_calls = 0
+    start_time = time.monotonic()
+    logger.info("=== STARTING PARALLEL DATA BREACH SCAN (%d targets) ===", len(search_targets))
+
+    limits = httpx.Limits(max_connections=10, max_keepalive_connections=5)
+    async with httpx.AsyncClient(
+        limits=limits,
+        timeout=REQUEST_TIMEOUT,
+        follow_redirects=False,
+        max_redirects=MAX_HTTP_REDIRECTS,
+        trust_env=TRUST_ENV,
+        verify=True,
+    ) as client:
+        for idx, target in enumerate(search_targets, start=1):
+            if idx > 1 and DELAY_SECONDS:
+                logger.info("Waiting %ds before scanning the next target...", DELAY_SECONDS)
+                await asyncio.sleep(DELAY_SECONDS)
+
+            plan = build_plan(client, target)
+            pending_plan: list[tuple[str, object]] = []
+            target_results: dict[str, list[dict]] = {}
+
+            for engine_name, factory in plan:
+                found, cached_findings = _cached_engine_findings(
+                    engine_cache, target, engine_name
+                )
+                if found:
+                    target_results[engine_name] = cached_findings
+                    stats[engine_name]["ok"] += 1
+                    cache_hits += 1
+                else:
+                    pending_plan.append((engine_name, factory))
+
+            engine_results = await run_engine_queue_v2(pending_plan)
+            fresh_engine_calls += len(pending_plan)
+
+            for result in engine_results:
+                name = result.engine
+                if result.status == EngineStatus.SUCCESS:
+                    stats[name]["ok"] += 1
+                    masked_findings = [
+                        _mask_web_finding(item)
+                        for item in result.findings[:MAX_FINDINGS_PER_ENGINE]
+                        if isinstance(item, dict)
+                    ]
+                    target_results[name] = masked_findings
+                    _store_engine_findings(engine_cache, target, name, masked_findings)
+                else:
+                    # A failure is deliberately not cached as an empty success.
+                    stats[name]["failed"] += 1
+                    logger.warning(
+                        "[%s] Engine failed status=%s error=%s",
+                        name,
+                        result.status.value,
+                        result.error,
+                    )
+
+            # Aggregate in plan order for stable output. The total-result cap applies
+            # to displayed findings, not to engine execution or cache completeness.
+            for engine_name, _ in plan:
+                findings = target_results.get(engine_name)
+                if findings is None:
+                    continue
+                remaining = MAX_TOTAL_FINDINGS - len(all_findings)
+                if remaining > 0:
+                    all_findings.extend(findings[:remaining])
+                for item in findings:
+                    source = item.get("source") if isinstance(item, dict) else None
+                    if source:
+                        active_engines.add(str(source))
+
+    elapsed = time.monotonic() - start_time
+    logger.info(
+        "=== PARALLEL SCAN COMPLETED in %.2f seconds === cache_engine_hits=%d fresh_engine_calls=%d",
+        elapsed,
+        cache_hits,
+        fresh_engine_calls,
+    )
+
+    engines_report: dict[str, dict] = {}
+    for name, outcome in stats.items():
+        if outcome["failed"] == 0:
+            status = "ok"
+        elif outcome["ok"] == 0:
+            status = "error"
+        else:
+            status = "partial"
+        engines_report[name] = {
+            "status": status,
+            "targets_ok": outcome["ok"],
+            "targets_failed": outcome["failed"],
+        }
+    for name in skipped_engines:
+        engines_report[name] = {
+            "status": "skipped",
+            "targets_ok": 0,
+            "targets_failed": 0,
+        }
+
+    complete = bool(stats) and all(
+        report["status"] == "ok"
+        for report in engines_report.values()
+        if report["status"] != "skipped"
+    )
+    if not complete:
+        failed_names = [
+            name for name, report in engines_report.items()
+            if report["status"] in {"error", "partial"}
+        ]
+        logger.warning(
+            "[BreachScan] Scan tidak lengkap. Engine bermasalah: %s",
+            ", ".join(failed_names) or "-",
+        )
+
+    unique_findings: list[dict] = []
+    seen_keys: set[tuple] = set()
+    for item in all_findings:
+        if not isinstance(item, dict):
+            continue
+        url = _normalize_result_url(item.get("url", ""))
+        if not url:
+            continue
+        if item.get("kind") == "breach_db":
+            dedupe_key = (url, str(item.get("dataset", "")), item.get("record_count"))
+        else:
+            dedupe_key = (url,)
+        if dedupe_key in seen_keys:
+            continue
+        seen_keys.add(dedupe_key)
+        sanitized_item = dict(item)
+        sanitized_item["url"] = url
+        unique_findings.append(sanitized_item)
+        if len(unique_findings) >= MAX_TOTAL_FINDINGS:
+            break
+
+    # Persist every successful target/engine response, including [] from a
+    # successful engine. Failed engines are absent, so the next scan retries them.
+    if engine_cache:
+        save_breach_cache(
+            email,
+            {
+                "cache_schema_version": BREACH_CACHE_SCHEMA_VERSION,
+                "targets": search_targets,
+                "engine_results": engine_cache,
+            },
+            phone,
+            tenant_id=tenant_id,
+        )
+
+    return {
+        "engine": ", ".join(sorted(active_engines)) if active_engines else "None",
+        "results": unique_findings,
+        "is_from_cache": cache_hits > 0 and fresh_engine_calls == 0,
+        "engines": engines_report,
+        "complete": complete,
+        "cache_schema_version": BREACH_CACHE_SCHEMA_VERSION,
+    }

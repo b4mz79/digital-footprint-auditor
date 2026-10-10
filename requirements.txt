@@ -1,0 +1,17 @@
+# Lower bounds, not a lockfile. After a working install, freeze exact versions with:
+#   pip freeze > requirements.lock
+streamlit>=1.50          # width="stretch" on buttons/dataframes
+httpx>=0.27
+pydantic>=2
+holehe
+trio
+python-dotenv>=1.0
+cryptography>=42         # imported by cache_security.py (was missing from the list)
+google-genai
+groq
+openai>=1.0
+phonenumbers>=8.13
+requests
+googlesearch-python
+beautifulsoup4>=4.12
+bandit>=1.9,<2
