@@ -51,7 +51,7 @@ Launcher di root repository juga menyediakan workflow Docker tanpa harus menging
 ./run.sh docker-dev
 ```
 
-Di Windows, gunakan `run.bat docker-build`, `run.bat docker-test`, atau `run.bat docker-dev`. Ketiganya menjalankan build image runtime, build image test sekaligus pytest, dan development shell contributor. Mode launcher `reset` dan `full-reset` yang sudah ada tetap tersedia, tetapi tidak bisa digabung dengan mode Docker.
+Di Windows, gunakan `run.bat docker-build`, `run.bat docker-test`, atau `run.bat docker-dev`. Ketiganya menjalankan build image runtime, build image test sekaligus pytest, dan development shell contributor. Mode launcher `reset` dan `full-reset` yang sudah ada tetap tersedia, tetapi tidak bisa digabung dengan mode Docker. Launcher native `run.sh` dan `run.bat` mengikat Streamlit ke `127.0.0.1` secara default agar UI dan uploader add-on tanpa autentikasi tidak terbuka ke jaringan LAN.
 
 ## 3. Masuk ke development shell contributor
 
