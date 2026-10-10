@@ -150,7 +150,7 @@ See [Integration Test Suite](Integration_Test_Suite.md) for coverage and contrib
 ## 🧩 Extending the Project
 
 - To integrate a built-in breach-search provider, follow [Custom Breach Engine Extension](Custom_Breach_Engine_Extension.md). A breach engine is registered in the core scanner plan; it is not the same thing as a ZIP-installed Add-On.
-- To develop an optional Add-On, follow the [Add-On Tech Guide](docs/ADDON_TECH_GUIDE.md).
+- To develop an optional Add-On, follow the [Add-On Tech Guide](docs/ADDON_TECH_GUIDE.md) ([Bahasa Indonesia](docs/ADDON_TECH_GUIDE_ID.md)).
 - Before opening a Pull Request, run the tests and include any relevant regression tests.
 
 ## 🤝 Contributing
