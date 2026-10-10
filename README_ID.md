@@ -24,7 +24,7 @@ Aplikasi ditujukan untuk audit privasi pribadi, riset defensif yang berizin, dan
 - **Analisis risiko privasi berbantuan AI** — memvalidasi output model dan menerapkan pengaman deterministik berbasis evidence. Alur provider dapat mencakup Google Gemini, Groq, OpenAI, dan Ollama lokal; urutan provider dan mode lokal-saja dapat dikonfigurasi.
 - **Draf Data Subject Request (DSR)** — menghasilkan draf permintaan yang dapat diedit; pengguna perlu memeriksa fakta, dasar hukum, dan penerima sebelum mengirimkannya.
 - **Cache lokal terenkripsi dan identitas cache berbasis tenant** — mengurangi permintaan berulang sekaligus memisahkan identitas cache tenant yang dikonfigurasi.
-- **Runtime Add-On** — mendukung ekstensi opsional berbasis manifest. Lihat [Add-On Tech Guide](docs/ADDON_TECH_GUIDE.md) dan [sample Add-On](addons/just-sample/).
+- **Runtime Add-On** — mendukung ekstensi opsional berbasis manifest. Lihat [Panduan Teknis Add-On](docs/ADDON_TECH_GUIDE_ID.md) dan [sample Add-On](addons/just-sample/).
 
 ## 🔐 Privasi dan Batasan
 
