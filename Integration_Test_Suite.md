@@ -1,45 +1,57 @@
 # 🧪 Integration Test Suite
 
-This project includes an automated integration test suite to verify core functionality and prevent regressions during development.
+The project uses pytest tests to check core behavior and reduce regressions across scanning, evidence handling, AI analysis, caching, add-ons, and application integration.
 
 ## Test Coverage
 
-The test suite validates:
+The suite includes tests for:
 
-- Risk classification pipeline (`HIGH`, `MEDIUM`, `LOW`, `UNKNOWN/Gray`)
-- Evidence-based risk floor enforcement
-- AI response validation and JSON integrity checks
-- Provider fallback flow (for example Gemini → Groq)
-- Translation layer integrity
-- Application integration behavior
+- **Breach scanner:** engine execution, status handling, queue behavior, and search-result redirect policy.
+- **AI analysis:** response/schema validation, evidence-based risk safeguards, prompt/evidence size limits, and provider fallback behavior.
+- **Evidence pipeline:** evidence normalization and provenance, contextual enrichment, temporal semantics, URL verification, and verification failure/unknown states.
+- **Pipeline integration:** scan-stage orchestration, evidence output, add-on lifecycle integration, and tenant ID validation.
+- **Cache behavior:** cache identity, cache lifecycle, module-specific cache controls, and successful-result reuse.
+- **Add-On security and lifecycle:** package structure, authority validation, filesystem policy, security validation, installation, activation/invocation behavior, and sample Add-On packaging.
+- **OSINT transport and launchers:** transport policy and launcher-related security/regression checks.
+- **Translations:** translation key and language integrity.
 
-## Running Tests
+Tests use mocks and controlled fixtures where appropriate; they are not a substitute for optional live-provider smoke tests or a real scan using credentials.
 
-Install test dependencies:
+## Install Test Dependencies
+
+From the repository root, activate your virtual environment and install the test dependencies:
 
 ```bash
+pip install -r requirements.txt
 pip install -r requirements-test.txt
 ```
 
-Run the complete test suite:
+## Run the Suite
+
+Run the full suite:
 
 ```bash
-pytest
+python -m pytest
 ```
 
-Example successful output:
+Run a focused test module when debugging a specific area, for example:
 
-```text
-5 passed
+```bash
+python -m pytest tests/test_evidence_enrichment.py
+python -m pytest tests/test_provider_fallback.py
+python -m pytest tests/addons/
 ```
 
-## For Contributors
+Do not rely on a fixed example test count in this document: the number of tests changes as coverage evolves. Treat the actual pytest summary from your current checkout as the source of truth.
 
-Before submitting a Pull Request, contributors are encouraged to run the integration tests locally:
+## Contributor Checklist
 
-1. Create and activate a virtual environment.
-2. Install application and test dependencies.
-3. Run `pytest`.
-4. Ensure all tests pass before submitting changes.
+Before opening a Pull Request:
 
-The test suite is intended to detect regressions in security-sensitive components, especially AI validation, privacy risk analysis, and fallback handling.
+1. Add or update tests for changed behavior, including relevant failure paths.
+2. Run the full suite with `python -m pytest`.
+3. Review failures and warnings; do not report a run as passing if collection or execution was interrupted.
+4. If the change affects external providers, supplement mocked tests with a controlled smoke test when credentials and provider terms allow it.
+5. Include the command and actual result in the Pull Request description.
+
+The suite is intended to catch regressions in security-sensitive behavior. A passing test run does not prove that external providers are always available, that every breach can be found, or that the application is free of vulnerabilities.
