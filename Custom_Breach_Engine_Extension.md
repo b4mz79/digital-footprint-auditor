@@ -1,5 +1,7 @@
 # Custom Breach Engine Extension
 
+**Language / Bahasa:** [English](Custom_Breach_Engine_Extension.md) | [Bahasa Indonesia](Custom_Breach_Engine_Extension_ID.md)
+
 This guide explains how to add a provider to the built-in breach scanner. It describes the current core integration contract, not a dynamically loadable breach-engine plugin API.
 
 > **Important distinction:** breach engines are registered in `services/breach_scanner.py`. They are not ZIP-installed Add-Ons managed by the Add-On runtime. Adding a built-in breach engine currently requires a code change to the scanner plan and corresponding tests.
