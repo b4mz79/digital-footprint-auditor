@@ -8,12 +8,16 @@ cd "$SCRIPT_DIR"
 RESET_MODE=false
 FULL_RESET_MODE=false
 NO_RUN=false
+DOCKER_MODE=""
 
 usage() {
     cat <<'EOF'
-Usage: ./run.sh [reset|full-reset|reset-only|full-reset-only]
+Usage: ./run.sh [reset|full-reset|reset-only|full-reset-only|docker-build|docker-test|docker-dev]
 
   (no argument)    Run the Streamlit application
+  docker-build     Build the Docker runtime image
+  docker-test      Build the Docker test image and run pytest
+  docker-dev       Build the contributor image and open its shell
   reset            Clear Python bytecode caches, remove log.txt, then run
   full-reset       Also clear project cache and known test/build artifacts, then run
   reset-only       Clear standard caches and stop; do not run the application
@@ -23,6 +27,15 @@ EOF
 
 for arg in "$@"; do
     case "${arg,,}" in
+        docker-build)
+            DOCKER_MODE=build
+            ;;
+        docker-test)
+            DOCKER_MODE=test
+            ;;
+        docker-dev)
+            DOCKER_MODE=dev
+            ;;
         reset)
             RESET_MODE=true
             ;;
@@ -50,6 +63,18 @@ for arg in "$@"; do
             ;;
     esac
 done
+
+if [[ -n "$DOCKER_MODE" ]]; then
+    if [[ "$RESET_MODE" == true || "$NO_RUN" == true ]]; then
+        echo "[ERROR] Mode Docker tidak dapat digabung dengan mode reset." >&2
+        exit 2
+    fi
+    case "$DOCKER_MODE" in
+        build) exec "$SCRIPT_DIR/scripts/build-docker.sh" ;;
+        test)  exec "$SCRIPT_DIR/scripts/build-docker.sh" --test ;;
+        dev)   exec "$SCRIPT_DIR/scripts/build-docker.sh" --shell ;;
+    esac
+fi
 
 # Return PIDs listening on the exact TCP port 8501, one per line.
 list_port_pids() {
