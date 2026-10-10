@@ -434,12 +434,16 @@ async def execute_engine_v2(engine_name: str, coroutine_factory) -> EngineResult
         return EngineResult(engine=engine_name, status=EngineStatus.RATE_LIMITED, error="Local rate limiter")
 
     started = time.monotonic()
+    execution_started = False
     try:
         try:
             coroutine = coroutine_factory()
         except Exception as exc:
-            logger.exception("[%s] Engine exception", engine_name)
+            logger.exception("[%s] Engine exception before await", engine_name)
             return EngineResult(engine=engine_name, status=EngineStatus.FAILED, error=type(exc).__name__)
+        # Count an execution only after the factory has produced its awaitable.
+        # Cooldown/circuit/rate-limit exits above never reach this point.
+        execution_started = True
         result = await asyncio.wait_for(coroutine, timeout=ENGINE_TIMEOUT_SECONDS)
         elapsed = time.monotonic() - started
         ENGINE_CIRCUITS.record_success(engine_name)
@@ -448,10 +452,15 @@ async def execute_engine_v2(engine_name: str, coroutine_factory) -> EngineResult
             engine=engine_name,
             status=EngineStatus.SUCCESS,
             findings=result if isinstance(result, list) else [],
-            metadata={"elapsed": round(elapsed, 3)},
+            metadata={"elapsed": round(elapsed, 3), "execution_started": execution_started},
         )
     except EngineSkipped as exc:
-        return EngineResult(engine=engine_name, status=EngineStatus.SKIPPED, error=str(exc))
+        return EngineResult(
+            engine=engine_name,
+            status=EngineStatus.SKIPPED,
+            error=str(exc),
+            metadata={"execution_started": execution_started},
+        )
     except httpx.HTTPStatusError as exc:
         status_code = exc.response.status_code if exc.response else None
         if status_code == 429:
@@ -460,15 +469,35 @@ async def execute_engine_v2(engine_name: str, coroutine_factory) -> EngineResult
             if cooldown_seconds > 0:
                 _ENGINE_COOLDOWN_UNTIL[engine_name] = time.monotonic() + cooldown_seconds
             logger.warning("[%s] HTTP 429; cooldown=%.1fs", engine_name, cooldown_seconds)
-            return EngineResult(engine=engine_name, status=EngineStatus.RATE_LIMITED, error="HTTP 429")
+            return EngineResult(
+                engine=engine_name,
+                status=EngineStatus.RATE_LIMITED,
+                error="HTTP 429",
+                metadata={"execution_started": execution_started},
+            )
         ENGINE_CIRCUITS.record_failure(engine_name)
-        return EngineResult(engine=engine_name, status=EngineStatus.FAILED, error=f"HTTP {status_code}")
+        return EngineResult(
+            engine=engine_name,
+            status=EngineStatus.FAILED,
+            error=f"HTTP {status_code}",
+            metadata={"execution_started": execution_started},
+        )
     except asyncio.TimeoutError:
         ENGINE_CIRCUITS.record_failure(engine_name)
-        return EngineResult(engine=engine_name, status=EngineStatus.TIMEOUT, error="Timeout")
+        return EngineResult(
+            engine=engine_name,
+            status=EngineStatus.TIMEOUT,
+            error="Timeout",
+            metadata={"execution_started": execution_started},
+        )
     except Exception as exc:
         ENGINE_CIRCUITS.record_failure(engine_name)
-        return EngineResult(engine=engine_name, status=EngineStatus.FAILED, error=type(exc).__name__)
+        return EngineResult(
+            engine=engine_name,
+            status=EngineStatus.FAILED,
+            error=type(exc).__name__,
+            metadata={"execution_started": execution_started},
+        )
 
 # Stable engine identifiers used in the scan report (not shown as finding sources).
 ENGINE_BREACHDIRECTORY = "BreachDirectory"
@@ -1205,7 +1234,8 @@ async def scan_data_breaches(
     all_findings: list[dict] = []
     active_engines: set[str] = set()
     cache_hits = 0
-    fresh_engine_calls = 0
+    engine_jobs_scheduled = 0
+    engine_executions_started = 0
     start_time = time.monotonic()
     logger.info("=== STARTING PARALLEL DATA BREACH SCAN (%d targets) ===", len(search_targets))
 
@@ -1239,7 +1269,12 @@ async def scan_data_breaches(
                     pending_plan.append((engine_name, factory))
 
             engine_results = await run_engine_queue_v2(pending_plan)
-            fresh_engine_calls += len(pending_plan)
+            engine_jobs_scheduled += len(pending_plan)
+            engine_executions_started += sum(
+                1
+                for result in engine_results
+                if result.metadata.get("execution_started") is True
+            )
 
             for result in engine_results:
                 name = result.engine
@@ -1278,10 +1313,14 @@ async def scan_data_breaches(
 
     elapsed = time.monotonic() - start_time
     logger.info(
-        "=== PARALLEL SCAN COMPLETED in %.2f seconds === cache_engine_hits=%d fresh_engine_calls=%d",
+        "=== PARALLEL SCAN COMPLETED in %.2f seconds === "
+        "cache_engine_hits=%d engine_jobs_scheduled=%d "
+        "engine_executions_started=%d engine_jobs_not_started=%d",
         elapsed,
         cache_hits,
-        fresh_engine_calls,
+        engine_jobs_scheduled,
+        engine_executions_started,
+        max(0, engine_jobs_scheduled - engine_executions_started),
     )
 
     engines_report: dict[str, dict] = {}
@@ -1357,7 +1396,7 @@ async def scan_data_breaches(
     return {
         "engine": ", ".join(sorted(active_engines)) if active_engines else "None",
         "results": unique_findings,
-        "is_from_cache": cache_hits > 0 and fresh_engine_calls == 0,
+        "is_from_cache": cache_hits > 0 and engine_jobs_scheduled == 0,
         "engines": engines_report,
         "complete": complete,
         "cache_schema_version": BREACH_CACHE_SCHEMA_VERSION,
