@@ -136,7 +136,7 @@ async def test_ollama_partial_failure_rotates_to_next_provider(monkeypatch) -> N
     monkeypatch.setenv("GROQ_API_KEY", "test-groq-key")
 
     async def fake_ollama(*args, **kwargs):
-        raise ValueError("Ollama menghasilkan output parsial")
+        raise ValueError("Ollama returned a partial result")
 
     async def fake_groq(*args, **kwargs):
         return '{"analysis":[{"service":"Example","risk_level":"unknown","reason":"Insufficient evidence.","delete_url":""}]}'
@@ -476,7 +476,7 @@ async def test_ollama_partial_http_failure_invokes_reset_once(monkeypatch) -> No
     def on_batch(analysis, services) -> None:
         callbacks.append(1)
 
-    with pytest.raises(ValueError, match="output parsial"):
+    with pytest.raises(ValueError, match="partial result"):
         await ai_agent.call_ollama_async(
             prompt,
             "system",
@@ -490,7 +490,7 @@ async def test_ollama_partial_http_failure_invokes_reset_once(monkeypatch) -> No
 
 
 def test_validate_ai_output_rejects_empty_analysis() -> None:
-    with pytest.raises(ValueError, match="tidak berisi item tervalidasi"):
+    with pytest.raises(ValueError, match="contains no validated items"):
         ai_agent.validate_ai_output({"analysis": []}, "en")
 
 
