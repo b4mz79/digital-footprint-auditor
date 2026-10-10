@@ -598,6 +598,16 @@ def save_analysis_cache(email: str, data: dict, phone: str = "", lang: str = "en
 
 CACHE_WRITE_LOCK = threading.RLock()
 CACHE_GENERATION_FIELD = "_cache_generated_at"
+
+
+def _cache_generation_timestamp() -> float:
+    """Return the timestamp used to order persisted analysis-cache results."""
+    return time.time()
+
+
+# Keep the production thread constructor isolated from test patches to the shared
+# threading module, and make cache dispatch independently replaceable in tests.
+CacheWriterThread = threading.Thread
 CACHE_INVALIDATION_GENERATION = 0
 
 MAX_EVIDENCE_RECORDS = 150
@@ -2898,7 +2908,7 @@ async def analyze_smart_cache(
             # force-refresh/concurrent scans target the same cache identity, an
             # older result must never overwrite a newer result that has already
             # been persisted.
-            parsed_data[CACHE_GENERATION_FIELD] = time.time()
+            parsed_data[CACHE_GENERATION_FIELD] = _cache_generation_timestamp()
             with CACHE_WRITE_LOCK:
                 write_generation = CACHE_INVALIDATION_GENERATION
 
@@ -2963,7 +2973,7 @@ async def analyze_smart_cache(
                         type(exc).__name__,
                     )
 
-            threading.Thread(
+            CacheWriterThread(
                 target=_cache_worker,
                 name="PrivacyAuditor-AICache",
                 daemon=True,
