@@ -375,7 +375,7 @@ def load_breach_cache(email_addr: str, phone: str = "", max_age_hours: float = 1
             data["is_from_cache"] = True
             return data
         if isinstance(data, dict):
-            logger.info("[Breach Cache] Cache schema lama/tidak dikenal; dianggap cache miss.")
+            logger.info("[Breach Cache] Legacy or unknown cache schema; treating as cache miss.")
         return None
     except Exception:
         # Cache failure must not fail the scan.
@@ -601,7 +601,7 @@ async def scan_breachdirectory_async(client: httpx.AsyncClient, target: str, rap
     Raw record content (the 'line', password, sha1 and hash fields) is inspected only to set
     a boolean flag and is never copied into a finding, the UI, logs or the cache.
     """
-    logger.info("[BreachDirectory] Memulai scan untuk target: %s", mask_pii(target))
+    logger.info("[BreachDirectory] Starting scan for target: %s", mask_pii(target))
     url = "https://breachdirectory.p.rapidapi.com/"
     headers = {"X-RapidAPI-Key": rapidapi_key, "X-RapidAPI-Host": "breachdirectory.p.rapidapi.com"}
     params = {"func": "auto", "term": target}
@@ -615,7 +615,7 @@ async def scan_breachdirectory_async(client: httpx.AsyncClient, target: str, rap
         if data.get("success") is False:
             message = _safe_text(data.get("error") or data.get("message") or "", 200)
             if data.get("found") == 0 or _NOT_FOUND_RE.search(message):
-                logger.info("[BreachDirectory] Selesai. Tidak ada temuan.")
+                logger.info("[BreachDirectory] Completed. No findings.")
                 return []
             # Any other explicit failure (quota, auth, upstream error) is NOT a clean result.
             raise RuntimeError("BreachDirectory reported a failure.")
@@ -668,7 +668,7 @@ async def scan_breachdirectory_async(client: httpx.AsyncClient, target: str, rap
                     if unattributed_has_secret else "No password data reported for this record."
                 ),
             })
-        logger.info("[BreachDirectory] Selesai. Ditemukan: %d temuan.", len(findings))
+        logger.info("[BreachDirectory] Completed. Findings: %d.", len(findings))
         return findings
     except Exception as exc:
         _log_http_error("BreachDirectory", exc)
@@ -688,7 +688,7 @@ async def scan_hibp_async(client: httpx.AsyncClient, target: str, api_key: str, 
     }
     params = {"truncateResponse": "false", "includeUnverified": "true"}
 
-    logger.info("[HIBP] Memulai scan untuk target: %s", mask_pii(email))
+    logger.info("[HIBP] Starting scan for target: %s", mask_pii(email))
     try:
         try:
             data = await _request_json_limited(
@@ -698,7 +698,7 @@ async def scan_hibp_async(client: httpx.AsyncClient, target: str, api_key: str, 
         except httpx.HTTPStatusError as exc:
             status_code = exc.response.status_code if exc.response else None
             if status_code == 404:
-                logger.info("[HIBP] Selesai. Tidak ada breach ditemukan.")
+                logger.info("[HIBP] Completed. No breaches found.")
                 return []
             raise
 
@@ -751,14 +751,14 @@ async def scan_hibp_async(client: httpx.AsyncClient, target: str, api_key: str, 
                 "snippet": clean_snippet(description, lang=lang),
             })
 
-        logger.info("[HIBP] Selesai. Ditemukan: %d temuan.", len(findings))
+        logger.info("[HIBP] Completed. Findings: %d.", len(findings))
         return findings
     except Exception as exc:
         _log_http_error("HIBP", exc)
         raise
 
 async def scan_google_custom_search_async(client: httpx.AsyncClient, target: str, api_key: str, cx_id: str, lang: str = "id") -> list[dict]:
-    logger.info("[Google Custom Search] Memulai scan untuk target: %s", mask_pii(target))
+    logger.info("[Google Custom Search] Starting scan for target: %s", mask_pii(target))
     url = "https://www.googleapis.com/customsearch/v1"
     query = f'"{target}" (breach OR leak OR "database dump" OR "combolist" OR site:pastebin.com)'
     params = {"key": api_key, "cx": cx_id, "q": query, "num": 5}
@@ -786,7 +786,7 @@ async def scan_google_custom_search_async(client: httpx.AsyncClient, target: str
                     "url": item_url,
                     "snippet": clean_snippet(snippet, lang=lang),
                 })
-        logger.info("[Google Custom Search] Selesai. Ditemukan: %d temuan.", len(findings))
+        logger.info("[Google Custom Search] Completed. Findings: %d.", len(findings))
         return findings
     except Exception as exc:
         _log_http_error("Google Custom Search", exc)
@@ -794,7 +794,7 @@ async def scan_google_custom_search_async(client: httpx.AsyncClient, target: str
 
 def scan_googlesearch_python(target: str, lang: str = "id") -> list[dict]:
     """Blocking Google Search library executed in a worker thread."""
-    logger.info("[Google Scraper] Memulai scan via thread untuk target: %s", mask_pii(target))
+    logger.info("[Google Scraper] Starting threaded scan for target: %s", mask_pii(target))
     try:
         from googlesearch import search
         query = f'"{target}" (breach OR leak OR "database dump" OR "combolist")'
@@ -821,14 +821,14 @@ def scan_googlesearch_python(target: str, lang: str = "id") -> list[dict]:
                     "url": item_url,
                     "snippet": clean_snippet(snippet, lang=lang),
                 })
-        logger.info("[Google Scraper] Selesai. Ditemukan: %d temuan.", len(findings))
+        logger.info("[Google Scraper] Completed. Findings: %d.", len(findings))
         return findings
     except Exception as exc:
         logger.warning("[Google Scraper] Error: %s", type(exc).__name__)
         raise
 
 async def scan_bing_scrape_async(client: httpx.AsyncClient, target: str, lang: str = "id") -> list[dict]:
-    logger.info("[Bing Scraper] Memulai scan untuk target: %s", mask_pii(target))
+    logger.info("[Bing Scraper] Starting scan for target: %s", mask_pii(target))
     try:
         from bs4 import BeautifulSoup
         query = f'"{target}" (breach OR leak OR "database dump" OR "combolist")'
@@ -861,7 +861,7 @@ async def scan_bing_scrape_async(client: httpx.AsyncClient, target: str, lang: s
                     "url": item_url,
                     "snippet": clean_snippet(snippet, lang=lang),
                 })
-        logger.info("[Bing Scraper] Selesai. Ditemukan: %d temuan.", len(findings))
+        logger.info("[Bing Scraper] Completed. Findings: %d.", len(findings))
         return findings
     except Exception as exc:
         _log_http_error("Bing Scraper", exc)
@@ -870,14 +870,14 @@ async def scan_bing_scrape_async(client: httpx.AsyncClient, target: str, lang: s
 async def scan_searxng_async(client: httpx.AsyncClient, target: str, lang: str = "id") -> list[dict]:
     """Scan via administrator-configured SearXNG instance."""
     if not SEARXNG_INSTANCE_URL:
-        logger.info("[SearXNG] Pemindaian dilewati: SEARXNG_INSTANCE_URL tidak dikonfigurasi/invalid.")
+        logger.info("[SearXNG] Scan skipped: SEARXNG_INSTANCE_URL is not configured or invalid.")
         raise EngineSkipped(ENGINE_SEARXNG)
     query = f'"{target}" (breach OR leak OR "database dump" OR "combolist")'
     params = {"q": query, "format": "json", "categories": "general"}
     search_endpoint = f"{SEARXNG_INSTANCE_URL}/search"
     try:
         # Deliberately log only a fixed administrator-configured origin, never query data.
-        logger.info("[SearXNG] Memulai scan ke instance yang dikonfigurasi untuk target: %s", mask_pii(target))
+        logger.info("[SearXNG] Starting scan against the configured instance for target: %s", mask_pii(target))
         data = await _request_json_limited(
             client, "GET", search_endpoint, params=params,
             timeout=REQUEST_TIMEOUT, max_bytes=RESPONSE_LIMIT_SEARXNG,
@@ -907,7 +907,7 @@ async def scan_searxng_async(client: httpx.AsyncClient, target: str, lang: str =
         raise
 
 async def scan_breaches_tavily_async(client: httpx.AsyncClient, target: str, api_key: str, lang: str = "id") -> list[dict]:
-    logger.info("[Tavily AI] Memulai scan untuk target: %s", mask_pii(target))
+    logger.info("[Tavily AI] Starting scan for target: %s", mask_pii(target))
     url = "https://api.tavily.com/search"
     query = f'"{target}" "breach" OR "leak" OR "combolist"'
     payload = {"api_key": api_key, "query": query, "search_depth": "basic", "max_results": 7}
@@ -935,7 +935,7 @@ async def scan_breaches_tavily_async(client: httpx.AsyncClient, target: str, api
                     "url": item_url,
                     "snippet": clean_snippet(raw_content, lang=lang),
                 })
-        logger.info("[Tavily AI] Selesai. Ditemukan: %d temuan.", len(findings))
+        logger.info("[Tavily AI] Completed. Findings: %d.", len(findings))
         return findings
     except Exception as exc:
         _log_http_error("Tavily AI", exc)
@@ -960,7 +960,7 @@ def _resolve_ddg_result_url(url: object) -> str:
 
 def scan_breaches_ddg(target: str, lang: str = "id") -> list[dict]:
     """Blocking DuckDuckGo HTML search executed in a worker thread."""
-    logger.info("[DuckDuckGo] Memulai scan via thread untuk target: %s", mask_pii(target))
+    logger.info("[DuckDuckGo] Starting threaded scan for target: %s", mask_pii(target))
     query = f'"{target}" (breach OR leak OR "database dump" OR "combolist")'
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
@@ -1014,7 +1014,7 @@ def scan_breaches_ddg(target: str, lang: str = "id") -> list[dict]:
                         "snippet": clean_snippet(snippet, lang=lang),
                     })
 
-        logger.info("[DuckDuckGo] Selesai. Ditemukan: %d temuan.", len(findings))
+        logger.info("[DuckDuckGo] Completed. Findings: %d.", len(findings))
         return findings
     except Exception as exc:
         logger.warning("[DuckDuckGo] Temporary failure: %s", type(exc).__name__)
@@ -1207,7 +1207,7 @@ async def scan_data_breaches(
     cache_hits = 0
     fresh_engine_calls = 0
     start_time = time.monotonic()
-    logger.info("=== MEMULAI PARALLEL DATA BREACH SCAN (%d target) ===", len(search_targets))
+    logger.info("=== STARTING PARALLEL DATA BREACH SCAN (%d targets) ===", len(search_targets))
 
     limits = httpx.Limits(max_connections=10, max_keepalive_connections=5)
     async with httpx.AsyncClient(
@@ -1220,7 +1220,7 @@ async def scan_data_breaches(
     ) as client:
         for idx, target in enumerate(search_targets, start=1):
             if idx > 1 and DELAY_SECONDS:
-                logger.info("Jeda %ds sebelum scan target berikutnya...", DELAY_SECONDS)
+                logger.info("Waiting %ds before scanning the next target...", DELAY_SECONDS)
                 await asyncio.sleep(DELAY_SECONDS)
 
             plan = build_plan(client, target)
