@@ -124,10 +124,10 @@ def select_all_mail_folder(mail: imaplib.IMAP4_SSL) -> str:
     for folder in ('"[Gmail]/All Mail"', '"[Gmail]/Semua Email"', '"[Gmail]/Semua Pesan"'):
         status, _ = mail.select(folder, readonly=True)
         if status == "OK":
-            logger.info("[IMAP] Berhasil memilih folder: %s", folder)
+            logger.info("[IMAP] Selected folder: %s", folder)
             return folder
 
-    logger.warning("[IMAP] Folder All Mail/Semua Email tidak ditemukan. Menggunakan INBOX.")
+    logger.warning("[IMAP] All Mail folder not found. Falling back to INBOX.")
     mail.select("inbox", readonly=True)
     return "inbox"
 
@@ -244,7 +244,7 @@ def scan_gmail_inbox(
 
             results = []
             for domain, data in sorted(found_services.items()):
-                logger.info("[IMAP] Menemukan email sesuai filter dari layanan: %s", domain)
+                logger.info("[IMAP] Found a matching service email for domain: %s", domain)
                 results.append({
                     "name": domain.split(".")[0].capitalize(),
                     "domain": domain,
@@ -257,10 +257,10 @@ def scan_gmail_inbox(
             )
             return results
     except imaplib.IMAP4.error as imap_err:
-        logger.error("[IMAP Error] Otentikasi/Perintah IMAP Gagal untuk [%s]", mask_email(email_address))
+        logger.error("[IMAP Error] IMAP authentication/command failed for [%s]", mask_email(email_address))
         raise RuntimeError(
             f"Gagal otentikasi IMAP: Pastikan App Password benar & IMAP aktif di Gmail. Detail: {imap_err}"
         )
     except Exception as exc:
-        logger.error("[IMAP Error] Kendala jaringan atau server: %s", type(exc).__name__)
+        logger.error("[IMAP Error] Network or server issue: %s", type(exc).__name__)
         raise RuntimeError(f"IMAP Service Error: {exc}")
