@@ -77,7 +77,7 @@ def _load_holehe_modules() -> list:
         modules = import_submodules("holehe.modules")
         return get_functions(modules)
     except Exception as exc:
-        logger.error("[OSINT Error] Holehe modules gagal dimuat: %s", type(exc).__name__)
+        logger.error("[OSINT Error] Failed to load Holehe modules: %s", type(exc).__name__)
         raise OSINTScanError(f"Holehe modules gagal dimuat: {type(exc).__name__}") from exc
 
 
@@ -161,7 +161,7 @@ def parse_holehe_results(raw_results: list[dict], lang: str = "id") -> tuple[lis
             continue
 
         seen_domains.add(service_domain)
-        logger.info("[OSINT] menemukan target terdaftar di layanan: %s", service_domain)
+        logger.info("[OSINT] Target registration signal found for service: %s", service_domain)
         results.append({
             "name": name,
             "domain": service_domain,
