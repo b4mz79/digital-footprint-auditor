@@ -118,7 +118,7 @@ def run_scan(
     enable_breach: bool = True,
     enable_evidence_enrichment: bool = True,
     force_refresh: bool = False,
-    lang: str = "id",
+    lang: str = "en",
     tenant_id: str | None = None,
     with_ai: bool = True,
     on_event: Callable[[dict[str, Any]], None] | None = None,
@@ -471,7 +471,7 @@ def run_scan(
         except Exception as exc:
             # Add-on AI context is optional. A manager failure must not break
             # the established AI path.
-            logger.warning("[Pipeline] Gagal menyiapkan add-on AI context: %s", exc)
+            logger.warning("[Pipeline] Failed to prepare Add-On AI context: %s", exc)
 
         run_ai(
             state,
