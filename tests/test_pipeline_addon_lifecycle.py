@@ -53,6 +53,7 @@ def test_pipeline_dispatches_owned_evidence_events(monkeypatch) -> None:
         enable_imap=False,
         enable_osint=False,
         enable_breach=False,
+        enable_evidence_enrichment=True,
         with_ai=False,
         on_event=emitted.append,
     )
