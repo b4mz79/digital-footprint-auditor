@@ -176,7 +176,7 @@ def scan_osint_footprint(email: str, lang: str = "id") -> list[dict]:
     logger.info("[OSINT] Scanning target: %s", mask_email(email))
     clean_email = email.strip()
     if not EMAIL_REGEX.fullmatch(clean_email):
-        raise ValueError("Format email tidak valid.")
+        raise ValueError("Invalid email format.")
 
     started = time.monotonic()
     raw_results, errors, rate_limited = trio.run(_run_holehe, clean_email)
