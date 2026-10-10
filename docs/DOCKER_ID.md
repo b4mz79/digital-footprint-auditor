@@ -41,7 +41,40 @@ Windows:
 
 Tag default image adalah `privacy-auditor:dev`. Untuk build ulang tanpa memakai layer cache, tambahkan `--no-cache`. Untuk memilih tag lain, gunakan `--tag privacy-auditor:local`.
 
-## 3. Jalankan aplikasi
+## 3. Masuk ke development shell contributor
+
+Linux/macOS/WSL:
+
+```bash
+./scripts/build-docker.sh --shell
+```
+
+Windows PowerShell atau Command Prompt:
+
+```powershell
+.\scripts\build-docker.bat --shell
+```
+
+Script membangun image `devshell` (berisi dependency dari `requirements.txt` dan `requirements-test.txt`), lalu membuka Bash interaktif di direktori `/app`. Repository di-mount langsung dari host, sehingga perubahan file di dalam container tersimpan pada checkout host. Setelah selesai, jalankan `exit`; container sementara akan dihapus otomatis.
+
+Contoh perintah di dalam shell:
+
+```bash
+python --version
+python -m pytest -q
+python -m compileall -q .
+```
+
+Gunakan shell ini untuk development contributor, debugging, dan test tanpa perlu memasang dependency Python proyek langsung di WSL. Shell memakai `PII_PEPPER_KEY` tetap yang khusus untuk test; **jangan gunakan development shell ini untuk data scan nyata**. File `.env` dari host tidak dimuat secara otomatis.
+
+Untuk membangun ulang image development tanpa cache, tambahkan `--no-cache`:
+
+```bash
+./scripts/build-docker.sh --shell --no-cache
+```
+
+## 4. Jalankan aplikasi
+
 
 ```bash
 docker compose up --build
@@ -57,7 +90,7 @@ docker compose down
 
 Named volume `privacy-auditor-data` menyimpan cache dan cache encryption key di luar source tree. Perintah `docker compose down -v` juga menghapus volume beserta isinya; gunakan hanya jika memang ingin menghapus cache persisten dan key container.
 
-## 4. Jalankan test di Docker
+## 5. Jalankan test di Docker
 
 Linux/macOS:
 
