@@ -189,4 +189,4 @@ if port_is_listening; then
 fi
 
 echo "[INFO] Menjalankan Privacy Auditor melalui Streamlit pada port 8501..."
-exec venv/bin/python -m streamlit run app.py
+exec venv/bin/python -m streamlit run app.py --server.address 127.0.0.1
