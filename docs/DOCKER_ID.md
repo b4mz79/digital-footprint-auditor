@@ -80,7 +80,13 @@ Untuk membangun ulang image development tanpa cache, tambahkan `--no-cache`:
 docker compose up --build
 ```
 
-Buka [http://localhost:8501](http://localhost:8501). Secara default, Compose hanya mempublikasikan port ke localhost, bukan ke jaringan LAN. Direktori source di-mount ke container agar contributor dapat mengedit kode dari host. Restart service setelah perubahan yang memerlukan proses dimulai ulang.
+Buka [http://localhost:8501](http://localhost:8501). Secara default, Compose hanya mempublikasikan port ke localhost, bukan ke jaringan LAN. Runtime menggunakan source code yang disalin ke image dan tidak me-mount source tree dari host; dengan begitu, user runtime non-root tidak bergantung pada permission direktori host. Build ulang setelah source berubah:
+
+```bash
+docker compose up --build
+```
+
+Untuk mengedit source secara langsung dan menjalankan test contributor, gunakan development shell terpisah (`./scripts/build-docker.sh --shell`), yang me-mount checkout repository.
 
 Hentikan service dengan `Ctrl+C` atau jalankan:
 
