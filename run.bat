@@ -58,7 +58,7 @@ if "%RESET_MODE%"=="true" (
 
     rem Exclude virtual environments, Git metadata, and packaging output.
     powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-      "$root=(Get-Location).Path; Get-ChildItem -LiteralPath $root -Directory -Recurse -Force -Filter '__pycache__' -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch '[\/](venv|\.venv|\.git|build|dist)[\/]' } | ForEach-Object { Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }"
+      "$root=(Get-Location).Path; Get-ChildItem -LiteralPath $root -Directory -Recurse -Force -Filter '__pycache__' -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch '[\x5c/](venv|\.venv|\.git|build|dist)[\x5c/]' } | ForEach-Object { Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }"
     if errorlevel 1 (
         echo [WARN] Pembersihan sebagian folder __pycache__ mungkin gagal.
     ) else (
