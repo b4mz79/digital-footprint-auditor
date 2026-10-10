@@ -58,6 +58,7 @@ def test_pipeline_exposes_normalized_evidence(monkeypatch) -> None:
         enable_imap=False,
         enable_osint=True,
         enable_breach=False,
+        enable_evidence_enrichment=True,
         with_ai=False,
     )
 
@@ -150,6 +151,7 @@ def test_pipeline_forwards_evidence_to_ai(monkeypatch) -> None:
         enable_imap=False,
         enable_osint=True,
         enable_breach=False,
+        enable_evidence_enrichment=True,
         with_ai=True,
     )
 
@@ -227,6 +229,7 @@ def test_pipeline_passes_enriched_evidence_to_ai(monkeypatch) -> None:
         enable_imap=False,
         enable_osint=True,
         enable_breach=False,
+        enable_evidence_enrichment=True,
         with_ai=True,
     )
 
@@ -325,6 +328,7 @@ def test_pipeline_verification_failure_clears_stale_url_state(monkeypatch) -> No
         enable_imap=False,
         enable_osint=False,
         enable_breach=False,
+        enable_evidence_enrichment=True,
         with_ai=False,
     )
 
@@ -369,6 +373,7 @@ def test_pipeline_normalization_failure_does_not_abort_scan_or_ai(monkeypatch) -
         enable_imap=False,
         enable_osint=True,
         enable_breach=False,
+        enable_evidence_enrichment=True,
         with_ai=True,
     )
 
