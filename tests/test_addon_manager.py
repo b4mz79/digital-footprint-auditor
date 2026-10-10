@@ -889,3 +889,29 @@ def test_manifest_rejects_security_metadata_input_fields(tmp_path: Path) -> None
                     input_fields=[field],
                 )
             )
+
+
+def test_corrupt_addon_state_disables_installed_addons(tmp_path: Path) -> None:
+    manager = AddonManager(tmp_path / "addons")
+    manager.install_zip(_zip_package())
+    manager.activate("demo-addon")
+    assert manager.get("demo-addon")["active"] is True
+
+    manager._state_path.write_text("{not valid json", encoding="utf-8")
+
+    addon = manager.get("demo-addon")
+    assert addon is not None
+    assert addon["active"] is False
+
+
+def test_addon_state_requires_boolean_values(tmp_path: Path) -> None:
+    manager = AddonManager(tmp_path / "addons")
+    manager.install_zip(_zip_package())
+    manager._state_path.write_text(
+        json.dumps({"demo-addon": "false"}),
+        encoding="utf-8",
+    )
+
+    addon = manager.get("demo-addon")
+    assert addon is not None
+    assert addon["active"] is False
