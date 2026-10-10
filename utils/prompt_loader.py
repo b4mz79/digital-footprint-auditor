@@ -32,13 +32,13 @@ PROMPT_DIR = resolve_data_path(
 
 
 @lru_cache(maxsize=32)
-def load_system_prompt(lang: str = "id") -> str:
+def load_system_prompt(lang: str = "en") -> str:
     """
     Load AI auditor system prompt from external local file.
 
     Lookup order:
     1. prompts/system_prompt_<lang>.txt
-    2. prompts/system_prompt_id.txt (fallback)
+    2. prompts/system_prompt_en.txt (fallback)
 
     Args:
         lang:
@@ -54,11 +54,11 @@ def load_system_prompt(lang: str = "id") -> str:
             If prompt file exceeds safety limit.
     """
 
-    lang = str(lang or "id").strip().lower()
+    lang = str(lang or "en").strip().lower()
 
     candidates = [
         PROMPT_DIR / f"system_prompt_{lang}.txt",
-        PROMPT_DIR / "system_prompt_id.txt",
+        PROMPT_DIR / "system_prompt_en.txt",
     ]
 
     for prompt_file in candidates:
@@ -77,12 +77,12 @@ def load_system_prompt(lang: str = "id") -> str:
 
         if len(content) > MAX_PROMPT_FILE_SIZE:
             raise ValueError(
-                f"System prompt terlalu besar: {prompt_file.name}"
+                f"System prompt exceeds the size limit: {prompt_file.name}"
             )
 
         return content
 
     raise FileNotFoundError(
-        f"System prompt tidak ditemukan untuk bahasa '{lang}'. "
+        f"System prompt not found for language '{lang}'. "
         f"Expected directory: {PROMPT_DIR}"
     )
