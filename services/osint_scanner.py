@@ -143,7 +143,7 @@ async def _run_holehe(email_address: str) -> tuple[list[dict], int, int]:
     return results, errors, rate_limited
 
 
-def parse_holehe_results(raw_results: list[dict], lang: str = "id") -> tuple[list[dict], int]:
+def parse_holehe_results(raw_results: list[dict], lang: str = "en") -> tuple[list[dict], int]:
     """Convert embedded Holehe dictionaries to the application's stable service format."""
     results: list[dict] = []
     seen_domains: set[str] = set()
@@ -172,7 +172,7 @@ def parse_holehe_results(raw_results: list[dict], lang: str = "id") -> tuple[lis
     return results, len(seen_domains)
 
 
-def scan_osint_footprint(email: str, lang: str = "id") -> list[dict]:
+def scan_osint_footprint(email: str, lang: str = "en") -> list[dict]:
     logger.info("[OSINT] Scanning target: %s", mask_email(email))
     clean_email = email.strip()
     if not EMAIL_REGEX.fullmatch(clean_email):
