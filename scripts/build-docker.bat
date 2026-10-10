@@ -9,11 +9,13 @@ cd /d "%~dp0.." || (
 set "IMAGE_TAG=%DOCKER_IMAGE%"
 if "%IMAGE_TAG%"=="" set "IMAGE_TAG=privacy-auditor:dev"
 set "RUN_TESTS=0"
+set "RUN_SHELL=0"
 set "NO_CACHE=0"
 
 :parse
 if "%~1"=="" goto parsed
 if /i "%~1"=="--test" goto arg_test
+if /i "%~1"=="--shell" goto arg_shell
 if /i "%~1"=="--no-cache" goto arg_no_cache
 if /i "%~1"=="--tag" goto arg_tag
 if /i "%~1"=="--help" goto help
@@ -22,7 +24,20 @@ echo [ERROR] Unknown argument: %~1
 goto usage_error
 
 :arg_test
+if "%RUN_SHELL%"=="1" (
+    echo [ERROR] --test and --shell cannot be used together.
+    exit /b 2
+)
 set "RUN_TESTS=1"
+shift
+goto parse
+
+:arg_shell
+if "%RUN_TESTS%"=="1" (
+    echo [ERROR] --test and --shell cannot be used together.
+    exit /b 2
+)
+set "RUN_SHELL=1"
 shift
 goto parse
 
@@ -52,6 +67,7 @@ set "BUILD_FLAGS=--progress=plain"
 if "%NO_CACHE%"=="1" set "BUILD_FLAGS=%BUILD_FLAGS% --no-cache"
 
 if "%RUN_TESTS%"=="1" goto build_test
+if "%RUN_SHELL%"=="1" goto build_shell
 
 echo [INFO] Building Privacy Auditor runtime image: %IMAGE_TAG%
 docker build %BUILD_FLAGS% --target runtime --tag "%IMAGE_TAG%" .
@@ -69,22 +85,34 @@ echo [INFO] Running pytest in the test container...
 docker run --rm "%TEST_TAG%"
 exit /b %ERRORLEVEL%
 
+:build_shell
+set "SHELL_TAG=%IMAGE_TAG%-shell"
+echo [INFO] Building contributor development image: %SHELL_TAG%
+docker build %BUILD_FLAGS% --target devshell --tag "%SHELL_TAG%" .
+if errorlevel 1 exit /b %ERRORLEVEL%
+echo [INFO] Opening interactive development shell in /app.
+echo [INFO] Source edits are made in the mounted host repository.
+echo [WARN] This shell uses a test-only PII_PEPPER_KEY; do not use it for real scan data.
+docker run --rm -it -v "%CD%:/app" -w /app -e HOME=/tmp "%SHELL_TAG%" /bin/bash
+exit /b %ERRORLEVEL%
+
 :help
-echo Usage: scripts\build-docker.bat [--test] [--no-cache] [--tag IMAGE:TAG]
+echo Usage: scripts\build-docker.bat [--test ^| --shell] [--no-cache] [--tag IMAGE:TAG]
 echo.
 echo   Default     Build the runtime image
 echo   --test      Build the test image and run pytest inside it
+echo   --shell     Build the development image and open an interactive Bash shell
 echo   --no-cache  Build without Docker layer cache
-echo   --tag       Set image name/tag (default: privacy-auditor:dev)
+echo   --tag       Set the base image name/tag (default: privacy-auditor:dev)
 echo.
 echo Examples:
 echo   scripts\build-docker.bat
 echo   scripts\build-docker.bat --test
-echo   scripts\build-docker.bat --no-cache
-echo   scripts\build-docker.bat --tag privacy-auditor:local
+echo   scripts\build-docker.bat --shell
+echo   scripts\build-docker.bat --shell --tag privacy-auditor:local
 exit /b 0
 
 :usage_error
 echo.
-echo Usage: scripts\build-docker.bat [--test] [--no-cache] [--tag IMAGE:TAG]
+echo Usage: scripts\build-docker.bat [--test ^| --shell] [--no-cache] [--tag IMAGE:TAG]
 exit /b 2
