@@ -46,6 +46,43 @@ def test_default_translation_language_is_english() -> None:
     assert translations.t("title") == TRANSLATIONS["en"]["title"]
 
 
+def test_runtime_logger_messages_use_english() -> None:
+    forbidden_indonesian = re.compile(
+        r"\\b(?:gagal|memulai|selesai|ditemukan|menemukan|berhasil|menggunakan|"
+        r"pemindaian|menyimpan|memuat|dilewati|terjadi|ditolak|menunggu|"
+        r"tidak valid|tidak ditemukan|tervalidasi|menghasilkan|terlalu besar|"
+        r"batch gagal|provider berikutnya)\\b",
+        flags=re.IGNORECASE,
+    )
+    log_levels = {"debug", "info", "warning", "error", "exception", "critical"}
+    ignored_dirs = {
+        ".git", ".venv", "venv", "__pycache__", ".pytest_cache", "build", "dist"
+    }
+
+    for source_path in ROOT.rglob("*.py"):
+        if any(part in ignored_dirs for part in source_path.relative_to(ROOT).parts[:-1]):
+            continue
+        tree = ast.parse(source_path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or not node.args:
+                continue
+            func = node.func
+            if not isinstance(func, ast.Attribute) or func.attr not in log_levels:
+                continue
+            if not isinstance(func.value, ast.Name) or func.value.id not in {"logger", "logging"}:
+                continue
+
+            message_literals = [
+                child.value
+                for child in ast.walk(node.args[0])
+                if isinstance(child, ast.Constant) and isinstance(child.value, str)
+            ]
+            for message in message_literals:
+                assert not forbidden_indonesian.search(message), (
+                    f"Non-English logger message in {source_path}: {message!r}"
+                )
+
+
 def test_unknown_translation_language_falls_back_to_english() -> None:
     assert translations.t("title", lang="unsupported") == TRANSLATIONS["en"]["title"]
 
