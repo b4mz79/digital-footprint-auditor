@@ -11,13 +11,27 @@ from services.addon_manager import AddonManager
 def _package_zip() -> bytes:
     source_root = Path(__file__).resolve().parents[2] / "addons" / "just-sample"
     buffer = io.BytesIO()
+
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
-        for path in source_root.rglob("*"):
-            if path.is_file():
-                archive.write(
-                    path,
-                    f"{source_root.name}/{path.relative_to(source_root).as_posix()}",
-                )
+        for path in sorted(source_root.rglob("*")):
+            if not path.is_file():
+                continue
+
+            relative_path = path.relative_to(source_root)
+
+            # Exclude generated Python bytecode and cache directories.
+            # These are local runtime artifacts, not add-on source files.
+            if "__pycache__" in relative_path.parts:
+                continue
+
+            if path.suffix.lower() in {".pyc", ".pyo"}:
+                continue
+
+            archive.write(
+                path,
+                f"{source_root.name}/{relative_path.as_posix()}",
+            )
+
     return buffer.getvalue()
 
 
@@ -67,7 +81,12 @@ def test_just_sample_ignores_other_events(tmp_path: Path) -> None:
 
 
 def test_just_sample_manifest_contract() -> None:
-    path = Path(__file__).resolve().parents[2] / "addons" / "just-sample" / "manifest.json"
+    path = (
+        Path(__file__).resolve().parents[2]
+        / "addons"
+        / "just-sample"
+        / "manifest.json"
+    )
     payload = json.loads(path.read_text(encoding="utf-8"))
 
     assert payload["id"] == "just-sample"
