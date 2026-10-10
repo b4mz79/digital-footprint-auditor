@@ -80,7 +80,13 @@ To force a clean development-image rebuild, add `--no-cache`:
 docker compose up --build
 ```
 
-Open [http://localhost:8501](http://localhost:8501). Compose binds the port to localhost by default; it is not published to the LAN. The source directory is mounted into the container so contributors can edit code on the host. Restart the service after changes that require a process restart.
+Open [http://localhost:8501](http://localhost:8501). Compose binds the port to localhost by default; it is not published to the LAN. The runtime uses the application code copied into the image and does not bind-mount the host source tree; this keeps the non-root runtime user independent of host directory permissions. Rebuild after source changes:
+
+```bash
+docker compose up --build
+```
+
+For live source editing and contributor tests, use the separate development shell (`./scripts/build-docker.sh --shell`), which bind-mounts the checkout.
 
 Stop the service with `Ctrl+C`, or run:
 
