@@ -44,7 +44,10 @@ if "%NO_RUN%"=="false" (
 :: Eksekusi reset jika parameter terdeteksi
 if "%RESET_MODE%"=="true" (
     echo 🧹 Parameter 'reset' terdeteksi! Membersihkan cache...
-	del log.txt
+	if exist "log.txt" (
+		del log.txt
+		echo ✅ File log.txt berhasil dihapus!
+	)
     for /d /r . %%d in (__pycache__) do (
         if exist "%%d" rd /s /q "%%d" 2>nul
     )
@@ -59,6 +62,17 @@ if "%RESET_MODE%"=="true" (
 			if exist "%%d" rd /s /q "%%d" 2>nul
 		)
 		echo ✅ Folder Pytest cache berhasil dibersihkan!
+		for /d /r . %%d in (build\PrivacyAuditor) do (
+			if exist "%%d" rd /s /q "%%d" 2>nul
+		)
+		echo ✅ Folder build packaging berhasil dibersihkan!
+		for /d /r . %%d in (dist\PrivacyAuditor) do (
+			if exist "%%d" rd /s /q "%%d" 2>nul
+		)
+		for /d /r . %%d in (dist\installer) do (
+			if exist "%%d" rd /s /q "%%d" 2>nul
+		)
+		echo ✅ Folder dist packaging berhasil dibersihkan!
 	)
 	
     :: Jika Streamlit lagi jalan di port 8501, matikan prosesnya
