@@ -1278,7 +1278,7 @@ async def scan_data_breaches(
 
     elapsed = time.monotonic() - start_time
     logger.info(
-        "=== PARALLEL SCAN SELESAI Dalam %.2f detik === cache_engine_hits=%d fresh_engine_calls=%d",
+        "=== PARALLEL SCAN COMPLETED in %.2f seconds === cache_engine_hits=%d fresh_engine_calls=%d",
         elapsed,
         cache_hits,
         fresh_engine_calls,
