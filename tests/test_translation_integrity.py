@@ -41,6 +41,10 @@ def test_translation_import() -> None:
     assert translations is not None
 
 
+def test_default_translation_language_is_english() -> None:
+    assert translations.t("title") == TRANSLATIONS["en"]["title"]
+
+
 def test_ui_translation_keys_are_aligned_across_all_languages() -> None:
     assert set(TRANSLATIONS) == set(LANGUAGES)
     reference_keys = set(TRANSLATIONS["en"])
