@@ -39,7 +39,7 @@ Windows:
 .\scripts\build-docker.bat
 ```
 
-The default image tag is `privacy-auditor:dev`. To force a clean rebuild, append `--no-cache`. To choose a different image tag, use `--tag privacy-auditor:local`.
+The default image tag is `privacy-auditor:dev`. To force a clean rebuild, append `--no-cache`. To choose a different image tag, use `--tag privacy-auditor:local`. If you want Compose to use that custom tag, set `DOCKER_IMAGE` to the same value when running Compose, for example `DOCKER_IMAGE=privacy-auditor:local docker compose up --build` (PowerShell: `$env:DOCKER_IMAGE='privacy-auditor:local'; docker compose up --build`).
 
 ## 3. Run the application
 
