@@ -1571,7 +1571,7 @@ async def call_ollama_async(
                     failure_callback_sent = True
                     on_failure()
                 logger.warning(
-                    "[Ollama Local] Batch %d gagal: %s: %s.",
+                    "[Ollama Local] Batch %d failed: %s: %s.",
                     batch_index // batch_size + 1,
                     type(exc).__name__,
                     str(exc)[:240],
@@ -1799,7 +1799,7 @@ async def _run_provider_chain_impl(
                         continue
 
                     logger.info(
-                        "[Gemini] Key #%d menghasilkan JSON tervalidasi.",
+                        "[Gemini] Key #%d produced validated JSON.",
                         idx,
                     )
                     logger.info(
@@ -1823,7 +1823,7 @@ async def _run_provider_chain_impl(
             # All Gemini keys exhausted.
             # Continue to the NEXT PROVIDER rather than offline fallback.
             logger.warning(
-                "[Gemini] Semua API Key gagal atau menghasilkan output "
+                "[Gemini] All API keys failed or returned output "
                 "yang tidak dapat divalidasi. Rotating to the next provider."
             )
             logger.info(
@@ -1874,7 +1874,7 @@ async def _run_provider_chain_impl(
                     continue
 
                 logger.info(
-                    "[Groq Cloud] Menghasilkan JSON tervalidasi."
+                    "[Groq Cloud] Produced validated JSON."
                 )
                 return parsed, "Groq Cloud"
 
@@ -1933,7 +1933,7 @@ async def _run_provider_chain_impl(
                     continue
 
                 logger.info(
-                    "[OpenAI] Menghasilkan JSON tervalidasi."
+                    "[OpenAI] Produced validated JSON."
                 )
                 return parsed, "OpenAI"
 
@@ -1984,7 +1984,7 @@ async def _run_provider_chain_impl(
                     continue
 
                 logger.info(
-                    "[Ollama Local] Menghasilkan JSON tervalidasi."
+                    "[Ollama Local] Produced validated JSON."
                 )
                 return parsed, "Ollama Local"
 
@@ -1999,7 +1999,7 @@ async def _run_provider_chain_impl(
     # This means every configured provider has been exhausted.
     # Only NOW may the caller activate the final rule-based offline fallback.
     logger.error(
-        "[AI Provider Chain] Semua provider gagal atau menghasilkan "
+        "[AI Provider Chain] All providers failed or returned "
         "output yang tidak dapat divalidasi."
     )
     return None, "None"
@@ -2638,7 +2638,7 @@ async def analyze_smart_cache(
 
     logger.info(
         "Starting AI Privacy Audit for target [%s] "
-        "(%d layanan, %d temuan breach) [Bahasa: %s]",
+        "(%d services, %d breach findings) [Language: %s]",
         safe_preview,
         len(services),
         len(findings),
