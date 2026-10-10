@@ -890,8 +890,8 @@ async def test_background_cache_write_does_not_overwrite_newer_result(monkeypatc
     monkeypatch.setattr(ai_agent, "get_cache_filepath_ext", lambda *args, **kwargs: "ignored")
     monkeypatch.setattr(ai_agent, "load_encrypted_json", fake_load_encrypted_json)
     monkeypatch.setattr(ai_agent, "save_analysis_cache_ext", fake_save)
-    monkeypatch.setattr(ai_agent.time, "time", fake_time)
-    monkeypatch.setattr(ai_agent.threading, "Thread", ImmediateThread)
+    monkeypatch.setattr(ai_agent, "_cache_generation_timestamp", fake_time)
+    monkeypatch.setattr(ai_agent, "CacheWriterThread", ImmediateThread)
 
     first = await ai_agent.analyze_smart_cache(
         "example@example.com",
