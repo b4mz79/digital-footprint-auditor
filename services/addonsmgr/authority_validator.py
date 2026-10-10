@@ -47,6 +47,10 @@ _FORBIDDEN_CALL_ATTRIBUTES = frozenset({
     "execv",
     "execve",
     "fork",
+    # str.format()/format_map() can traverse attributes from string field names
+    # (including dunder attributes) without exposing that traversal in the AST.
+    "format",
+    "format_map",
     "mkdir",
     "makedirs",
     "popen",
