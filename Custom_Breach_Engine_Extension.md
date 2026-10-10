@@ -1,320 +1,166 @@
-# Breach Scanner v2 Architecture
-
-Breach Scanner v2 introduces a controlled execution layer
-for external breach intelligence providers.
-
-Features:
-
-- Worker queue based execution
-- Per-engine rate limiter
-- Circuit breaker
-- Engine health tracking
-- 429 recovery handling
-- Provider isolation
-
-
-## Why Worker Queue?
-
-Previous implementation executed engines directly using
-`asyncio.gather()`.
-
-This could create burst traffic.
-
----
-
 # Custom Breach Engine Extension
 
-Breach Scanner v2 is designed with a modular architecture that allows additional breach intelligence providers to be integrated without modifying the core scanner pipeline.
+This guide explains how to add a provider to the built-in breach scanner. It describes the current core integration contract, not a dynamically loadable breach-engine plugin API.
 
-A new breach engine only needs to follow the existing **engine contract** used by the built-in scanners.
+> **Important distinction:** breach engines are registered in `services/breach_scanner.py`. They are not ZIP-installed Add-Ons managed by the Add-On runtime. Adding a built-in breach engine currently requires a code change to the scanner plan and corresponding tests.
 
----
+## 1. Current Scanner Architecture
 
-## Engine Lifecycle
-
-Every breach engine follows this execution flow:
+The scanner uses a bounded worker queue and a shared execution wrapper:
 
 ```text
 Input Target
-      |
-      v
-build_plan()
-      |
-      v
+    |
+    v
+Input Validation / Phone Normalization
+    |
+    v
+build_plan() in scan_data_breaches()
+    |
+    v
+run_engine_queue_v2()
+    |
+    v
 execute_engine_v2()
-      |
-      v
-EngineResult
-      |
-      v
-Unified Findings Pipeline
-      |
-      v
-Cache / UI / Reporting
+    |
+    v
+EngineResult + normalized findings
+    |
+    v
+Cache / merged scan result / UI
 ```
 
-A custom engine must not:
+The shared execution layer provides per-engine rate limiting, circuit-breaker and health tracking, cooldown handling, timeouts, and standardized status reporting. The scanner distinguishes an empty successful result from an engine that did not complete successfully.
 
-* implement its own cache mechanism
-* modify the global result schema
-* bypass `execute_engine_v2()`
-* expose raw provider responses directly to the UI
+### Engine status contract
 
----
+The current `EngineStatus` values are:
 
-# Engine Registration
+| Status | Meaning |
+|---|---|
+| `success` | The request completed and its findings list may be empty. |
+| `skipped` | The engine is not configured or is not applicable to the target. |
+| `rate_limited` | The provider or local limiter rejected the attempt because of rate limits. |
+| `timeout` | The execution exceeded its allowed time. |
+| `circuit_open` | The circuit breaker is preventing a call while the engine is unhealthy. |
+| `failed` | The execution failed or the provider response could not be processed. |
 
-A custom engine must first define a stable identifier:
+Do not translate a failed, skipped, timed-out, or rate-limited engine into “no breach found.”
+
+## 2. Provider Integration Checklist
+
+Before implementing a provider:
+
+1. Confirm that its terms and API permit the intended defensive use.
+2. Define the exact target types it supports (email, phone, or both).
+3. Identify its credential and configuration variables.
+4. Define response-size, timeout, retry, and rate-limit behavior.
+5. Normalize provider data into the existing finding format.
+6. Add the engine to the scanner's enabled/skipped configuration and `build_plan()`.
+7. Add mocked tests for successful findings, a valid empty result, missing credentials, malformed responses, rate limits, timeouts, and failure isolation.
+8. Verify that caching only stores valid successful results and that engine status remains visible.
+
+## 3. Registering a Built-in Engine
+
+The current scanner's `engine_enabled` mapping and `build_plan()` are defined inside `scan_data_breaches()`. Add a stable internal engine identifier using the existing naming conventions, then add the appropriate environment-variable check.
+
+Illustrative pattern (adapt names and function signatures to the actual scanner code):
 
 ```python
-ENGINE_CUSTOM = "Custom Breach Engine"
+ENGINE_CUSTOM = "Custom Provider"
+
+custom_api_key = os.getenv("CUSTOM_API_KEY", "").strip()
+engine_enabled[ENGINE_CUSTOM] = bool(custom_api_key)
+
+# Inside build_plan(), only append the engine when it is configured
+# and applicable to this target.
+if engine_enabled[ENGINE_CUSTOM] and custom_target_is_supported(target):
+    plan.append((
+        ENGINE_CUSTOM,
+        lambda: scan_custom_async(client, target, custom_api_key, lang=lang),
+    ))
 ```
 
-Add its configuration:
+This is an integration sketch, not a standalone drop-in patch. Keep identifiers, signatures, and registration consistent with the existing implementation. Do not introduce a second queue or call an engine outside the shared execution wrapper.
 
-```python
-CUSTOM_API_KEY = os.getenv(
-    "CUSTOM_API_KEY",
-    ""
-).strip()
-```
+If a provider supports email only, register it only for the normalized email target. Do not send phone variants to it unless the provider explicitly supports them.
 
-Register engine availability:
+## 4. Finding Normalization
 
-```python
-engine_enabled = {
-    ENGINE_CUSTOM: bool(CUSTOM_API_KEY),
-}
-```
+Engine functions return a `list[dict]` of sanitized findings. Use the current schema and normalization helpers in `services/breach_scanner.py` as the source of truth; do not expose provider payloads directly to the UI.
 
-If the required API credential is unavailable, the engine must be treated as:
-
-```text
-SKIPPED
-```
-
-and must not cause the complete breach scan to fail.
-
----
-
-# Engine Integration
-
-The engine is registered through `build_plan()`:
-
-```python
-if engine_enabled[ENGINE_CUSTOM]:
-    plan.append(
-        (
-            ENGINE_CUSTOM,
-            lambda: scan_custom_async(
-                client,
-                target,
-                CUSTOM_API_KEY,
-            ),
-        )
-    )
-```
-
-The engine function must return:
-
-```python
-list[dict]
-```
-
-using the internal finding schema.
-
----
-
-# Finding Schema
-
-Every engine must normalize its provider response into the internal finding format.
-
-Required fields:
+A normalized finding may contain fields such as:
 
 ```json
 {
-  "source": "Engine Name",
+  "source": "Custom Provider",
   "kind": "breach_db",
-  "dataset": "Dataset Name",
-  "title": "Human readable title",
-  "url": "Provider URL",
-  "has_password": true,
+  "dataset": "Dataset name",
+  "title": "Readable, sanitized title",
+  "url": "https://provider.example/report",
+  "breach_date": "2025-01-01",
+  "has_password": false,
   "snippet": "Short sanitized summary"
 }
 ```
 
-Additional fields are allowed if:
+Include only fields that are actually supported by the provider response. Do not infer password exposure from a dataset name or from a generic search result. Optional metadata may be retained when it is useful and does not contain raw personal data, credentials, or leaked records.
 
-* they do not contain raw PII
-* they do not contain credentials
-* they do not contain raw breach records
+## 5. Have I Been Pwned (HIBP) Example
 
----
+HIBP is already integrated as a built-in provider when `HIBP_API_KEY` is configured. Use its implementation as a reference before adding a similar provider.
 
-# Have I Been Pwned (HIBP) Integration Example
+Breach metadata can include `Name`, `Title`, `Domain`, `BreachDate`, `AddedDate`, `ModifiedDate`, `PwnCount`, `DataClasses`, and verification flags. Normalize only the fields needed by the application's finding schema. For example, `has_password` should be derived from the provider's data-class metadata when available, not hard-coded to `true`.
 
-HIBP returns breach metadata through a JSON API response.
+Never store or emit raw breach records, passwords, password hashes, authentication tokens, or credential dumps. Retain only the minimum sanitized metadata needed to describe the exposure.
 
-Example response:
+## 6. Security Requirements
 
-```json
-{
-  "Name": "Adobe",
-  "Title": "Adobe",
-  "Domain": "adobe.com",
-  "BreachDate": "2013-10-04",
-  "PwnCount": 152445165,
-  "DataClasses": [
-    "Email addresses",
-    "Passwords",
-    "Usernames"
-  ],
-  "IsVerified": true
-}
+### Credentials
+
+- Read credentials from environment variables.
+- Never log credentials or include them in findings.
+- Do not write credentials into cache files or exception messages.
+- Keep `.env` out of version control.
+
+### Untrusted provider responses
+
+- Enforce request timeouts and response-size limits.
+- Validate response shape and field types before processing.
+- Normalize URLs and sanitize titles/snippets using existing helpers.
+- Do not render provider HTML as trusted markup.
+- Bound the number and length of retained findings.
+- Avoid storing raw breach records or unnecessary personal information.
+
+### Resilience and cache behavior
+
+- Reuse the shared execution wrapper, limiter, circuit breaker, and health tracking.
+- Let the wrapper classify rate limits, timeouts, and failures.
+- Cache only successful normalized results, including a successful empty list.
+- Do not treat a failed or incomplete scan as proof that no exposure exists.
+- Add regression tests for provider failure isolation and cache behavior.
+
+## 7. Deduplication and Tests
+
+Use the existing global finding merge/deduplication behavior rather than creating an independent cache or result pipeline. For breach database records, a normalized tuple such as `(url, dataset, breach_date)` may help identify duplicates, but verify it against the actual merge logic before relying on it.
+
+At minimum, add tests covering:
+
+- configured and unconfigured provider states;
+- email/phone target applicability;
+- valid findings and valid empty responses;
+- malformed or oversized provider responses;
+- timeout, rate limit, and provider errors;
+- secret and raw-record redaction;
+- cache reuse only for successful results;
+- no regression to other engines when this provider fails.
+
+Run the complete suite with:
+
+```bash
+python -m pytest
 ```
 
-The response should be mapped into the internal finding schema:
+## Contributor Notes
 
-```json
-{
-  "source": "HaveIBeenPwned API",
-  "kind": "breach_db",
-  "dataset": "Adobe",
-  "title": "Breach dataset: Adobe",
-  "url": "https://haveibeenpwned.com",
-  "breach_date": "2013-10-04",
-  "has_password": true,
-  "data_classes": [
-    "Email addresses",
-    "Passwords",
-    "Usernames"
-  ],
-  "verified": true
-}
-```
-
-The scanner pipeline will then process it exactly like other breach database engines.
-
----
-
-# Security Requirements
-
-Custom engines must follow these security requirements.
-
-## 1. API Key Handling
-
-API credentials:
-
-* must only be loaded from environment variables
-* must never appear in logs
-* must never be stored in cache
-* must never be included in findings
-
-Example:
-
-```python
-CUSTOM_API_KEY = os.getenv("CUSTOM_API_KEY")
-```
-
----
-
-## 2. Response Sanitization
-
-All external provider responses must be treated as **untrusted data**.
-
-The engine must:
-
-* enforce response size limits
-* validate JSON structure
-* remove unsafe HTML content
-* avoid storing raw breach records
-
-Example:
-
-```python
-title = clean_title(item.get("Title"))
-```
-
----
-
-## 3. Password Exposure Mapping
-
-An engine may indicate password exposure using metadata:
-
-```python
-has_password = True
-```
-
-based on the provider response.
-
-The engine must never store:
-
-* leaked passwords
-* password hashes
-* credential dumps
-* raw breach records
-
-Only metadata describing exposure should be retained.
-
----
-
-# Engine Status Handling
-
-Custom engines must use the standard engine status model:
-
-| Condition               | Status       |
-| ----------------------- | ------------ |
-| API request successful  | SUCCESS      |
-| API key unavailable     | SKIPPED      |
-| Provider rate limit     | RATE_LIMITED |
-| Request timeout         | TIMEOUT      |
-| Provider schema changed | FAILED       |
-
----
-
-# Deduplication
-
-All findings are processed through the global deduplication pipeline.
-
-For breach database findings, the recommended identifier is:
-
-```python
-(
-    url,
-    dataset,
-    breach_date
-)
-```
-
-Custom engines do not need to implement their own deduplication logic.
-
----
-
-# Contributor Guidelines
-
-A contributor adding a new breach engine only needs to provide:
-
-1. Async engine implementation
-
-```python
-async def scan_custom_async(...):
-    ...
-    return findings
-```
-
-2. Provider response mapping into the internal schema
-
-3. Environment configuration
-
-4. Engine identifier registration
-
-No modification is required for:
-
-* queue system
-* circuit breaker
-* rate limiter
-* cache layer
-* reporting pipeline
-* UI layer
-
-With this architecture, new breach intelligence providers can be integrated as independent engines without affecting existing scanners.
+A new built-in breach engine typically requires an async provider function (or a bounded thread wrapper for a blocking library), response mapping, environment configuration, scanner-plan registration, and regression tests. Changes to the shared queue, status model, cache pipeline, or UI should be avoided unless the provider requirement genuinely needs them.
