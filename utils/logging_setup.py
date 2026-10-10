@@ -110,6 +110,24 @@ class SensitiveDataFilter(logging.Filter):
         return True
 
 
+
+class SensitiveDataFormatter(logging.Formatter):
+    """Redact exception tracebacks as well as the already-filtered log message."""
+
+    def formatException(self, exc_info: tuple) -> str:
+        formatted = super().formatException(exc_info)
+        record = logging.LogRecord(
+            name="privacy_auditor.traceback",
+            level=logging.ERROR,
+            pathname="",
+            lineno=0,
+            msg=formatted,
+            args=(),
+            exc_info=None,
+        )
+        SensitiveDataFilter().filter(record)
+        return record.getMessage()
+
 def log_level() -> int:
     name = os.getenv("LOG_LEVEL", "INFO").strip().upper() or "INFO"
     return getattr(logging, name, logging.INFO)
@@ -127,6 +145,23 @@ def configure_logging() -> int:
     for handler in root.handlers:
         if not any(isinstance(f, SensitiveDataFilter) for f in handler.filters):
             handler.addFilter(SensitiveDataFilter())
+        current = handler.formatter
+        if not isinstance(current, SensitiveDataFormatter):
+            style = "%"
+            if current is not None:
+                if isinstance(current._style, logging.StrFormatStyle):
+                    style = "{"
+                elif isinstance(current._style, logging.StringTemplateStyle):
+                    style = "$"
+                handler.setFormatter(
+                    SensitiveDataFormatter(
+                        fmt=current._style._fmt,
+                        datefmt=current.datefmt,
+                        style=style,
+                    )
+                )
+            else:
+                handler.setFormatter(SensitiveDataFormatter())
     return level
 
 
