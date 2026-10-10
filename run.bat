@@ -143,7 +143,7 @@ for /f %%P in ('powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorAc
 )
 
 echo [INFO] Menjalankan Privacy Auditor melalui Streamlit pada port 8501...
-"%VENV_PYTHON%" -m streamlit run app.py
+"%VENV_PYTHON%" -m streamlit run app.py --server.address 127.0.0.1
 set "APP_EXIT_CODE=%ERRORLEVEL%"
 if not "%APP_EXIT_CODE%"=="0" (
     echo [ERROR] Streamlit berhenti dengan exit code %APP_EXIT_CODE%.
