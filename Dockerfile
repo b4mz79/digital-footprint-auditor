@@ -29,6 +29,15 @@ ENV PII_PEPPER_KEY=docker-test-only-key-not-for-real-data-00000000000000000000
 
 CMD ["python", "-m", "pytest", "-q"]
 
+# Interactive contributor shell with application and test dependencies.
+# The fixed key is for local development/tests only; never use this image for real scan data.
+FROM base AS devshell
+COPY requirements-test.txt /tmp/requirements-test.txt
+RUN python -m pip install --no-cache-dir -r /tmp/requirements-test.txt
+COPY . /app
+ENV PII_PEPPER_KEY=docker-test-only-key-not-for-real-data-00000000000000000000
+CMD ["/bin/bash"]
+
 # Default image: non-root Streamlit runtime.
 FROM base AS runtime
 
