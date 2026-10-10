@@ -1389,10 +1389,10 @@ TRANSLATIONS = {
     }
 }
 
-def t(key: str, lang: str = "id", **kwargs) -> str:
-    """Mengambil string terjemahan sesuai dengan bahasa aktif."""
-    lang_dict = TRANSLATIONS.get(lang, TRANSLATIONS["id"])
-    text = lang_dict.get(key, TRANSLATIONS["id"].get(key, key))
+def t(key: str, lang: str = "en", **kwargs) -> str:
+    """Return a translated string for the active language."""
+    lang_dict = TRANSLATIONS.get(lang, TRANSLATIONS["en"])
+    text = lang_dict.get(key, TRANSLATIONS["en"].get(key, key))
     if kwargs:
         try:
             return text.format(**kwargs)
