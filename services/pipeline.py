@@ -482,7 +482,7 @@ def run_scan(
         )
 
     logger.info(
-        "[Pipeline] run_scan selesai; mengembalikan state. services=%d evidence=%d breach=%d ai=%s",
+        "[Pipeline] run_scan completed; returning state. services=%d evidence=%d breach=%d ai=%s",
         len(state["services"]),
         len(state["evidence"]),
         len(state["breach"]["findings"]),
