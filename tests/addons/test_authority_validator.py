@@ -239,3 +239,27 @@ def run(context):
 
     with pytest.raises(ValueError, match=f"forbidden API call \\.{link_method}\\(\\)"):
         validate_package_authority(root)
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        (
+            "from pathlib import Path\\n"
+            "def run(context):\\n"
+            "    return \"{0.exists.__globals__[os].environ}\".format(Path(\"x\"))\\n"
+        ),
+        (
+            "def run(context):\\n"
+            "    return \"{value.__class__}\".format_map({\"value\": context})\\n"
+        ),
+    ],
+)
+def test_authority_gate_rejects_format_string_attribute_traversal(
+    tmp_path: Path,
+    source: str,
+) -> None:
+    root = _package(tmp_path / "package", **{"plugin.py": source})
+
+    with pytest.raises(ValueError, match="forbidden API call \\.(format|format_map)\\(\\)"):
+        validate_package_authority(root)
