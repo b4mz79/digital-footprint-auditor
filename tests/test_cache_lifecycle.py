@@ -163,7 +163,7 @@ async def test_explicit_cache_clear_invalidates_pending_ai_write(monkeypatch) ->
     monkeypatch.setattr(ai_agent, "get_cache_filepath_ext", lambda *args, **kwargs: "ignored")
     monkeypatch.setattr(ai_agent, "load_encrypted_json", lambda *args, **kwargs: None)
     monkeypatch.setattr(ai_agent, "save_analysis_cache_ext", lambda *args, **kwargs: saved.append(dict(args[1])))
-    monkeypatch.setattr(ai_agent.threading, "Thread", DeferredThread)
+    monkeypatch.setattr(ai_agent, "CacheWriterThread", DeferredThread)
     monkeypatch.setattr(pipeline, "clear_cache_files", lambda *args: 0)
 
     result = await ai_agent.analyze_smart_cache(
