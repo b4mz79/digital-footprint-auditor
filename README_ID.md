@@ -4,125 +4,165 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Streamlit](https://img.shields.io/badge/UI-Streamlit-FF4B4B.svg)](https://streamlit.io/)
 
-**Language / Bahasa:** [English](README.md)  |  [Bahasa Indonesia](README_ID.md)
+**Language / Bahasa:** [English](README.md) | [Bahasa Indonesia](README_ID.md)
 
-**Digital Footprint & OSINT Data Breach Auditor** adalah alat analisis jejak digital personal dan pemeriksa kebocoran data (*data breach*) berbasis Python dan Streamlit. Tool ini dirancang untuk memindai exposure akun email, variasi nomor telepon, serta jejak layanan terdaftar (via IMAP & OSINT) secara multi-layer, lalu memberikan analisis risiko privasi serta draf **Surat Permintaan Penghapusan Data (DSR)** otomatis berdasarkan **UU No. 27 Tahun 2022 tentang Pelindungan Data Pribadi (UU PDP Indonesia)**.
+Digital Footprint & OSINT Data Breach Auditor adalah aplikasi Python dan Streamlit untuk meninjau jejak digital seseorang melalui input email, nomor telepon, OSINT, dan pencarian breach yang dilakukan dengan persetujuan atau otorisasi yang sesuai. Aplikasi menggabungkan bukti layanan yang terdeteksi dengan bukti kontekstual opsional dari publikasi keamanan serta analisis risiko privasi berbantuan AI. Aplikasi juga dapat menyusun draf **Data Subject Request (DSR)** yang harus ditinjau subjek data sebelum dikirim ke pengendali data.
+
+Aplikasi ditujukan untuk audit privasi pribadi, riset defensif yang berizin, dan tujuan edukasi. Aplikasi tidak menjamin semua akun atau kebocoran akan ditemukan.
 
 ---
 
 ## ✨ Fitur Utama
 
-* 📧 **Gmail IMAP Scanner**: Mengidentifikasi layanan digital yang terhubung secara otomatis dengan memindai subjek email konfirmasi/pendaftaran.
-* 🕵️ **OSINT Account Checker**: Mengintegrasikan *Holehe* untuk mendeteksi keberadaan akun terdaftar di puluhan platform digital.
-* 🛡️ **Multi-Layer Breach Engine**:
-* BreachDirectory DB API (Spesialis Database Dump)
-* Google Custom Search API & Scraper Fallback (`googlesearch-python`)
-* Bing Search Scraper (via `BeautifulSoup`)
-* Tavily AI Search API
-* SearXNG MetaSearch & DuckDuckGo
+- **Gmail IMAP Scanner** — mengidentifikasi layanan dari email pendaftaran, konfirmasi, dan pesan terkait yang cocok. Pemindaian Gmail memerlukan App Password jika diaktifkan.
+- **OSINT Account Checker** — menggunakan Holehe untuk memeriksa sinyal keberadaan akun pada layanan yang didukung.
+- **Pencarian breach multi-engine** — dapat menggunakan BreachDirectory (RapidAPI), Have I Been Pwned (HIBP), Google Custom Search, fallback pencarian Google/Bing/DuckDuckGo, Tavily, serta instance SearXNG yang dikonfigurasi secara opsional. Ketersediaan provider bergantung pada konfigurasi dan batas layanan eksternal.
+- **Normalisasi nomor telepon** — menghasilkan variasi format nasional dan internasional yang dibatasi berdasarkan region konfigurasi.
+- **Normalisasi evidence dan provenance** — menyimpan observasi pemindaian sebagai evidence terstruktur dengan informasi sumber dan karakteristik evidence untuk ditinjau lebih lanjut.
+- **Enrichment opsional dari publikasi keamanan** — jika diaktifkan dan dikonfigurasi dengan API key Firecrawl, aplikasi mencari materi kontekstual publikasi keamanan berdasarkan domain yang telah dinormalisasi. Evidence kontekstual ini bukan bukti bahwa akun pengguna atau domain tersebut telah dibobol.
+- **Verifikasi URL evidence** — memeriksa aksesibilitas URL yang sudah ada dalam record evidence. Ini bukan audit keamanan terhadap situs atau domain tujuan.
+- **Analisis risiko privasi berbantuan AI** — memvalidasi output model dan menerapkan pengaman deterministik berbasis evidence. Alur provider dapat mencakup Google Gemini, Groq, OpenAI, dan Ollama lokal; urutan provider dan mode lokal-saja dapat dikonfigurasi.
+- **Draf Data Subject Request (DSR)** — menghasilkan draf permintaan yang dapat diedit; pengguna perlu memeriksa fakta, dasar hukum, dan penerima sebelum mengirimkannya.
+- **Cache lokal terenkripsi dan identitas cache berbasis tenant** — mengurangi permintaan berulang sekaligus memisahkan identitas cache tenant yang dikonfigurasi.
+- **Runtime Add-On** — mendukung ekstensi opsional berbasis manifest. Lihat [Add-On Tech Guide](docs/ADDON_TECH_GUIDE.md) dan [sample Add-On](addons/just-sample/).
 
+## 🔐 Privasi dan Batasan
 
-* 📱 **Dynamic Phone Number Normalization**: Memecah dan mencari variasi format nomor HP nasional (`08xx`) hingga internasional (`+62xx`, `62xx`) secara presisi.
-* 🤖 **Multi-Model AI Risk Assessment**: Analisis tingkat risiko kebocoran data secara otomatis yang mendukung fleksibilitas berbagai provider LLM (Google Gemini, Groq, OpenAI) hingga **Local Ollama** untuk analisis *privacy-first* secara *offline*.
-* 📜 **DSR Generator (UU PDP)**: Menggenerasi draf surat resmi *Data Subject Request* untuk penghapusan/pemusnahan data pribadi dari pengendali data.
-* ⚡ **Caching & Noise Filter**: Dilengkapi sistem *caching* lokal TTL 12 jam dan *ignoring domain filter* untuk mencegah *false positive*.
+- Gunakan aplikasi hanya terhadap data milik sendiri atau data yang auditnya telah diotorisasi secara eksplisit.
+- Simpan kredensial dalam file `.env` lokal. Jangan pernah commit API key, kredensial Gmail, atau rahasia lainnya.
+- Hasil scan bergantung pada cakupan provider, indeks pencarian, rate limit, dan kredensial yang tersedia. Scan yang berhasil tanpa temuan **tidak** membuktikan bahwa tidak ada exposure.
+- Artikel keamanan kontekstual dapat membahas layanan atau domain secara umum; jangan menganggapnya sebagai bukti langsung tentang akun individu.
+- Output AI merupakan alat bantu keputusan, bukan kesimpulan hukum atau jaminan status keamanan. Tinjau finding dan draf DSR sebelum mengambil tindakan.
+- Ollama lokal dapat menjaga inferensi model tetap lokal jika dikonfigurasi dengan benar, tetapi provider scan/enrichment eksternal tetap melakukan request jaringan jika diaktifkan.
 
 ---
 
-## 🚀 Panduan Instalasi & Penggunaan
+## 🚀 Instalasi dan Penggunaan
 
-### 1. Prasyarat System
+### 1. Persyaratan
 
-* Python 3.10 atau versi yang lebih baru.
-* Akun Gmail dengan **App Password** terintegrasi (jika ingin menggunakan fitur Scan Inbox Gmail).
+- Python 3.10 atau lebih baru.
+- Git.
+- Gmail App Password jika akan menggunakan pemindaian IMAP Gmail.
+- Kredensial API hanya untuk provider opsional yang ingin digunakan.
+- Layanan Ollama lokal yang berjalan jika ingin menggunakan model lokal.
 
-### 2. Kloning Repository & Install Dependensi
+### 2. Clone dan instal dependensi
 
 ```bash
-# Clone repository
-git clone https://github.com/b4mz79/digital-footprint-auditor
+git clone https://github.com/b4mz79/digital-footprint-auditor.git
 cd digital-footprint-auditor
 
-# Buat virtual environment (opsional tapi disarankan)
 python -m venv venv
-source venv/bin/activate  # Untuk Linux/macOS
-# venv\Scripts\activate   # Untuk Windows
+# Linux/macOS
+source venv/bin/activate
+# Windows PowerShell
+# .\venv\Scripts\Activate.ps1
 
-# Install dependensi pustaka
 pip install -r requirements.txt
-
+pip install -r requirements-test.txt  # hanya jika ingin menjalankan test
 ```
 
-### 3. Konfigurasi Environment Variable (`.env`)
+### 3. Konfigurasi `.env`
 
-Salin file `.env.example` menjadi `.env`:
+Salin file contoh lalu edit secara lokal:
 
 ```bash
 cp .env.example .env
-
 ```
 
-Buka file `.env` dan isi kunci API yang Anda miliki (semakin lengkap API key, semakin maksimal hasil pencarian):
-
-```env
-GEMINI_API_KEY_1=your_gemini_key_here
-RAPIDAPI_KEY=your_rapidapi_key_here
-GOOGLE_SEARCH_API_KEY=your_google_api_key_here
-GOOGLE_CX_ID=your_custom_search_cx_here
-TAVILY_API_KEY=your_tavily_key_here
-DELAY_SECONDS=2
-
-```
-
-### 4. Jalankan Aplikasi
-
-Jalankan dashboard aplikasi melalui Streamlit (atau eksekusi `./run.sh` / `run.bat`):
+Setidaknya, isi `PII_PEPPER_KEY` dengan secret acak minimal 32 karakter. Contoh pembuatannya:
 
 ```bash
-streamlit run app.py
-
+python -c "import secrets; print(secrets.token_urlsafe(48))"
 ```
 
-Aplikasi akan otomatis terbuka di browser lokal Anda di `http://localhost:8501`.
+Selanjutnya, konfigurasi hanya provider yang ingin digunakan. Pengaturan umum:
+
+| Pengaturan | Kegunaan |
+|---|---|
+| `GOOGLE_API_KEY_1` … `GOOGLE_API_KEY_6`, `GEMINI_API_KEY`, `GOOGLE_API_KEY` | Kredensial Gemini / rotasi key |
+| `GROQ_API_KEY`, `OPENAI_API_KEY` | Provider AI cloud |
+| `LLM_PROVIDER_ORDER` | Urutan provider AI |
+| `LLM_LOCAL_ONLY=true` | Mencegah pemanggilan AI cloud dan hanya menggunakan Ollama lokal |
+| `OLLAMA_HOST`, `OLLAMA_MODEL` | Endpoint dan model Ollama lokal |
+| `RAPIDAPI_KEY` | Provider BreachDirectory |
+| `HIBP_API_KEY` | Metadata breach Have I Been Pwned |
+| `GOOGLE_SEARCH_API_KEY`, `GOOGLE_CX_ID` | Google Custom Search |
+| `TAVILY_API_KEY`, `SEARXNG_INSTANCE_URL` | Provider pencarian breach opsional |
+| `FIRECRAWL_API_KEY` | Enrichment kontekstual publikasi keamanan opsional |
+| `TENANT_ID` | Identitas tenant/cache lokal |
+
+Lihat [`.env.example`](.env.example) untuk seluruh pengaturan dan nilai default. Jangan memasukkan secret ke laporan issue atau commit file `.env`.
+
+### 4. Menjalankan aplikasi
+
+Gunakan launcher sesuai sistem operasi atau jalankan Streamlit langsung:
+
+```bash
+# Linux / macOS
+./run.sh
+
+# Atau jalankan langsung
+python -m streamlit run app.py
+```
+
+Di Windows, jalankan `run.bat` melalui Command Prompt atau PowerShell. Dashboard biasanya menggunakan `http://localhost:8501`.
+
+Launcher mendukung mode reset. Pelajari dampaknya terlebih dahulu karena mode reset tertentu menghapus cache/artifact build lokal dan dapat menghentikan proses yang mendengarkan port 8501.
 
 ---
 
-## 🛠️ Arsitektur Singkat Pencarian Breach
+## 🛠️ Alur Pencarian Breach
 
 ```text
-[ Input Email & Phone ]
-          │
-          ├──> 1. Normalisasi Nomor HP (Variasi 08xx, +62xx, Spasi, Dash)
-          ├──> 2. Cek Cache Lokal (cache/breach/)
-          └──> 3. Multi-Engine Iterative Scanning:
-                   ├── BreachDirectory API
-                   ├── Google API / Scraper Fallback
-                   ├── Bing Scraper
-                   ├── Tavily AI Search
-                   ├── SearXNG MetaSearch
-                   └── DuckDuckGo
-
+Input Email / Telepon
+        |
+        v
+Validasi Input dan Normalisasi Nomor Telepon
+        |
+        v
+Cache per Target / per Engine
+        |
+        v
+Engine Pencarian Breach yang Dikonfigurasi
+        |
+        v
+Finding Ternormalisasi + Status Engine
+        |
+        v
+Pipeline Evidence / UI / Analisis AI
 ```
 
----
+Breach scanner menggunakan worker queue yang dibatasi, rate limiter per engine, circuit breaker dan pelacakan kesehatan, mekanisme retry/cooldown, batas ukuran response, serta finding yang dinormalisasi. Status engine membedakan hasil kosong yang berhasil dari engine yang dilewati, terkena rate limit, timeout, atau gagal.
 
-## 🤝 Berkontribusi (Contributing)
+## 🧪 Pengujian
 
-Kontribusi terbuka lebar untuk siapa saja! Jika Anda ingin menambahkan fitur baru, memperbaiki bug, atau meningkatkan integrasi OSINT:
+Instal dependensi test dan jalankan seluruh suite:
 
-1. *Fork* repository ini.
-2. Buat branch fitur baru (`git checkout -b fitur/FiturKerenAplikasi`).
-3. Commit perubahan Anda (`git commit -m 'Menambahkan Fitur Keren'`).
-4. Push ke branch Anda (`git push origin fitur/FiturKerenAplikasi`).
-5. Buat **Pull Request (PR)** baru.
-6. Detail teknis mengenai **Integration Test Suite**, silakan baca [Integration Test Suite](Integration_Test_Suite_ID.md)
-7. Detail teknis mengenai cara mengintegrasikan **Custom Breach Engine Extension**, silakan baca [Custom Breach Engine Extension](Custom_Breach_Engine_Extension_ID.md)
+```bash
+pip install -r requirements-test.txt
+python -m pytest
+```
 
----
+Lihat [Integration Test Suite](Integration_Test_Suite_ID.md) untuk cakupan dan panduan contributor.
 
-## ⚖️ Lisensi
+## 🧩 Mengembangkan Proyek
 
-Proyek ini dilisensikan di bawah **MIT License** - lihat file [LICENSE](LICENSE) untuk detail selengkapnya.
+- Untuk mengintegrasikan provider pencarian breach bawaan, ikuti [Custom Breach Engine Extension](Custom_Breach_Engine_Extension_ID.md). Engine breach didaftarkan pada plan scanner inti; mekanisme ini berbeda dari Add-On yang dipasang melalui ZIP.
+- Untuk mengembangkan Add-On opsional, ikuti [Add-On Tech Guide](docs/ADDON_TECH_GUIDE.md).
+- Sebelum membuat Pull Request, jalankan test dan sertakan regression test yang relevan.
 
-> **Disclaimer**: Tool ini dibuat hanya untuk tujuan edukasi, analisis privasi pribadi, dan riset keamanan informasi (*defensive OSINT*). Penggunaan tool ini terhadap target tanpa izin merupakan tanggung jawab penuh masing-masing pengguna.
+## 🤝 Berkontribusi
 
+1. Fork repository.
+2. Buat branch fitur.
+3. Buat perubahan yang terfokus dan tambahkan/perbarui test.
+4. Jalankan `python -m pytest`.
+5. Buat Pull Request yang menjelaskan perubahan, hasil test, dan implikasi konfigurasi atau migrasi.
+
+## ⚖️ Lisensi dan Disclaimer
+
+Proyek ini menggunakan [MIT License](LICENSE).
+
+> **Disclaimer:** Tool ini ditujukan untuk edukasi, audit privasi pribadi, dan riset OSINT defensif yang berizin. Jangan memindai data atau target tanpa otorisasi yang sesuai. Hasil pencarian dapat tidak lengkap atau tidak akurat; pengguna bertanggung jawab memvalidasi temuan dan menentukan tindakan selanjutnya.
